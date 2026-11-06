@@ -46,7 +46,7 @@ fn s_at(v: &[Value], i: usize) -> String {
 fn is_multi(p: Prop, kind: Option<Kind>) -> bool {
     match p {
         Prop::Items => true,
-        Prop::Text => matches!(kind, Some(Kind::StaticText) | Some(Kind::Memo)),
+        Prop::Text => matches!(kind, Some(Kind::StaticText) | Some(Kind::Memo) | Some(Kind::Table)),
         _ => false,
     }
 }

@@ -23,7 +23,7 @@ fn big_form() -> Form {
     f.help_ctx = 7;
     let mut y = 2;
     for k in Kind::ALL {
-        if k == Kind::Label {
+        if k == Kind::Label || k == Kind::Table || k == Kind::TreeView {
             continue;
         }
         let mut c = f.new_control(k, 16, y);
@@ -44,7 +44,7 @@ fn big_form() -> Form {
                 c.h = 2;
             }
             Kind::ScrollBar => {
-                c.x = 60;
+                c.x = 39;
                 c.y = 2;
                 c.h = 10;
             }
@@ -59,6 +59,20 @@ fn big_form() -> Form {
         }
         f.controls.push(c);
     }
+    // Таблица и дерево — во втором столбце.
+    let mut t = f.new_control(Kind::Table, 42, 2);
+    t.w = 32;
+    t.editable = true;
+    t.row_numbers = true;
+    t.value = 1;
+    t.items.push("Город".into());
+    t.text.push_str("\nГлеб|456-78-90|Тула");
+    f.controls.push(t);
+    let mut tr = f.new_control(Kind::TreeView, 42, 9);
+    tr.checks = true;
+    tr.h = 10;
+    tr.items.push("    Лето".into());
+    f.controls.push(tr);
     let mut l = Control::new(Kind::Label, "input_label", 2, 4);
     l.text = "~С~трока:".into();
     l.link = "input1".into();

@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use crate::builder::input_width;
-use crate::model::{build_order, camel, key_expr, parse_key, rust_str, Action, AppModel, Control, Form, Kind, MenuNode, Pal, Project};
+use crate::model::{build_order, camel, key_expr, parse_key, parse_tree, rust_str, Action, AppModel, Control, Form, Kind, MenuNode, Pal, Project};
 
 /// Метка сгенерированных файлов (первая строка).
 pub const GENERATED_MARK: &str = "// Сгенерировано TV Studio. Не редактируйте: файл перезаписывается.";
@@ -228,7 +228,7 @@ fn data_default(c: &Control) -> String {
     match c.kind {
         Kind::InputLine | Kind::ComboBox | Kind::Memo => format!("{}.to_string()", rust_str(&c.text)),
         Kind::CheckBoxes | Kind::RadioButtons => c.value.max(0).to_string(),
-        Kind::ListBox | Kind::ProgressBar => c.value.to_string(),
+        Kind::ListBox | Kind::ProgressBar | Kind::Table => c.value.to_string(),
         _ => "()".into(),
     }
 }
@@ -322,6 +322,46 @@ fn control_code(app: &AppModel, c: &Control) -> Vec<String> {
             }
             format!("ProgressBar::new({}, {})", r, c.max.max(1))
         }
+        Kind::Table => {
+            let (vr, sb) = scroll_code(c, &mut lines);
+            let cols = c.table_columns();
+            let headers: Vec<String> = cols.iter().map(|(t, _)| rust_str(t)).collect();
+            let mut m = format!("let {}_model = VecTableModel::new(\n    &[{}],\n    vec![\n", name, headers.join(", "));
+            for r in c.table_rows() {
+                let cells: Vec<String> = r.iter().map(|x| format!("{}.into()", rust_str(x))).collect();
+                m.push_str(&format!("        vec![{}],\n", cells.join(", ")));
+            }
+            m.push_str(&format!("    ],\n){};", if c.editable { "\n.editable(true)" } else { "" }));
+            lines.push(m);
+            let col_defs: Vec<String> = cols.iter().map(|(t, w)| format!("TableColumn::new({}).title({})", w, rust_str(t))).collect();
+            if c.value > 0 {
+                setup.push(format!("v.set_cursor({}, 0);", c.value));
+            }
+            format!(
+                "Table::new({}, Box::new({}_model), {}, None)\n        .with_columns(vec![{}])\n        .header({})\n        .grid({})\n        .editable({})\n        .row_numbers({})",
+                vr,
+                name,
+                sb,
+                col_defs.join(", "),
+                c.header,
+                c.grid,
+                c.editable,
+                c.row_numbers
+            )
+        }
+        Kind::TreeView => {
+            let (vr, sb) = scroll_code(c, &mut lines);
+            setup.push("v.vs.grow_mode = 0;".into());
+            let nodes: Vec<String> = parse_tree(&c.items).iter().map(|t| tree_code(t, c.expanded)).collect();
+            format!(
+                "TreeView::new(\n        {},\n        vec![\n            {},\n        ],\n        {},\n        None,\n    )\n    .lines({})\n    .checkboxes({})",
+                vr,
+                nodes.join(",\n            "),
+                sb,
+                c.lines,
+                c.checks
+            )
+        }
     };
     common_setup(c, if c.kind == Kind::Memo { "v.editor.vs" } else { "v.vs" }, &mut setup);
     if setup.is_empty() {
@@ -344,6 +384,29 @@ fn control_code(app: &AppModel, c: &Control) -> Vec<String> {
         lines.push(format!("d.add(History::new({}, {}, {}));", side, name, c.history));
     }
     lines
+}
+
+/// Полоса прокрутки элемента (в последнем столбце): строка вставки и
+/// (границы элемента, выражение id полосы).
+fn scroll_code(c: &Control, lines: &mut Vec<String>) -> (String, String) {
+    if c.scrollbar && c.w > 1 {
+        lines.push(format!("let {}_sb = d.add(ScrollBar::new({}));", c.name, rect(c.x + c.w - 1, c.y, c.x + c.w, c.y + c.h)));
+        (rect(c.x, c.y, c.x + c.w - 1, c.y + c.h), format!("Some({}_sb)", c.name))
+    } else {
+        (rect(c.x, c.y, c.x + c.w, c.y + c.h), "None".into())
+    }
+}
+
+/// Выражение `TreeNode` с детьми.
+fn tree_code(t: &crate::model::TreeItem, expanded: bool) -> String {
+    let mut s = format!("TreeNode::new({})", rust_str(&t.text));
+    if expanded && !t.children.is_empty() {
+        s.push_str(".expanded(true)");
+    }
+    for ch in &t.children {
+        s.push_str(&format!(".child({})", tree_code(ch, expanded)));
+    }
+    s
 }
 
 /// Код валидатора по описанию.
@@ -440,7 +503,9 @@ pub fn form_rs(p: &Project, f: &Form) -> String {
         let c = &f.controls[i];
         let _ = writeln!(s, "    // {} «{}»", c.kind.title(), c.name);
         for l in control_code(app, c) {
-            let _ = writeln!(s, "    {}", l);
+            for part in l.split('\n') {
+                let _ = writeln!(s, "    {}", part);
+            }
         }
     }
     let names: Vec<&str> = f.controls.iter().map(|c| c.name.as_str()).collect();

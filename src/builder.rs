@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use tvision::*;
 
-use crate::model::{build_order, Control, Form, Kind};
+use crate::model::{build_order, parse_tree, Control, Form, Kind, TreeItem};
 use crate::props::parse_range;
 
 /// Создать валидатор по описанию из свойства «Проверка».
@@ -35,6 +35,22 @@ pub fn input_width(c: &Control) -> i32 {
         _ => 0,
     };
     (c.w - extra).max(1)
+}
+
+/// Своя вертикальная полоса прокрутки — в последнем столбце элемента.
+/// Возвращает границы самого элемента и id полосы.
+fn with_scroll(d: &mut Dialog, c: &Control) -> (Rect, Option<ViewId>) {
+    if c.scrollbar && c.w > 1 {
+        let sb = d.add(ScrollBar::new(Rect::new(c.x + c.w - 1, c.y, c.x + c.w, c.y + c.h)));
+        (Rect::new(c.x, c.y, c.x + c.w - 1, c.y + c.h), Some(sb))
+    } else {
+        (c.rect(), None)
+    }
+}
+
+/// Узлы `TreeView` из разобранного дерева.
+pub fn tree_nodes(items: &[TreeItem], expanded: bool) -> Vec<TreeNode> {
+    items.iter().map(|t| TreeNode::new(&t.text).expanded(expanded && !t.children.is_empty()).children(tree_nodes(&t.children, expanded))).collect()
 }
 
 /// Общие флаги элемента: недоступность и контекст справки.
@@ -143,6 +159,30 @@ pub fn build_dialog(form: &Form, resolve: &dyn Fn(&str) -> u16) -> (Dialog, Hash
                 finish(&mut v.vs, c);
                 d.add(v)
             }
+            Kind::Table => {
+                let (tr, sb) = with_scroll(&mut d, c);
+                let cols = c.table_columns();
+                let headers: Vec<&str> = cols.iter().map(|(t, _)| t.as_str()).collect();
+                let model = VecTableModel::new(&headers, c.table_rows()).editable(c.editable);
+                let mut v = Table::new(tr, Box::new(model), sb, None)
+                    .with_columns(cols.iter().map(|(t, w)| TableColumn::new(*w).title(t)).collect())
+                    .header(c.header)
+                    .grid(c.grid)
+                    .editable(c.editable)
+                    .row_numbers(c.row_numbers);
+                if c.value > 0 {
+                    v.set_cursor(c.value as usize, 0);
+                }
+                finish(&mut v.vs, c);
+                d.add(v)
+            }
+            Kind::TreeView => {
+                let (tr, sb) = with_scroll(&mut d, c);
+                let mut v = TreeView::new(tr, tree_nodes(&parse_tree(&c.items), c.expanded), sb, None).lines(c.lines).checkboxes(c.checks);
+                v.vs.grow_mode = 0;
+                finish(&mut v.vs, c);
+                d.add(v)
+            }
         };
         ids.insert(c.name.clone(), id);
     }
@@ -161,6 +201,10 @@ pub fn describe_data(form: &Form, v: &Value) -> String {
         let shown = match val {
             Value::Str(s) => format!("{:?}", s),
             Value::U32(n) => format!("{} (0b{:b})", n, n),
+            Value::Int(n) if c.kind == Kind::Table => match c.table_rows().get(*n as usize) {
+                Some(r) => format!("строка {} «{}»", n, r.join(" | ")),
+                None => format!("строка {}", n),
+            },
             Value::Int(n) => match c.items.get(*n as usize) {
                 Some(it) => format!("{} «{}»", n, it),
                 None => n.to_string(),

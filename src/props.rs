@@ -23,6 +23,13 @@ pub enum Prop {
     Max,
     Scrollbar,
     Columns,
+    Header,
+    Grid,
+    Editable,
+    RowNumbers,
+    Checks,
+    Lines,
+    Expanded,
     Disabled,
     HelpCtx,
     // Свойства формы
@@ -49,9 +56,14 @@ impl Prop {
             Prop::Text => match kind {
                 Some(Kind::Button) | Some(Kind::Label) => "Надпись",
                 Some(Kind::InputLine) | Some(Kind::ComboBox) | Some(Kind::Memo) => "Нач. текст",
+                Some(Kind::Table) => "Строки",
                 _ => "Текст",
             },
-            Prop::Items => "Пункты",
+            Prop::Items => match kind {
+                Some(Kind::Table) => "Столбцы",
+                Some(Kind::TreeView) => "Узлы",
+                _ => "Пункты",
+            },
             Prop::Command => "Команда",
             Prop::Default => "По умолчанию",
             Prop::Link => "Связь",
@@ -61,11 +73,19 @@ impl Prop {
             Prop::Value => match kind {
                 Some(Kind::CheckBoxes) => "Отмечены",
                 Some(Kind::RadioButtons) | Some(Kind::ListBox) => "Выбран",
+                Some(Kind::Table) => "Строка",
                 _ => "Значение",
             },
             Prop::Max => "Максимум",
             Prop::Scrollbar => "Прокрутка",
             Prop::Columns => "Столбцы",
+            Prop::Header => "Заголовки",
+            Prop::Grid => "Сетка",
+            Prop::Editable => "Правка",
+            Prop::RowNumbers => "Номера строк",
+            Prop::Checks => "Флажки",
+            Prop::Lines => "Линии",
+            Prop::Expanded => "Раскрыто",
             Prop::Disabled => "Недоступен",
             Prop::HelpCtx | Prop::FormHelp => "Справка",
             Prop::FormTitle => "Заголовок",
@@ -79,9 +99,19 @@ impl Prop {
         match self {
             Prop::Name | Prop::FormName => "идентификатор Rust: латиница, цифры, _",
             Prop::Text => "~X~ — горячая буква, \\n — перевод строки, \\x03 в начале — по центру",
-            Prop::Items => "пункты через | (в диалоге свойств — по строке)",
+            Prop::Items => "через |; таблица: Имя:20; дерево: > — уровень вложенности",
             Prop::Command => "cm::OK, cm::CANCEL… или имя своей команды",
-            Prop::Default | Prop::Scrollbar | Prop::Disabled | Prop::FormCentered => "да / нет",
+            Prop::Default
+            | Prop::Scrollbar
+            | Prop::Disabled
+            | Prop::FormCentered
+            | Prop::Header
+            | Prop::Grid
+            | Prop::Editable
+            | Prop::RowNumbers
+            | Prop::Checks
+            | Prop::Lines
+            | Prop::Expanded => "да / нет",
             Prop::Link => "имя элемента, который выбирает метка",
             Prop::Validator => "picture:###-## | range:0..100 | filter:0123456789 | lookup:a|b",
             Prop::History => "номер списка истории, 0 — без истории",
@@ -99,7 +129,20 @@ impl Prop {
 
     /// Логическое ли свойство.
     pub fn is_bool(self) -> bool {
-        matches!(self, Prop::Default | Prop::Scrollbar | Prop::Disabled | Prop::FormCentered)
+        matches!(
+            self,
+            Prop::Default
+                | Prop::Scrollbar
+                | Prop::Disabled
+                | Prop::FormCentered
+                | Prop::Header
+                | Prop::Grid
+                | Prop::Editable
+                | Prop::RowNumbers
+                | Prop::Checks
+                | Prop::Lines
+                | Prop::Expanded
+        )
     }
 }
 
@@ -118,6 +161,8 @@ pub fn control_props(kind: Kind) -> Vec<Prop> {
         Kind::ComboBox => &[Text, Items, MaxLen],
         Kind::ScrollBar => &[],
         Kind::ProgressBar => &[Value, Max],
+        Kind::Table => &[Items, Text, Value, Header, Grid, Editable, RowNumbers, Scrollbar],
+        Kind::TreeView => &[Items, Expanded, Lines, Checks, Scrollbar],
     });
     v.push(Disabled);
     v.push(HelpCtx);
@@ -230,6 +275,7 @@ fn get_control(c: &Control, p: Prop) -> String {
         Prop::W => c.w.to_string(),
         Prop::H => c.h.to_string(),
         Prop::Text => escape(&c.text),
+        Prop::Items if c.kind == Kind::TreeView => c.items.iter().map(|s| tree_to_line(s)).collect::<Vec<_>>().join(" | "),
         Prop::Items => c.items.join(" | "),
         Prop::Command => c.command.clone(),
         Prop::Default => yes_no(c.default),
@@ -241,6 +287,13 @@ fn get_control(c: &Control, p: Prop) -> String {
         Prop::Max => c.max.to_string(),
         Prop::Scrollbar => yes_no(c.scrollbar),
         Prop::Columns => c.columns.to_string(),
+        Prop::Header => yes_no(c.header),
+        Prop::Grid => yes_no(c.grid),
+        Prop::Editable => yes_no(c.editable),
+        Prop::RowNumbers => yes_no(c.row_numbers),
+        Prop::Checks => yes_no(c.checks),
+        Prop::Lines => yes_no(c.lines),
+        Prop::Expanded => yes_no(c.expanded),
         Prop::Disabled => yes_no(c.disabled),
         Prop::HelpCtx => c.help_ctx.to_string(),
         _ => String::new(),
@@ -265,12 +318,27 @@ pub fn set_full(form: &mut Form, sel: Option<usize>, p: Prop, v: &str) -> Result
             Ok(())
         }
         (Some(i), Prop::Items) if i < form.controls.len() => {
-            form.controls[i].items = v.lines().map(|l| l.trim_end().to_string()).filter(|l| !l.is_empty()).collect();
+            let tree = form.controls[i].kind == Kind::TreeView;
+            form.controls[i].items =
+                v.lines().map(|l| if tree { l.trim_end().to_string() } else { l.trim().to_string() }).filter(|l| !l.trim().is_empty()).collect();
             fit_cluster(&mut form.controls[i]);
             Ok(())
         }
         _ => set(form, sel, p, v),
     }
+}
+
+/// Узел дерева «  Письма» → «>Письма» (уровень — знаками `>`).
+fn tree_to_line(s: &str) -> String {
+    let d = (s.len() - s.trim_start().len()) / 2;
+    format!("{}{}", ">".repeat(d), s.trim())
+}
+
+/// «>Письма» → «  Письма».
+fn line_to_tree(s: &str) -> String {
+    let t = s.trim();
+    let d = t.chars().take_while(|&c| c == '>').count();
+    format!("{}{}", "  ".repeat(d), t[d..].trim())
 }
 
 /// Высота флажков/переключателей не меньше числа пунктов (как в DLGDSN).
@@ -320,6 +388,9 @@ pub fn set(form: &mut Form, sel: Option<usize>, p: Prop, v: &str) -> Result<(), 
             Prop::W => c.w = (int(v)? as i32).max(1),
             Prop::H => c.h = (int(v)? as i32).max(1),
             Prop::Text => c.text = unescape(v),
+            Prop::Items if c.kind == Kind::TreeView => {
+                c.items = v.split('|').map(line_to_tree).filter(|s| !s.trim().is_empty()).collect();
+            }
             Prop::Items => {
                 c.items = v.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                 fit_cluster(c);
@@ -337,6 +408,13 @@ pub fn set(form: &mut Form, sel: Option<usize>, p: Prop, v: &str) -> Result<(), 
             Prop::Max => c.max = int(v)?.max(1),
             Prop::Scrollbar => c.scrollbar = parse_bool(v)?,
             Prop::Columns => c.columns = int(v)?.clamp(1, 16),
+            Prop::Header => c.header = parse_bool(v)?,
+            Prop::Grid => c.grid = parse_bool(v)?,
+            Prop::Editable => c.editable = parse_bool(v)?,
+            Prop::RowNumbers => c.row_numbers = parse_bool(v)?,
+            Prop::Checks => c.checks = parse_bool(v)?,
+            Prop::Lines => c.lines = parse_bool(v)?,
+            Prop::Expanded => c.expanded = parse_bool(v)?,
             Prop::Disabled => c.disabled = parse_bool(v)?,
             Prop::HelpCtx => c.help_ctx = int(v)?.clamp(0, 65535),
             _ => return Err("у элемента нет такого свойства".into()),
@@ -403,6 +481,24 @@ mod tests {
         set(&mut f, None, Prop::FormPalette, "синий").unwrap();
         assert_eq!(f.palette, Pal::Blue);
         assert!(set(&mut f, Some(1), Prop::Validator, "range:1..x").is_err());
+    }
+
+    #[test]
+    fn tree_and_table_props() {
+        let mut f = about_form("x");
+        f.controls.push(crate::model::Control::new(Kind::TreeView, "tree", 2, 2));
+        let i = f.controls.len() - 1;
+        assert_eq!(get(&f, Some(i), Prop::Items), "Документы | >Письма | >Отчёты | Музыка | Фото | >2026");
+        set(&mut f, Some(i), Prop::Items, "А | >Б | >>В").unwrap();
+        assert_eq!(f.controls[i].items, vec!["А", "  Б", "    В"]);
+        let t = crate::model::parse_tree(&f.controls[i].items);
+        assert_eq!(t[0].children[0].children[0].text, "В");
+        set(&mut f, Some(i), Prop::Checks, "да").unwrap();
+        assert!(f.controls[i].checks);
+        f.controls.push(crate::model::Control::new(Kind::Table, "table", 2, 2));
+        let c = f.controls.last().unwrap();
+        assert_eq!(c.table_columns(), vec![("Имя".to_string(), 16), ("Телефон".to_string(), 14)]);
+        assert_eq!(c.table_rows()[1], vec!["Борис", "234-56-78"]);
     }
 
     #[test]

@@ -135,6 +135,8 @@ pub fn icon(k: Kind) -> &'static str {
         Kind::ComboBox => "▒↓ ",
         Kind::ScrollBar => "↕  ",
         Kind::ProgressBar => "█░ ",
+        Kind::Table => "▦  ",
+        Kind::TreeView => "├─ ",
     }
 }
 

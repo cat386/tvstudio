@@ -33,11 +33,13 @@ pub enum Kind {
     ComboBox,
     ScrollBar,
     ProgressBar,
+    Table,
+    TreeView,
 }
 
 impl Kind {
     /// Все виды — в порядке палитры компонентов.
-    pub const ALL: [Kind; 11] = [
+    pub const ALL: [Kind; 13] = [
         Kind::StaticText,
         Kind::Label,
         Kind::Button,
@@ -49,6 +51,8 @@ impl Kind {
         Kind::ComboBox,
         Kind::ScrollBar,
         Kind::ProgressBar,
+        Kind::Table,
+        Kind::TreeView,
     ];
 
     /// Имя для файлов формы.
@@ -65,6 +69,8 @@ impl Kind {
             Kind::ComboBox => "combo_box",
             Kind::ScrollBar => "scroll_bar",
             Kind::ProgressBar => "progress_bar",
+            Kind::Table => "table",
+            Kind::TreeView => "tree_view",
         }
     }
 
@@ -86,6 +92,8 @@ impl Kind {
             Kind::ComboBox => "Поле со списком",
             Kind::ScrollBar => "Полоса прокрутки",
             Kind::ProgressBar => "Полоса выполнения",
+            Kind::Table => "Таблица",
+            Kind::TreeView => "Дерево",
         }
     }
 
@@ -103,6 +111,8 @@ impl Kind {
             Kind::ComboBox => "InputLine + Combo",
             Kind::ScrollBar => "ScrollBar",
             Kind::ProgressBar => "ProgressBar",
+            Kind::Table => "Table",
+            Kind::TreeView => "TreeView",
         }
     }
 
@@ -120,6 +130,8 @@ impl Kind {
             Kind::ComboBox => "combo",
             Kind::ScrollBar => "scroll",
             Kind::ProgressBar => "progress",
+            Kind::Table => "table",
+            Kind::TreeView => "tree",
         }
     }
 
@@ -136,17 +148,33 @@ impl Kind {
             Kind::ComboBox => (24, 1),
             Kind::ScrollBar => (1, 6),
             Kind::ProgressBar => (30, 1),
+            Kind::Table => (40, 6),
+            Kind::TreeView => (30, 8),
         }
     }
 
     /// Участвует ли элемент в обмене данными диалога (`get_data`/`set_data`).
     pub fn has_data(self) -> bool {
-        matches!(self, Kind::InputLine | Kind::CheckBoxes | Kind::RadioButtons | Kind::ListBox | Kind::Memo | Kind::ComboBox | Kind::ProgressBar)
+        matches!(
+            self,
+            Kind::InputLine | Kind::CheckBoxes | Kind::RadioButtons | Kind::ListBox | Kind::Memo | Kind::ComboBox | Kind::ProgressBar | Kind::Table
+        )
     }
 
     /// Получает ли элемент фокус (участвует в переходе по Tab).
     pub fn selectable(self) -> bool {
-        matches!(self, Kind::Button | Kind::InputLine | Kind::CheckBoxes | Kind::RadioButtons | Kind::ListBox | Kind::Memo | Kind::ComboBox)
+        matches!(
+            self,
+            Kind::Button
+                | Kind::InputLine
+                | Kind::CheckBoxes
+                | Kind::RadioButtons
+                | Kind::ListBox
+                | Kind::Memo
+                | Kind::ComboBox
+                | Kind::Table
+                | Kind::TreeView
+        )
     }
 
     /// Тип поля в структуре данных формы.
@@ -154,7 +182,7 @@ impl Kind {
         match self {
             Kind::InputLine | Kind::Memo | Kind::ComboBox => "String",
             Kind::CheckBoxes | Kind::RadioButtons => "u32",
-            Kind::ListBox | Kind::ProgressBar => "i64",
+            Kind::ListBox | Kind::ProgressBar | Kind::Table => "i64",
             _ => "()",
         }
     }
@@ -197,6 +225,15 @@ pub struct Control {
     pub scrollbar: bool,
     /// Список: число столбцов.
     pub columns: i64,
+    /// Таблица: строка заголовков, линии сетки, правка ячеек, номера строк.
+    pub header: bool,
+    pub grid: bool,
+    pub editable: bool,
+    pub row_numbers: bool,
+    /// Дерево: флажки у узлов, линии ветвей, узлы раскрыты.
+    pub checks: bool,
+    pub lines: bool,
+    pub expanded: bool,
     /// Элемент недоступен.
     pub disabled: bool,
     /// Контекст справки.
@@ -226,6 +263,13 @@ impl Control {
             max: 100,
             scrollbar: false,
             columns: 1,
+            header: true,
+            grid: true,
+            editable: false,
+            row_numbers: false,
+            checks: false,
+            lines: true,
+            expanded: true,
             disabled: false,
             help_ctx: 0,
         };
@@ -247,6 +291,17 @@ impl Control {
                 c.max_len = 32;
             }
             Kind::ProgressBar => c.value = 40,
+            Kind::Table => {
+                // Столбцы — «заголовок:ширина», строки — ячейки через |.
+                c.items = vec!["Имя:16".into(), "Телефон:14".into()];
+                c.text = "Аня|123-45-67\nБорис|234-56-78\nВера|345-67-89".into();
+                c.scrollbar = true;
+            }
+            Kind::TreeView => {
+                // Узлы — по строке, вложенность — два пробела на уровень.
+                c.items = ["Документы", "  Письма", "  Отчёты", "Музыка", "Фото", "  2026"].iter().map(|s| s.to_string()).collect();
+                c.scrollbar = true;
+            }
             _ => {}
         }
         c
@@ -301,6 +356,19 @@ impl Control {
         if self.columns != 1 {
             p.push(("columns", Json::i(self.columns)));
         }
+        for (k, v, dv) in [
+            ("header", self.header, d.header),
+            ("grid", self.grid, d.grid),
+            ("editable", self.editable, d.editable),
+            ("row_numbers", self.row_numbers, d.row_numbers),
+            ("checks", self.checks, d.checks),
+            ("lines", self.lines, d.lines),
+            ("expanded", self.expanded, d.expanded),
+        ] {
+            if v != dv {
+                p.push((k, Json::Bool(v)));
+            }
+        }
         if self.disabled {
             p.push(("disabled", Json::Bool(true)));
         }
@@ -327,10 +395,83 @@ impl Control {
         c.max = j.int("max", c.max);
         c.scrollbar = j.bool("scrollbar", c.scrollbar);
         c.columns = j.int("columns", 1).max(1);
+        c.header = j.bool("header", c.header);
+        c.grid = j.bool("grid", c.grid);
+        c.editable = j.bool("editable", c.editable);
+        c.row_numbers = j.bool("row_numbers", c.row_numbers);
+        c.checks = j.bool("checks", c.checks);
+        c.lines = j.bool("lines", c.lines);
+        c.expanded = j.bool("expanded", c.expanded);
         c.disabled = j.bool("disabled", false);
         c.help_ctx = j.int("help_ctx", 0);
         Ok(c)
     }
+}
+
+/// Столбец таблицы из записи «Заголовок:ширина» (ширина не обязательна).
+pub fn parse_column(s: &str) -> (String, Option<i32>) {
+    match s.rsplit_once(':') {
+        Some((t, w)) if w.trim().parse::<i32>().is_ok() => (t.trim().to_string(), w.trim().parse::<i32>().ok().map(|w| w.clamp(1, 200))),
+        _ => (s.trim().to_string(), None),
+    }
+}
+
+impl Control {
+    /// Таблица: заголовки и ширины столбцов (ширина по умолчанию — по
+    /// самому длинному тексту столбца).
+    pub fn table_columns(&self) -> Vec<(String, i32)> {
+        let rows = self.table_rows();
+        self.items
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let (t, w) = parse_column(s);
+                let auto = rows.iter().map(|r| r.get(i).map(|c| c.chars().count()).unwrap_or(0)).max().unwrap_or(0).max(t.chars().count()) as i32 + 1;
+                (t, w.unwrap_or(auto.min(40)))
+            })
+            .collect()
+    }
+
+    /// Таблица: строки данных (ячейки через `|`), дополненные до числа столбцов.
+    pub fn table_rows(&self) -> Vec<Vec<String>> {
+        let n = self.items.len();
+        self.text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                let mut r: Vec<String> = l.split('|').map(|c| c.trim().to_string()).collect();
+                r.resize(n.max(r.len()), String::new());
+                r
+            })
+            .collect()
+    }
+}
+
+/// Узел дерева, разобранный из строк с отступами.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TreeItem {
+    pub text: String,
+    pub children: Vec<TreeItem>,
+}
+
+/// Строки с отступом (два пробела на уровень) → дерево.
+pub fn parse_tree(items: &[String]) -> Vec<TreeItem> {
+    fn depth(s: &str) -> usize {
+        (s.len() - s.trim_start().len()) / 2
+    }
+    fn build(items: &[String], i: &mut usize, d: usize) -> Vec<TreeItem> {
+        let mut out = Vec::new();
+        while *i < items.len() && depth(&items[*i]) >= d {
+            let text = items[*i].trim().to_string();
+            *i += 1;
+            let children = build(items, i, d + 1);
+            out.push(TreeItem { text, children });
+        }
+        out
+    }
+    let items: Vec<String> = items.iter().filter(|s| !s.trim().is_empty()).cloned().collect();
+    let mut i = 0;
+    build(&items, &mut i, 0)
 }
 
 // ======================================================================
