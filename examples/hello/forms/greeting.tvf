@@ -1,0 +1,69 @@
+{
+  "format": "tvstudio-form",
+  "version": 1,
+  "name": "greeting",
+  "title": "Hello, World!",
+  "x": 25,
+  "y": 5,
+  "w": 30,
+  "h": 11,
+  "centered": false,
+  "palette": "gray",
+  "help_ctx": 0,
+  "controls": [
+    {
+      "kind": "static_text",
+      "name": "question",
+      "x": 3,
+      "y": 5,
+      "w": 12,
+      "h": 1,
+      "text": "How are you?",
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "terrific",
+      "x": 16,
+      "y": 2,
+      "w": 12,
+      "h": 2,
+      "text": "Terrific",
+      "command": "cm::CANCEL",
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "ok",
+      "x": 16,
+      "y": 4,
+      "w": 12,
+      "h": 2,
+      "text": "Ok",
+      "command": "cm::CANCEL",
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "lousy",
+      "x": 16,
+      "y": 6,
+      "w": 12,
+      "h": 2,
+      "text": "Lousy",
+      "command": "cm::CANCEL",
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "cancel",
+      "x": 16,
+      "y": 8,
+      "w": 12,
+      "h": 2,
+      "text": "Cancel",
+      "command": "cm::CANCEL",
+      "scrollbar": false
+    }
+  ]
+}

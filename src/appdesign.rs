@@ -33,8 +33,8 @@ pub fn flatten(items: &[MenuNode], depth: usize, out: &mut Vec<MenuRow>) {
             MenuNode::Separator => {
                 out.push(MenuRow { depth, sub: false, sep: true, title: String::new(), command: String::new(), key: String::new(), help: 0 })
             }
-            MenuNode::Sub { title, children } => {
-                out.push(MenuRow { depth, sub: true, sep: false, title: title.clone(), command: String::new(), key: String::new(), help: 0 });
+            MenuNode::Sub { title, key, help, children } => {
+                out.push(MenuRow { depth, sub: true, sep: false, title: title.clone(), command: String::new(), key: key.clone(), help: *help });
                 flatten(children, depth + 1, out);
             }
         }
@@ -51,7 +51,7 @@ pub fn unflatten(rows: &[MenuRow]) -> Vec<MenuNode> {
             *i += 1;
             if r.sub {
                 let children = build(rows, i, depth + 1);
-                out.push(MenuNode::Sub { title: r.title.clone(), children });
+                out.push(MenuNode::Sub { title: r.title.clone(), key: r.key.clone(), help: r.help, children });
             } else if r.sep {
                 out.push(MenuNode::Separator);
             } else {
@@ -259,10 +259,12 @@ impl ListEditor {
                     self.rows[p.index].clone()
                 };
                 if r.sub {
-                    let mut d = Dialog::centered(56, 9, "Подменю");
+                    let mut d = Dialog::centered(56, 12, "Подменю");
                     let first = field(&mut d, 2, "~Н~адпись", &r.title, None, 34);
-                    d.add(StaticText::new(Rect::new(2, 4, 54, 5), "~Ф~айл — буква в тильдах выбирается Alt+буква."));
-                    ok_cancel(&mut d, 6, 56);
+                    field(&mut d, 4, "К~л~авиша", &r.key, None, 16);
+                    field(&mut d, 6, "~С~правка", &r.help.to_string(), None, 8);
+                    d.add(StaticText::new(Rect::new(2, 7, 54, 8), "~Ф~айл — буква в тильдах выбирается Alt+буква."));
+                    ok_cancel(&mut d, 9, 56);
                     d.select(first);
                     d
                 } else {
@@ -373,7 +375,13 @@ impl ListEditor {
                     return Err("Надпись не может быть пустой.".into());
                 }
                 let mut row = MenuRow { depth, sub: is_sub, sep: false, title, command: String::new(), key: String::new(), help: 0 };
-                if !is_sub {
+                if is_sub {
+                    row.key = s(1).trim().to_string();
+                    if !row.key.is_empty() && parse_key(&row.key).is_none() {
+                        return Err(format!("Непонятная клавиша «{}». Примеры: Alt+Space, F2.", row.key));
+                    }
+                    row.help = s(2).trim().parse().unwrap_or(0);
+                } else {
                     row.command = self.ensure_command(&s(1))?;
                     row.key = s(2).trim().to_string();
                     if !row.key.is_empty() && parse_key(&row.key).is_none() {

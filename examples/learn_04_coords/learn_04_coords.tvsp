@@ -1,0 +1,38 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "learn_04_coords",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "learn_04_coords",
+    "russian": false,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~F2~ Диалог",
+        "key": "F2",
+        "command": "CM_LAYOUT"
+      },
+      {
+        "text": "~F5~ Распахнуть",
+        "key": "F5",
+        "command": "cm::ZOOM"
+      },
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_LAYOUT",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "hello",
+  "forms": ["greeting"],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "hello",
+    "russian": false,
+    "startup_form": "",
+    "menu": [
+      {
+        "title": "~H~ello",
+        "items": [
+          {
+            "title": "~G~reeting...",
+            "command": "GREET_THEM_CMD",
+            "key": "Alt-G",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "E~x~it",
+            "command": "cm::QUIT",
+            "key": "Alt-X",
+            "help": 0
+          }
+        ]
+      }
+    ],
+    "status": [
+      {
+        "text": "~Alt-X~ Exit",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      },
+      {
+        "text": "",
+        "key": "F10",
+        "command": "cm::MENU"
+      }
+    ],
+    "commands": [
+      {
+        "name": "GREET_THEM_CMD",
+        "value": 100,
+        "action": "",
+        "comment": "Своя команда приложения (`GreetThemCmd`)."
+      }
+    ]
+  }
+}

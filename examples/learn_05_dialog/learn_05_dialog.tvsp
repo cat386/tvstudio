@@ -1,0 +1,33 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "learn_05_dialog",
+  "forms": ["name_dialog"],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "learn_05_dialog",
+    "russian": true,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~F2~ Знакомство",
+        "key": "F2",
+        "command": "CM_ASK"
+      },
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_ASK",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+[package]
+name = "learn_02_menu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tvision-rs = { path = "../../../tvision-rs" }

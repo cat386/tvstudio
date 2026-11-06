@@ -1,0 +1,272 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "tvdemo",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "tvdemo",
+    "russian": false,
+    "startup_form": "",
+    "menu": [
+      {
+        "title": "~≡~",
+        "key": "Alt+Space",
+        "help": 7,
+        "items": [
+          {
+            "title": "~A~bout...",
+            "command": "CM_ABOUT",
+            "key": "",
+            "help": 8
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~V~ideo mode",
+            "command": "CM_VIDEO_MODE",
+            "key": "",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~P~uzzle",
+            "command": "CM_PUZZLE",
+            "key": "",
+            "help": 9
+          },
+          {
+            "title": "Ca~l~endar",
+            "command": "CM_CALENDAR",
+            "key": "",
+            "help": 10
+          },
+          {
+            "title": "Ascii ~T~able",
+            "command": "CM_ASCII",
+            "key": "",
+            "help": 11
+          },
+          {
+            "title": "~C~alculator",
+            "command": "CM_CALC",
+            "key": "",
+            "help": 12
+          },
+          {
+            "title": "~E~vent Viewer",
+            "command": "CM_EVENT_VIEW",
+            "key": "Alt-0",
+            "help": 0
+          }
+        ]
+      },
+      {
+        "title": "~F~ile",
+        "help": 13,
+        "items": [
+          {
+            "title": "~O~pen...",
+            "command": "CM_OPEN",
+            "key": "F3",
+            "help": 14
+          },
+          {
+            "title": "~C~hange Dir...",
+            "command": "CM_CH_DIR",
+            "key": "",
+            "help": 15
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~D~OS Shell",
+            "command": "cm::DOS_SHELL",
+            "key": "",
+            "help": 16
+          },
+          {
+            "title": "E~x~it",
+            "command": "cm::QUIT",
+            "key": "Alt-X",
+            "help": 17
+          }
+        ]
+      },
+      {
+        "title": "~W~indows",
+        "help": 18,
+        "items": [
+          {
+            "title": "~R~esize/move",
+            "command": "cm::RESIZE",
+            "key": "Ctrl-F5",
+            "help": 19
+          },
+          {
+            "title": "~Z~oom",
+            "command": "cm::ZOOM",
+            "key": "F5",
+            "help": 20
+          },
+          {
+            "title": "~N~ext",
+            "command": "cm::NEXT",
+            "key": "F6",
+            "help": 23
+          },
+          {
+            "title": "~C~lose",
+            "command": "cm::CLOSE",
+            "key": "Alt-F3",
+            "help": 25
+          },
+          {
+            "title": "~T~ile",
+            "command": "cm::TILE",
+            "key": "",
+            "help": 21
+          },
+          {
+            "title": "C~a~scade",
+            "command": "cm::CASCADE",
+            "key": "",
+            "help": 22
+          }
+        ]
+      },
+      {
+        "title": "~O~ptions",
+        "help": 26,
+        "items": [
+          {
+            "title": "~M~ouse...",
+            "command": "CM_MOUSE",
+            "key": "",
+            "help": 27
+          },
+          {
+            "title": "~C~olors...",
+            "command": "CM_COLOR",
+            "key": "",
+            "help": 28
+          },
+          {
+            "title": "~B~ackground...",
+            "command": "CM_CH_BACKGROUND",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~D~esktop",
+            "items": [
+              {
+                "title": "~S~ave desktop",
+                "command": "CM_SAVE_DESKTOP",
+                "key": "",
+                "help": 29
+              },
+              {
+                "title": "~R~etrieve desktop",
+                "command": "CM_RESTORE_DESKTOP",
+                "key": "",
+                "help": 30
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "status": [],
+    "commands": [
+      {
+        "name": "CM_ABOUT",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_PUZZLE",
+        "value": 101,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_CALENDAR",
+        "value": 102,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_ASCII",
+        "value": 103,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_CALC",
+        "value": 104,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_OPEN",
+        "value": 105,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_CH_DIR",
+        "value": 106,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_MOUSE",
+        "value": 108,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_COLOR",
+        "value": 109,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_SAVE_DESKTOP",
+        "value": 110,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_RESTORE_DESKTOP",
+        "value": 111,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_EVENT_VIEW",
+        "value": 112,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_CH_BACKGROUND",
+        "value": 113,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_VIDEO_MODE",
+        "value": 115,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

@@ -102,10 +102,20 @@ fn menu_code(app: &AppModel, items: &[MenuNode], indent: usize, out: &mut String
                 }
             }
             MenuNode::Separator => out.push_str("    .separator()"),
-            MenuNode::Sub { title, children } => {
-                let _ = write!(out, "    .submenu(\n{}        {},\n{}        ", pad, rust_str(title), pad);
+            MenuNode::Sub { title, key, help, children } => {
+                match key_code(key) {
+                    Some(k) => {
+                        let _ = write!(out, "    .submenu_key(\n{}        {},\n{}        {},\n{}        ", pad, rust_str(title), pad, k, pad);
+                    }
+                    None => {
+                        let _ = write!(out, "    .submenu(\n{}        {},\n{}        ", pad, rust_str(title), pad);
+                    }
+                }
                 menu_code(app, children, indent + 2, out);
                 let _ = write!(out, ",\n{}    )", pad);
+                if *help != 0 {
+                    let _ = write!(out, "\n{}    .help({})", pad, help);
+                }
             }
         }
     }
@@ -118,7 +128,7 @@ pub fn ui_rs(p: &Project, forms: &[Form]) -> String {
     let _ = writeln!(s, "{}", GENERATED_MARK);
     let _ = writeln!(s, "//! Каркас программы «{}»: команды, меню, строка состояния, действия.", app.title);
     let _ = writeln!(s, "//! Источник — модель проекта `{}.tvsp` (Проект → Модель приложения).", p.name);
-    s.push_str("#![allow(dead_code, unused_imports)]\n\nuse tvision::*;\n\n");
+    s.push_str("#![allow(dead_code, unused_imports, unused_variables)]\n\nuse tvision::*;\n\n");
 
     // --- Команды ---
     s.push_str("/// Свои команды программы. Номера 100..=255 можно запрещать\n");
@@ -493,7 +503,12 @@ pub fn check_project(p: &Project, forms: &[Form]) -> Vec<String> {
                         out.push(format!("меню «{}»: непонятная клавиша «{}»", title, key));
                     }
                 }
-                MenuNode::Sub { children, .. } => walk(app, children, out),
+                MenuNode::Sub { title, key, children, .. } => {
+                    if !key.trim().is_empty() && parse_key(key).is_none() {
+                        out.push(format!("подменю «{}»: непонятная клавиша «{}»", title, key));
+                    }
+                    walk(app, children, out)
+                }
                 MenuNode::Separator => {}
             }
         }

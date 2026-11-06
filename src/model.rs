@@ -545,16 +545,19 @@ pub const BUILTIN_COMMANDS: &[(&str, u16, &str)] = &[
     ("cm::TILE", 25, "окна мозаикой"),
     ("cm::CASCADE", 26, "окна каскадом"),
     ("cm::REDO", 27, "повторить"),
+    ("cm::DEFAULT", 14, "кнопка по умолчанию"),
     ("cm::NEW", 30, "новый"),
     ("cm::OPEN", 31, "открыть"),
     ("cm::SAVE", 32, "сохранить"),
     ("cm::SAVE_AS", 33, "сохранить как"),
     ("cm::SAVE_ALL", 34, "сохранить всё"),
+    ("cm::CH_DIR", 35, "сменить каталог"),
     ("cm::DOS_SHELL", 36, "оболочка ОС"),
     ("cm::CLOSE_ALL", 37, "закрыть все окна"),
     ("cm::FIND", 82, "найти"),
     ("cm::REPLACE", 83, "заменить"),
     ("cm::SEARCH_AGAIN", 84, "искать дальше"),
+    ("cm::SELECT_ALL", 524, "выделить всё"),
 ];
 
 /// Действие, которое выполняет команда (в сгенерированном `ui::handle_command`).
@@ -611,8 +614,20 @@ pub struct CommandDef {
 /// Пункт меню.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuNode {
-    Item { title: String, command: String, key: String, help: i64 },
-    Sub { title: String, children: Vec<MenuNode> },
+    Item {
+        title: String,
+        command: String,
+        key: String,
+        help: i64,
+    },
+    /// Подменю; `key` — клавиша, раскрывающая его (как Alt+Пробел у «≡»),
+    /// `help` — контекст справки.
+    Sub {
+        title: String,
+        key: String,
+        help: i64,
+        children: Vec<MenuNode>,
+    },
     Separator,
 }
 
@@ -622,8 +637,16 @@ impl MenuNode {
             MenuNode::Item { title, command, key, help } => {
                 Json::obj(vec![("title", Json::s(title)), ("command", Json::s(command)), ("key", Json::s(key)), ("help", Json::i(*help))])
             }
-            MenuNode::Sub { title, children } => {
-                Json::obj(vec![("title", Json::s(title)), ("items", Json::Arr(children.iter().map(|c| c.to_json()).collect()))])
+            MenuNode::Sub { title, key, help, children } => {
+                let mut v = vec![("title", Json::s(title))];
+                if !key.is_empty() {
+                    v.push(("key", Json::s(key)));
+                }
+                if *help != 0 {
+                    v.push(("help", Json::i(*help)));
+                }
+                v.push(("items", Json::Arr(children.iter().map(|c| c.to_json()).collect())));
+                Json::obj(v)
             }
             MenuNode::Separator => Json::obj(vec![("separator", Json::Bool(true))]),
         }
@@ -632,7 +655,12 @@ impl MenuNode {
         if j.bool("separator", false) {
             MenuNode::Separator
         } else if j.get("items").is_some() {
-            MenuNode::Sub { title: j.str("title"), children: j.arr("items").iter().map(MenuNode::from_json).collect() }
+            MenuNode::Sub {
+                title: j.str("title"),
+                key: j.str("key"),
+                help: j.int("help", 0),
+                children: j.arr("items").iter().map(MenuNode::from_json).collect(),
+            }
         } else {
             MenuNode::Item { title: j.str("title"), command: j.str("command"), key: j.str("key"), help: j.int("help", 0) }
         }
@@ -671,10 +699,14 @@ impl AppModel {
             menu: vec![
                 MenuNode::Sub {
                     title: "~Ф~айл".into(),
+                    key: String::new(),
+                    help: 0,
                     children: vec![item("~О~ программе...", "ABOUT", ""), MenuNode::Separator, item("~В~ыход", "cm::QUIT", "Alt+X")],
                 },
                 MenuNode::Sub {
                     title: "~О~кно".into(),
+                    key: String::new(),
+                    help: 0,
                     children: vec![
                         item("~С~ледующее", "cm::NEXT", "F6"),
                         item("Р~а~спахнуть", "cm::ZOOM", "F5"),
@@ -921,7 +953,7 @@ impl Project {
         }
         if let Dependency::Path(p) = dep {
             // Относительный путь считается от каталога проекта (как в Cargo).
-            let lib = if Path::new(p).is_absolute() { PathBuf::from(p) } else { dir.join(p) };
+            let lib = normalize(&if Path::new(p).is_absolute() { PathBuf::from(p) } else { dir.join(p) });
             if !lib.join("Cargo.toml").exists() {
                 return Err(format!(
                     "по пути «{}» нет tvision-rs (не найден {}).\nУкажите каталог библиотеки или ссылку git https://github.com/cat386/tvision-rs",
@@ -946,6 +978,25 @@ impl Project {
         p.save()?;
         Ok(p)
     }
+}
+
+/// Убрать из пути `.` и `..` без обращения к диску (каталога проекта
+/// ещё нет, и ОС не раскрыла бы `..` через него).
+pub fn normalize(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Форма «О программе» нового проекта.

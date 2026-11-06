@@ -1,0 +1,248 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "tvedit",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "tvedit",
+    "russian": false,
+    "startup_form": "",
+    "menu": [
+      {
+        "title": "~F~ile",
+        "items": [
+          {
+            "title": "~O~pen",
+            "command": "cm::OPEN",
+            "key": "F3",
+            "help": 0
+          },
+          {
+            "title": "~N~ew",
+            "command": "cm::NEW",
+            "key": "Ctrl-N",
+            "help": 0
+          },
+          {
+            "title": "~S~ave",
+            "command": "cm::SAVE",
+            "key": "F2",
+            "help": 0
+          },
+          {
+            "title": "S~a~ve as...",
+            "command": "cm::SAVE_AS",
+            "key": "",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~C~hange dir...",
+            "command": "CM_CHANGE_DRCT",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~D~OS shell",
+            "command": "cm::DOS_SHELL",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "E~x~it",
+            "command": "cm::QUIT",
+            "key": "Alt-X",
+            "help": 0
+          }
+        ]
+      },
+      {
+        "title": "~E~dit",
+        "items": [
+          {
+            "title": "~U~ndo",
+            "command": "cm::UNDO",
+            "key": "Ctrl-U",
+            "help": 0
+          },
+          {
+            "title": "~R~edo",
+            "command": "cm::REDO",
+            "key": "",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "Cu~t~",
+            "command": "cm::CUT",
+            "key": "Shift-Del",
+            "help": 0
+          },
+          {
+            "title": "~C~opy",
+            "command": "cm::COPY",
+            "key": "Ctrl-Ins",
+            "help": 0
+          },
+          {
+            "title": "~P~aste",
+            "command": "cm::PASTE",
+            "key": "Shift-Ins",
+            "help": 0
+          },
+          {
+            "title": "~S~how clipboard",
+            "command": "CM_SHOW_CLIP",
+            "key": "",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~C~lear",
+            "command": "cm::CLEAR",
+            "key": "Ctrl-Del",
+            "help": 0
+          }
+        ]
+      },
+      {
+        "title": "~S~earch",
+        "items": [
+          {
+            "title": "~F~ind...",
+            "command": "cm::FIND",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~R~eplace...",
+            "command": "cm::REPLACE",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~S~earch again",
+            "command": "cm::SEARCH_AGAIN",
+            "key": "",
+            "help": 0
+          }
+        ]
+      },
+      {
+        "title": "~W~indows",
+        "items": [
+          {
+            "title": "~S~ize/move",
+            "command": "cm::RESIZE",
+            "key": "Ctrl-F5",
+            "help": 0
+          },
+          {
+            "title": "~Z~oom",
+            "command": "cm::ZOOM",
+            "key": "F5",
+            "help": 0
+          },
+          {
+            "title": "~T~ile",
+            "command": "cm::TILE",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "C~a~scade",
+            "command": "cm::CASCADE",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~N~ext",
+            "command": "cm::NEXT",
+            "key": "F6",
+            "help": 0
+          },
+          {
+            "title": "~P~revious",
+            "command": "cm::PREV",
+            "key": "Shift-F6",
+            "help": 0
+          },
+          {
+            "title": "~C~lose",
+            "command": "cm::CLOSE",
+            "key": "Ctrl-W",
+            "help": 0
+          }
+        ]
+      }
+    ],
+    "status": [
+      {
+        "text": "",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      },
+      {
+        "text": "~F2~ Save",
+        "key": "F2",
+        "command": "cm::SAVE"
+      },
+      {
+        "text": "~F3~ Open",
+        "key": "F3",
+        "command": "cm::OPEN"
+      },
+      {
+        "text": "~Ctrl-W~ Close",
+        "key": "Alt+F3",
+        "command": "cm::CLOSE"
+      },
+      {
+        "text": "~F5~ Zoom",
+        "key": "F5",
+        "command": "cm::ZOOM"
+      },
+      {
+        "text": "~F6~ Next",
+        "key": "F6",
+        "command": "cm::NEXT"
+      },
+      {
+        "text": "~F10~ Menu",
+        "key": "F10",
+        "command": "cm::MENU"
+      },
+      {
+        "text": "",
+        "key": "Shift+F6",
+        "command": "cm::PREV"
+      },
+      {
+        "text": "",
+        "key": "Ctrl+F5",
+        "command": "cm::RESIZE"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_CHANGE_DRCT",
+        "value": 102,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_SHOW_CLIP",
+        "value": 105,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

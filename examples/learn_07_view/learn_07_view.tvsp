@@ -1,0 +1,21 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "learn_07_view",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "learn_07_view",
+    "russian": false,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      }
+    ],
+    "commands": []
+  }
+}

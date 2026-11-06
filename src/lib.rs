@@ -18,6 +18,7 @@
 //! | [`codeedit`], [`highlight`] | редактор кода и подсветка |
 //! | [`runner`] | запуск cargo в фоне |
 //! | [`dialogs`] | прочие диалоги и настройки среды |
+//! | [`importer`] | импорт готовой программы на tvision-rs |
 //! | [`ide`] | сама среда: меню и обработчик команд |
 
 pub mod appdesign;
@@ -29,6 +30,7 @@ pub mod designer;
 pub mod dialogs;
 pub mod highlight;
 pub mod ide;
+pub mod importer;
 pub mod inspector;
 pub mod json;
 pub mod model;

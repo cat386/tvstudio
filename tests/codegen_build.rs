@@ -83,10 +83,14 @@ fn generated_project_builds() {
     p.app.startup_form = "about".into();
     p.app.menu.push(MenuNode::Sub {
         title: "~Т~ест".into(),
+        key: "Alt+T".into(),
+        help: 4,
         children: vec![
             MenuNode::Item { title: "~В~се элементы".into(), command: "ALL".into(), key: "Ctrl+F2".into(), help: 3 },
             MenuNode::Sub {
                 title: "~В~ложенное".into(),
+                key: String::new(),
+                help: 0,
                 children: vec![MenuNode::Item { title: "~П~ривет".into(), command: "HELLO".into(), key: "".into(), help: 0 }],
             },
         ],

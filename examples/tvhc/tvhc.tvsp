@@ -1,0 +1,15 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "tvhc",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "tvhc",
+    "russian": false,
+    "startup_form": "",
+    "menu": [],
+    "status": [],
+    "commands": []
+  }
+}

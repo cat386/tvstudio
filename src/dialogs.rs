@@ -125,9 +125,9 @@ pub struct NewProject {
     pub dep: Dependency,
 }
 
-pub fn new_project_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(72, 15, "Новый проект");
-    let first = field(&mut d, 16, 2, "~И~мя", "my_app", 30, None);
+pub fn new_project_dialog(cfg: &Config, name: &str, title: &str) -> Dialog {
+    let mut d = Dialog::centered(72, 15, title);
+    let first = field(&mut d, 16, 2, "~И~мя", name, 30, None);
     field(&mut d, 16, 4, "~К~аталог", &cfg.default_parent().display().to_string(), 54, None);
     field(&mut d, 16, 6, "~t~vision-rs", &cfg.dep_value, 54, None);
     d.add(StaticText::new(Rect::new(2, 7, 70, 8), "  ссылка git (https://…) или путь к каталогу tvision-rs на диске"));

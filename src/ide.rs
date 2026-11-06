@@ -53,6 +53,7 @@ pub fn menu_bar() -> Menu {
                 .item("~Н~овый проект...", CM_NEW_PROJECT)
                 .item("~О~ткрыть проект...", CM_OPEN_PROJECT)
                 .item("Н~е~давние проекты...", CM_RECENT)
+                .item("~И~мпорт программы...", CM_IMPORT)
                 .item("~З~акрыть проект", CM_CLOSE_PROJECT)
                 .separator()
                 .item("Новый ~ф~айл", cm::NEW)
@@ -512,7 +513,7 @@ impl Ide {
     }
 
     fn new_project(&mut self, app: &mut Program) {
-        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg));
+        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, "my_app", "Новый проект"));
         if cmd != cm::OK {
             return;
         }
@@ -534,6 +535,44 @@ impl Ide {
                 self.open_project(app, &file);
                 self.open_form(app, "about");
                 self.say(app, "Новый проект создан. F9 — собрать, Ctrl+F9 — запустить.");
+            }
+            Err(e) => Self::error(app, &e),
+        }
+    }
+
+    /// Импорт готовой программы на tvision-rs: исходники копируются в новый
+    /// проект, меню, строка состояния и команды переходят в модель.
+    fn import(&mut self, app: &mut Program) {
+        let d = FileDialog::new("*.rs", "Импорт программы tvision-rs — главный файл", "~И~мя", fd::OPEN_BUTTON, 112);
+        let (cmd, d) = app.exec_dialog(d);
+        if cmd == cm::CANCEL {
+            return;
+        }
+        let main = d.file_name();
+        // Имя проекта: имя файла, а для main.rs — имя его каталога.
+        let stem = if main.file_name().map(|f| f == "main.rs").unwrap_or(false) {
+            main.parent().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        } else {
+            main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        };
+        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, &stem, "Импорт: новый проект"));
+        if cmd != cm::OK {
+            return;
+        }
+        let np = match dialogs::read_new_project(&d.get_data()) {
+            Ok(n) => n,
+            Err(e) => return Self::error(app, &e),
+        };
+        if self.project.is_some() && !self.close_project(app) {
+            return;
+        }
+        match crate::importer::import_program(&main, &np.parent, &np.name, &np.dep) {
+            Ok((p, report)) => {
+                let file = p.file();
+                self.open_project(app, &file);
+                self.say(app, &format!("Импортировано из {}: {}", main.display(), report.summary()));
+                let src = p.dir.join("src").join("main.rs");
+                self.open_file(app, &src, None);
             }
             Err(e) => Self::error(app, &e),
         }
@@ -1201,6 +1240,7 @@ impl Ide {
             CM_NEW_PROJECT => self.new_project(app),
             CM_OPEN_PROJECT => self.choose_project_file(app),
             CM_RECENT => self.recent(app),
+            CM_IMPORT => self.import(app),
             CM_CLOSE_PROJECT => {
                 self.close_project(app);
             }

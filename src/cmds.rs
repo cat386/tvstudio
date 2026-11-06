@@ -56,6 +56,7 @@ pub const CM_LAYOUT: u16 = 1107;
 pub const CM_OPTIONS: u16 = 1108;
 pub const CM_ABOUT: u16 = 1109;
 pub const CM_KEYS: u16 = 1110;
+pub const CM_IMPORT: u16 = 1111;
 
 // --- Внутренние ---
 /// Сообщения: перейти к месту (Info::Id списка или Info::Int строки).

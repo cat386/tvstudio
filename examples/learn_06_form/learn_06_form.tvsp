@@ -1,0 +1,33 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "learn_06_form",
+  "forms": ["anketa"],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "learn_06_form",
+    "russian": true,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~F2~ Анкета",
+        "key": "F2",
+        "command": "CM_FORM"
+      },
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_FORM",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

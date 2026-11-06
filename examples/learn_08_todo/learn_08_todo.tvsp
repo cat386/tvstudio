@@ -1,0 +1,76 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "learn_08_todo",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "learn_08_todo",
+    "russian": true,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~Ins~ Добавить",
+        "key": "Ins",
+        "command": "CM_ADD"
+      },
+      {
+        "text": "~F4~ Сделано",
+        "key": "F4",
+        "command": "CM_DONE"
+      },
+      {
+        "text": "~Del~ Удалить",
+        "key": "Del",
+        "command": "CM_DELETE"
+      },
+      {
+        "text": "~F3~ Новый список",
+        "key": "F3",
+        "command": "CM_NEW_LIST"
+      },
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "cm::QUIT"
+      },
+      {
+        "text": "",
+        "key": "F6",
+        "command": "cm::NEXT"
+      },
+      {
+        "text": "",
+        "key": "Alt+F3",
+        "command": "cm::CLOSE"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_ADD",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_DONE",
+        "value": 101,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_DELETE",
+        "value": 102,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_NEW_LIST",
+        "value": 103,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

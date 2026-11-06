@@ -1,0 +1,7 @@
+[package]
+name = "guide_contacts"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tvision-rs = { path = "../../../tvision-rs" }

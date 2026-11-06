@@ -1,0 +1,505 @@
+.topic Nocontext=0
+ Turbo Vision demonstration ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Welcome to Turbo Vision.  This is a demonstration program that allows
+you to view some of the capabilities of Turbo Vision.  The ≡ menu is
+accessed by pressing Alt-Space.  All the other menus are accessed by
+pressing Alt-Z, where Z is the first letter of the menu.  For example,
+the "File" menu is pulled down by Alt-F.
+
+Press ESC to put this help screen away.
+
+.topic Viewer=2
+ File viewer ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀
+A file viewer views the contents of a text file. You can use the
+arrow keys to move about in the file. A file is loaded via the
+{File│Open:FOpen} menu item.
+
+  Up         Move up one line
+  Down       Move down one line
+  Right      Move right one column
+  Left       Move left one column
+  PgUp       Move one page up
+  PgDn       Move one page down
+  Home       View leftmost column of the file
+  End        View rightmost column of the file
+  Ctrl-PgUp  View top of file
+  Ctrl-PgDn  View bottom of file.
+
+File viewers can be resized and moved using the {Windows} menu.
+
+.topic Puzzle
+ Puzzle ▄
+  ▀▀▀▀▀▀▀
+The puzzle window is a small game.  The object is to get the characters
+to form the following pattern:
+
+    A  B  C  D
+    E  F  G  H
+    I  J  K  L
+    M  N  O
+
+Clicking the mouse on a tile next to the empty space moves the tile
+into the space.  Pressing one of the cursor keys (up, down, left, or
+right arrow) moves a tile into the empty space in the direction
+indicated by the cursor key. The move counter is updated every time
+a tile is moved.
+
+.topic Calculator
+ Calculator ▄
+  ▀▀▀▀▀▀▀▀▀▀▀
+The calculator is a simple four-function calculator with add, subtract,
+multiply, and divide.  To operate the calculator you can either use the
+keyboard or press the buttons on the calculator with the mouse.  The 'C'
+key clears the calculator, the '' key will erase the last character
+typed, and the '±' key toggles the value from positive to negative (the
+keyboard equivalent of '±' is '_').
+
+.topic Calendar
+ Calendar ▄
+  ▀▀▀▀▀▀▀▀▀
+The calendar displays the current month, highlighting today's date. The
+next and previous months can be viewed using the '+' or '-' keys
+respectively.  The mouse can also be used to change the month by pressing
+the  or  icons.
+
+.topic AsciiTable
+ ASCII Table ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀
+The ASCII table displays the entire IBM PC character set.  The current
+character is marked by a blinking block cursor, and the hexadecimal and
+decimal ASCII values of the character are displayed below the chart. A
+new character is selected by pressing it on the keyboard, by clicking
+the mouse on it in the chart, or by moving the cursor using the cursor
+keys.
+
+.topic System
+ ≡ (System) menu ▄    (Alt-Spacebar)
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The System menu appears on the far left of the menu bar and is
+represented by the ≡ symbol.
+
+When you pull down the ≡ menu, you see
+
+  {About:SAbout}         {Puzzle:SPuzzle}
+  {Calendar:SCalendar}      {Ascii Table:SAsciiTable}
+  {Calculator:SCalculator}
+
+.topic SAbout
+ ≡│About ▄
+  ▀▀▀▀▀▀▀▀
+When you choose the About command from the ≡ (System) menu, a
+dialog box appears, showing copyright and version information.
+
+To close the box, press Esc, Space, or Enter, or click the OK
+button.
+
+.topic SPuzzle
+ ≡│Puzzle ▄
+  ▀▀▀▀▀▀▀▀▀
+The Puzzle menu item opens a small {Puzzle} game.
+
+.topic SCalendar
+ ≡│Calendar ▄
+  ▀▀▀▀▀▀▀▀▀▀▀
+The Calendar menu item opens a small {Calendar} which displays
+the current month. It also allows you to view other months.
+
+.topic SAsciiTable
+ ≡│ASCII table ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The ASCII menu item opens an {ASCII Table:AsciiTable} that
+displays the IBM PC character set.
+
+.topic SCalculator
+ ≡│Calculator ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀
+When you choose Calculator, a four-function {Calculator} is
+opened on the desktop.
+
+.topic File
+ File  (Alt-F) ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The File menu offers choices for opening files, changing
+directories, and exiting the program.
+
+ {Open:FOpen}          {Change Dir:FChangeDir}    {FExit}
+
+.topic FOpen
+ File│Open  (F3) ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Open command displays the Open a File dialog box. In this
+dialog box you select the text file you want to browse in a
+{file viewer:Viewer}.
+
+The {Open a File:FOFileOpenDBox} dialog box contains:
+
+ ■ an {input box:FOName} with a history list
+ ■ a {list box:FOFiles} to browse the directory
+ ■ the standard {Cancel:CancelBtn} button
+ ■ {Open:FOOpenBtn} action button
+ ■ an information panel that describes the
+   selected file
+
+.topic FChangeDir
+ File│Change Dir...▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+File│Change Dir brings up the {Change Directory:FCChDirDBox}
+dialog box, in which you can change the current directory.
+
+.topic FDosShell
+ File│DOS Shell ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+With the DOS Shell command, you can leave the program temporarily
+to perform a DOS command or run another program.
+
+To return to this program, type EXIT at the DOS prompt.
+
+.topic FExit
+ File│Exit ▄     (Alt-X)
+  ▀▀▀▀▀▀▀▀▀▀
+The Exit command terminates this program.
+
+.topic Windows
+ Window ▄    (Alt-W)
+  ▀▀▀▀▀▀▀
+The Window menu contains commands to close, move and perform
+other window-management commands.
+
+Most of the windows in this program have all the standard window
+elements, including scroll bars, a close box, and zoom icons.
+
+For more about windows and their elements, refer to windows.
+
+
+ Window-management commands
+ ══════════════════════════
+
+ {Size/Move:WSizeMove}        {Zoom:WZoom}
+ {Tile:WTile}             {Cascade:WCascade}
+ {Next:WNext}             {Previous:WPrevious}
+ {Close:WClose}
+
+.topic WSizeMove
+ Window│Size/Move ▄     (Ctrl-F5)
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Choose this command to change the size or position of the active
+window.
+
+ ▄▄▄▄▄▄
+  Size
+ ▀▀▀▀▀▀
+If you press Shift while you use the arrow keys, you can change
+the size of the active window. Once you've adjusted its size or
+position, press Enter.
+
+If a window has a Resize corner, you can drag that corner to
+resize the window.
+
+ ▄▄▄▄▄▄
+  Move
+ ▀▀▀▀▀▀
+When you choose Window│Size/Move, the active window moves in
+response to the arrow keys. Once you've moved the window to where
+you want it, press Enter.
+
+You can also move a window by dragging its title bar with the
+mouse.
+
+.topic WZoom
+ Window│Zoom ▄   (F5)
+  ▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Zoom to resize the active window to the maximum size. If
+the window is already zoomed, you can choose this command to
+restore it to its previous size.
+
+You can also double-click anywhere on the window's title bar
+(except where an icon appears) to zoom or unzoom the window.
+
+.topic WTile
+ Window│Tile ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Window│Tile to tile all file viewers on the desktop.
+
+ ┌────────────────────────────────────┐
+ │ ╔════════════1══╗┌────────────2──┐ │
+ │ ║               ║│               │ │
+ │ ║               ║│               │ │
+ │ ║               ║│               │ │
+ │ ║               ║│               │ │
+ │ ╚═══════════════╝└───────────────┘ │
+ │ ┌────────────3──┐┌────────────4──┐ │
+ │ │               ││               │ │
+ │ │               ││               │ │
+ │ │               ││               │ │
+ │ │               ││               │ │
+ │ └───────────────┘└───────────────┘ │
+ └────────────────────────────────────┘
+             Tiled Windows
+
+.topic WCascade
+ Window│Cascade ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Window│Cascade to stack all file viewers on the desktop.
+
+ ┌──────────────────────────1─┐
+ │┌─────────────────────────2─┐
+ ││┌────────────────────────3─┐
+ │││╔═══════════════════════4═╗
+ │││║                         ║
+ │││║                         ║
+ │││║                         ║
+ │││║                         ║
+ │││║                         ║
+ └└└╚═════════════════════════╝
+
+        Cascaded Windows
+
+.topic WNext
+ Window│Next ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Next to cycle forwards through the windows on the desktop.
+
+.topic WPrevious
+ Window│Previous ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Previous to cycle backwards through the windows on the desktop.
+
+.topic WClose
+ Window│Close ▄    (Alt-F3)
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀
+Choose Close to close the active window.
+
+You can also click the Close box in the upper right corner to
+close a window.
+
+.topic Options
+ Options  (Alt-O) ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Options menu contains commands that let
+you change {color:OColors} and {mouse:OMouse} default settings.
+
+.topic OMouse
+ Options│Mouse... ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Mouse command brings up the {Mouse Options:OMMouseDBox}
+dialog box, where you can set various options that control how your
+mouse works, including:
+
+ ■ how fast a double-click is
+ ■ which mouse button (right or left) is
+   active
+
+.topic OColors
+ Options│Colors... ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Colors item brings up the {Colors dialog:OCColorsDBox} box,
+where you can customize the colors of the display.
+
+.topic OSaveDesktop
+ Options│Save Desktop ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Saves the state of all open windows to a file called TVDEMO.DST. This
+file can be reloaded by selecting {Options│Restore Desktop:ORestoreDesktop}.
+
+.topic ORestoreDesktop
+ Options│Restore Desktop ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+Restore a previously-saved state of all open windows from a file
+called TVDEMO.DST. This file is saved via the
+{Options│Save Desktop:OSaveDesktop} menu command.
+
+.topic FOFileOpenDBox
+ Help on Open a File Dialog Box ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Open a File dialog box contains an input box, a {file list:FOFiles},
+a file information panel, the standard button {Cancel:CancelBtn},
+one other action button ({Open:FOOpenBtn}), plus a history list
+that's attached to the {Name inputbox:FOName}.
+
+.topic FOName
+ ┌─ Name ──────────────────────────┐
+ │                                 │
+ └─────────────────────────────────┘
+The Name input box is where you enter the name of the file to
+load, or the file-name mask to use as a filter for the Files list
+box (for example, *.*).
+
+.topic FOFiles
+ ┌ Files ──────────────────────────┐
+ │                                 │
+ │  FILENM01.PAS  │  FILENM09.PAS  │
+ │  FILENM02.PAS  │  FILENM10.PAS  │
+ │  FILENM03.PAS  │  FILENM11.PAS  │
+ │  FILENM04.PAS  │  FILENM12.PAS  │
+ │  FILENM05.PAS  │  ..            │
+ │  FILENM06.PAS  │  \MOREXAMP     │
+ │  FILENM07.PAS  │  \TOURS        │
+ │  FILENM08.PAS  │  \ANSWERS.DIR  │
+ │  ▒▒▒■▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒   │
+ └─────────────────────────────────┘
+The Files list box lists the names of files in the current
+directory that match the file-name mask in the Name input box,
+plus the parent directory and all subdirectories.
+
+ ┌──────────────────────────────────────────┐
+ │ C:\TP\EXAMPLES\*.PAS                     │
+ │ HELLO.PAS       52  Jul 14,1990  12:00pm │
+ └──────────────────────────────────────────┘
+The File information panel shows the path name, file name, date,
+time, and size of the selected file.
+
+None of the items on this information panel are selectable.
+
+.topic FOOpenBtn
+ ┌──────────┐
+ │ [ Open ] │
+ └──────────┘
+The Open button opens a new Viewer window and places the selected
+file in that window.
+
+.topic CancelBtn
+ ┌────────────┐
+ │ [ Cancel ] │
+ └────────────┘
+
+If you choose Cancel, nothing changes and no action occurs, and
+the dialog box is put away.
+
+(Esc always cancels a dialog box, even if a Cancel button does
+not appear.)
+
+.topic OpenBtn
+ ┌──────────┐
+ │ [ Open ] │
+ └──────────┘
+
+In the Open a File dialog box, if you choose the Open button
+TVDEMO opens a new {file viewer:Viewer} and places the selected
+file in that window.
+
+.topic FCChDirDBox
+ Help on the Change Directory dialog box ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Change Directory dialog box consists of an input box, a list
+box, the standard OK and Help buttons, and two other buttons
+(Chdir and Revert).
+
+ ┌ Directory Name ─────────────────────┐
+ │                                     │
+ └─────────────────────────────────────┘
+The Directory Name input box is where you type in the path of the
+new directory.
+
+ ┌ Directory Tree ─────────────────────┐
+ │   Drives                            │
+ │   └─┬C:\                            │
+ │     └─┬TP                           │
+ │       └──TVISION                    │
+ └─────────────────────────────────────┘
+The Directory Tree list box enables you to navigate directories
+by using the selecting bar and pressing Enter.
+
+If you're using the keyboard, press Enter to make the selected
+directory be the current directory, then choose OK or press Esc
+to exit the dialog box.
+
+ ┌──────────┐
+ │ [Chdir ] │
+ └──────────┘
+The Chdir button changes the current directory once you've
+selected or typed in a directory name.
+
+ ┌──────────┐
+ │ [Revert] │
+ └──────────┘
+The Revert button goes back to the previous directory, as long as
+you haven't yet exited the dialog box.
+
+.topic OMMouseDBox
+ Help on the Mouse Options dialog box ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+This dialog box consists of one check box, one slider bar, and
+the standard buttons OK and Cancel.
+
+ ┌──────────────────────────┐
+ │ Mouse Double Click       │
+ │ Slow     Medium     Fast │
+ │ ▒▒▒▒▒▒▒▒▒▒▒■▒▒▒▒▒▒▒▒▒▒ │
+ └──────────────────────────┘
+The Mouse Double Click slider bar adjusts the double-click speed of
+your mouse.
+
+ ┌───────────────────────────┐
+ │ [X] Reverse Mouse Buttons │
+ └───────────────────────────┘
+Reverse Mouse Buttons makes the right mouse button take on the
+normal functions of the left--and vice versa.
+
+ See also:
+ ═════════
+ {Options│Mouse... menu command:OMouse}
+
+.topic OCColorsDBox
+ Help on the Colors dialog box ▄
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+The Colors dialog box consists of two list boxes, a text display
+area, the standard OK, Cancel, and Help buttons, and one of the
+following:
+
+ ■ On color and black-and-white systems, it
+   also contains two color palettes.
+ ■ On monochrome systems, it contains a set
+   of radio buttons instead of the palettes.
+
+This dialog box is where you can change the colors of different
+parts of this program.
+
+ ┌─ Group ─────────────┐
+ │   Desktop          │
+ │   Menus            ■│
+ │   Dialogs/Calc     ▒│
+ │   Puzzle           ▒│
+ │   Calendar         ▒│
+ │   Ascii table      ▒│
+ │                    │
+ └─────────────────────┘
+The Group list box contains the names of the different regions of
+the program that you can customize.
+
+ ┌─ Item ──────────────┐
+ │   Color            │
+ │                    ■│
+
+When you select a group from the Group list, the Item list box
+displays the names of the different views in that region.
+
+ ┌ Foreground ┐   ┌ Background ┐
+ │ ░▒▓░▒▓░▒▓░ │   │ ▓░▒▓░▒▓░▒▓ │
+ │ ▓░▒▓░▒▓░▒▓ │   │ ░▒▓░▒▓░▒▓░ │
+ │ ▒▓░▒▓░▒▓░▒ │   └────────────┘
+ └────────────┘
+On color and black-and-white systems, you use the Foreground and
+Background palettes to modify colors.
+
+ ┌ Colors ──────────────┐
+ │  (∙) Mono low        │
+ │  ( ) Mono high       │
+ │  ( ) Mono underscore │
+ │  ( ) Mono inverse    │
+ └──────────────────────┘
+
+On monochrome systems, you use the Colors set of radio buttons
+to modify the character attributes.
+
+ ┌────────────────┐
+ │ Text Text Text │
+ │ Text Text Text │
+ └────────────────┘
+On all systems, the display text (above the Help button) shows
+the current color or attribute settings.
+
+Changes do not take effect on the desktop until you close the
+Colors dialog box by choosing OK.
+

@@ -1,0 +1,115 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "lfm",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "lfm",
+    "russian": true,
+    "startup_form": "",
+    "menu": [],
+    "status": [
+      {
+        "text": "~F1~ Справка",
+        "key": "F1",
+        "command": "CM_HELP_KEYS"
+      },
+      {
+        "text": "~F2~ Имя",
+        "key": "F2",
+        "command": "CM_RENAME"
+      },
+      {
+        "text": "~F3~ Просм",
+        "key": "F3",
+        "command": "CM_VIEW"
+      },
+      {
+        "text": "~F4~ Правка",
+        "key": "F4",
+        "command": "CM_EDIT"
+      },
+      {
+        "text": "~F5~ Копия",
+        "key": "F5",
+        "command": "CM_COPY"
+      },
+      {
+        "text": "~F6~ Перен",
+        "key": "F6",
+        "command": "CM_MOVE"
+      },
+      {
+        "text": "~F7~ Папка",
+        "key": "F7",
+        "command": "CM_MKDIR"
+      },
+      {
+        "text": "~F8~ Удал",
+        "key": "F8",
+        "command": "CM_DELETE"
+      },
+      {
+        "text": "~F9~ Меню",
+        "key": "F9",
+        "command": "cm::MENU"
+      },
+      {
+        "text": "~F10~ Выход",
+        "key": "F10",
+        "command": "cm::QUIT"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_RENAME",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_VIEW",
+        "value": 101,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_EDIT",
+        "value": 102,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_COPY",
+        "value": 103,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_MOVE",
+        "value": 104,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_MKDIR",
+        "value": 105,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_DELETE",
+        "value": 106,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_HELP_KEYS",
+        "value": 107,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}

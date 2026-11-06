@@ -1,0 +1,148 @@
+{
+  "format": "tvstudio-project",
+  "version": 1,
+  "name": "guide_contacts",
+  "forms": [],
+  "open_files": ["src/main.rs"],
+  "app": {
+    "title": "guide_contacts",
+    "russian": false,
+    "startup_form": "",
+    "menu": [
+      {
+        "title": "~Ф~айл",
+        "items": [
+          {
+            "title": "~Н~овый",
+            "command": "cm::NEW",
+            "key": "",
+            "help": 0
+          },
+          {
+            "title": "~О~ткрыть...",
+            "command": "cm::OPEN",
+            "key": "F3",
+            "help": 0
+          },
+          {
+            "title": "~С~охранить",
+            "command": "cm::SAVE",
+            "key": "F2",
+            "help": 0
+          },
+          {
+            "title": "Сохранить ~к~ак...",
+            "command": "cm::SAVE_AS",
+            "key": "",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~В~ыход",
+            "command": "CM_EXIT",
+            "key": "Alt-X",
+            "help": 0
+          }
+        ]
+      },
+      {
+        "title": "~К~онтакт",
+        "items": [
+          {
+            "title": "~Д~обавить...",
+            "command": "CM_ADD",
+            "key": "Ins",
+            "help": 0
+          },
+          {
+            "title": "~И~зменить...",
+            "command": "CM_EDIT",
+            "key": "F4",
+            "help": 0
+          },
+          {
+            "title": "~У~далить",
+            "command": "CM_DELETE",
+            "key": "Del",
+            "help": 0
+          },
+          {
+            "separator": true
+          },
+          {
+            "title": "~С~ортировать по имени",
+            "command": "CM_SORT",
+            "key": "",
+            "help": 0
+          }
+        ]
+      }
+    ],
+    "status": [
+      {
+        "text": "~Ins~ Добавить",
+        "key": "Ins",
+        "command": "CM_ADD"
+      },
+      {
+        "text": "~F4~ Изменить",
+        "key": "F4",
+        "command": "CM_EDIT"
+      },
+      {
+        "text": "~Del~ Удалить",
+        "key": "Del",
+        "command": "CM_DELETE"
+      },
+      {
+        "text": "~F2~ Сохранить",
+        "key": "F2",
+        "command": "cm::SAVE"
+      },
+      {
+        "text": "~Alt-X~ Выход",
+        "key": "Alt+X",
+        "command": "CM_EXIT"
+      },
+      {
+        "text": "",
+        "key": "F10",
+        "command": "cm::MENU"
+      }
+    ],
+    "commands": [
+      {
+        "name": "CM_ADD",
+        "value": 100,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_EDIT",
+        "value": 101,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_DELETE",
+        "value": 102,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_SORT",
+        "value": 103,
+        "action": "",
+        "comment": ""
+      },
+      {
+        "name": "CM_EXIT",
+        "value": 104,
+        "action": "",
+        "comment": ""
+      }
+    ]
+  }
+}
