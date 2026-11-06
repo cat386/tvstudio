@@ -149,7 +149,7 @@ cargo run --bin tvs-import -- --examples ../tvision-rs examples
 ## Тесты
 
 ```
-cargo test                                      # 34 теста, в т.ч. на «невидимом» терминале
+cargo test                                      # 33 теста, в т.ч. на «невидимом» терминале
 cargo test --test codegen_build -- --ignored    # сгенерированный проект со всеми элементами собирается без предупреждений
 cargo test --test examples -- --ignored         # все 23 примера собираются и проходят свои тесты
 ```
