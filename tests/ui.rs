@@ -1,0 +1,325 @@
+//! Проверка среды на «невидимом» терминале (`HeadlessBackend`):
+//! события подаются в очередь программы, результат проверяется по
+//! модели формы, проекту и тексту на экране.
+
+use std::path::PathBuf;
+
+use tvision::platform::HeadlessBackend;
+use tvision::*;
+use tvstudio::cmds::*;
+use tvstudio::codeedit::CodeWindow;
+use tvstudio::designer::DesignWindow;
+use tvstudio::dialogs::Config;
+use tvstudio::ide::{menu_bar, status_line, Ide};
+use tvstudio::model::{Dependency, Kind, MenuNode, Project};
+
+struct T {
+    app: Program,
+    ide: Ide,
+    dir: PathBuf,
+}
+
+fn tvision_path() -> String {
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    here.parent().unwrap().join("tvision-rs").canonicalize().unwrap().display().to_string()
+}
+
+impl T {
+    fn new(name: &str) -> T {
+        let base = std::env::temp_dir().join(format!("tvs_ui_{}_{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let p = Project::create(&base, "demo", &Dependency::Path(tvision_path())).unwrap();
+        let mut b = HeadlessBackend::new(120, 40);
+        // Без автоматического Esc при простое: он снимал бы выделение в дизайнере.
+        b.esc_budget = 0;
+        let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+        let mut ide = Ide::new(Config::default(), true);
+        ide.startup(&mut app, vec![p.file().display().to_string()]);
+        app.pump(&mut ide);
+        T { app, ide, dir: p.dir }
+    }
+
+    fn pump(&mut self) {
+        self.app.pump(&mut self.ide);
+        // Синхронизация окон — в простое.
+        self.app.pump(&mut self.ide);
+    }
+
+    fn key(&mut self, k: KeyEvent) {
+        self.app.put_event(Event::KeyDown(k));
+        self.pump();
+    }
+
+    fn keys(&mut self, ks: &[KeyEvent]) {
+        for k in ks {
+            self.app.put_event(Event::KeyDown(*k));
+        }
+        self.pump();
+    }
+
+    fn typed(&mut self, s: &str) -> Vec<KeyEvent> {
+        s.chars().map(|c| KeyEvent::new(Key::Char(c), Mods::NONE)).collect()
+    }
+
+    fn cmd(&mut self, c: u16) {
+        self.app.put_event(Event::command_event(c));
+        self.pump();
+    }
+
+    fn screen(&self) -> String {
+        self.app.screen_text()
+    }
+
+    fn doc_controls(&self) -> Vec<tvstudio::model::Control> {
+        let d = Ide::top_doc(&self.app).expect("форма открыта");
+        let c = d.borrow().form.controls.clone();
+        c
+    }
+
+    fn open_about(&mut self) {
+        self.ide.open_form(&mut self.app, "about");
+        self.pump();
+    }
+}
+
+impl Drop for T {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(self.dir.parent().unwrap());
+    }
+}
+
+fn mouse(x: i32, y: i32) -> MouseEvent {
+    MouseEvent { pos: Point::new(x, y), buttons: 1, ..Default::default() }
+}
+
+#[test]
+fn startup_shows_tools_and_project() {
+    let t = T::new("start");
+    let s = t.screen();
+    for title in ["Проект", "Компоненты", "Инспектор", "Сообщения"] {
+        assert!(s.contains(title), "нет окна «{}»:\n{}", title, s);
+    }
+    assert!(s.contains("Формы") && s.contains("about"), "дерево проекта:\n{}", s);
+    assert!(s.contains("Открыт проект demo"), "{}", s);
+    assert!(s.contains("Фо") && s.contains("Сборка"), "строка меню");
+}
+
+#[test]
+fn designer_insert_move_resize_undo() {
+    let mut t = T::new("design");
+    t.open_about();
+    let s = t.screen();
+    assert!(s.contains("О программе") && s.contains("Создано в TV Studio"), "форма в дизайнере:\n{}", s);
+    // Добавить строку ввода через палитру (команда), фокус — в дизайнер.
+    t.cmd(CM_INS_BASE + 3);
+    let c = t.doc_controls();
+    assert_eq!(c.len(), 3);
+    assert_eq!(c[2].kind, Kind::InputLine);
+    assert!(t.screen().contains("input1: Строка ввода"), "инспектор:\n{}", t.screen());
+    let (x0, y0, h0) = (c[2].x, c[2].y, c[2].h);
+    // Стрелка вправо — сдвиг, Shift+Down — выше.
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    t.key(KeyEvent::new(Key::Down, Mods::SHIFT));
+    let c = t.doc_controls();
+    assert_eq!((c[2].x, c[2].h), (x0 + 2, h0 + 1));
+    // Отмена: два сдвига стрелками — одна запись, размер — вторая.
+    t.key(kb::ctrl('Z'));
+    t.key(kb::ctrl('Z'));
+    let c = t.doc_controls();
+    assert_eq!((c[2].x, c[2].y, c[2].h), (x0, y0, h0));
+    t.key(kb::ctrl('Y'));
+    assert_eq!(t.doc_controls()[2].x, x0 + 2);
+    // Del — удалить.
+    t.key(KeyEvent::new(Key::Del, Mods::NONE));
+    assert_eq!(t.doc_controls().len(), 2);
+}
+
+#[test]
+fn designer_mouse_drag_and_band() {
+    let mut t = T::new("mouse");
+    t.open_about();
+    let doc = Ide::top_doc(&t.app).unwrap();
+    let (fx, fy) = {
+        let d = doc.borrow();
+        (d.form.x, d.form.y)
+    };
+    let ok = t.doc_controls()[1].clone();
+    // Экран: рабочий стол начинается со строки 1.
+    let (sx, sy) = (fx + ok.x + 1, fy + 1 + ok.y);
+    t.app.put_event(Event::MouseDown(mouse(sx, sy)));
+    t.app.put_event(Event::MouseMove(mouse(sx + 3, sy - 1)));
+    t.app.put_event(Event::MouseUp(MouseEvent { buttons: 0, ..mouse(sx + 3, sy - 1) }));
+    t.pump();
+    let c = t.doc_controls();
+    assert_eq!((c[1].x, c[1].y), (ok.x + 3, ok.y - 1), "перетаскивание");
+    assert_eq!(doc.borrow().sel, vec![1]);
+    // Рамка по пустому месту, захватывающая оба элемента.
+    let (w, h) = (doc.borrow().form.w, doc.borrow().form.h);
+    t.app.put_event(Event::MouseDown(mouse(fx + 1, fy + 2)));
+    t.app.put_event(Event::MouseMove(mouse(fx + w - 2, fy + h - 1)));
+    t.app.put_event(Event::MouseUp(MouseEvent { buttons: 0, ..mouse(fx + w - 2, fy + h - 1) }));
+    t.pump();
+    let mut sel = doc.borrow().sel.clone();
+    sel.sort();
+    assert_eq!(sel, vec![0, 1], "выделение рамкой");
+    // Выравнивание по левому краю основного.
+    t.cmd(CM_ALIGN_BASE);
+    let c = t.doc_controls();
+    assert_eq!(c[0].x, c[1].x);
+}
+
+#[test]
+fn inspector_edits_property() {
+    let mut t = T::new("insp");
+    t.open_about();
+    t.cmd(CM_INS_BASE + 2); // кнопка
+    t.cmd(CM_SHOW_INSPECTOR);
+    // Строки: Имя, X, Y, Ширина, Высота, Надпись…
+    for _ in 0..5 {
+        t.key(KeyEvent::new(Key::Down, Mods::NONE));
+    }
+    let mut ks = vec![kb::f(2), KeyEvent::new(Key::Home, Mods::NONE), KeyEvent::new(Key::End, Mods::SHIFT), KeyEvent::new(Key::Del, Mods::NONE)];
+    ks.extend(t.typed("~П~ривет"));
+    ks.push(kb::ENTER);
+    t.keys(&ks);
+    let c = t.doc_controls();
+    assert_eq!(c[2].text, "~П~ривет", "надпись кнопки");
+    assert!(Ide::top_doc(&t.app).unwrap().borrow().modified);
+    // Неверное значение не принимается: ширина «abc».
+    t.keys(&[KeyEvent::new(Key::Up, Mods::NONE), KeyEvent::new(Key::Up, Mods::NONE)]);
+    let mut ks = t.typed("abc");
+    ks.push(kb::ENTER);
+    t.keys(&ks);
+    assert_eq!(t.doc_controls()[2].w, 12);
+    assert!(t.ide.last_error.as_deref().unwrap_or("").contains("Ширина"), "{:?}", t.ide.last_error);
+}
+
+#[test]
+fn props_dialog_renames_control() {
+    let mut t = T::new("props");
+    t.open_about();
+    t.cmd(CM_INS_BASE + 3);
+    // Диалог свойств: первое поле — имя (весь текст выделен, набор заменяет).
+    t.app.put_event(Event::command_event(CM_DS_PROPS));
+    for c in "user_name".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    t.pump();
+    assert_eq!(t.doc_controls()[2].name, "user_name");
+}
+
+#[test]
+fn menu_editor_adds_item_and_command() {
+    let mut t = T::new("menu");
+    t.app.put_event(Event::command_event(CM_EDIT_MENU));
+    // Курсор на «Файл»; Ins — новый пункт внутри подменю.
+    t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Ins, Mods::NONE)));
+    for c in "~П~ривет".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::TAB));
+    for c in "hello".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::TAB));
+    for c in "Ctrl+H".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    t.app.put_event(Event::command_event(cm::OK));
+    t.pump();
+    let p = t.ide.project.as_ref().unwrap();
+    let MenuNode::Sub { children, .. } = &p.app.menu[0] else { panic!("подменю") };
+    assert!(
+        children
+            .iter()
+            .any(|c| matches!(c, MenuNode::Item { title, command, key, .. } if title == "~П~ривет" && command == "HELLO" && key == "Ctrl+H")),
+        "{:?}",
+        children
+    );
+    assert!(p.app.commands.iter().any(|c| c.name == "HELLO"));
+    // Модель сохранена в файл проекта.
+    let saved = Project::load(&p.file()).unwrap();
+    assert_eq!(saved.app, p.app);
+}
+
+#[test]
+fn f12_opens_generated_code_with_highlight() {
+    let mut t = T::new("f12");
+    t.open_about();
+    t.cmd(CM_FORM_CODE);
+    let ids = Ide::windows::<CodeWindow>(&t.app);
+    assert_eq!(ids.len(), 1);
+    let w = t.app.find::<CodeWindow>(ids[0]).unwrap();
+    assert!(w.path().ends_with("src/forms/about.rs"));
+    assert!(w.editor().fe.editor.text().contains("pub struct AboutData"));
+    assert!(t.screen().contains("Сгенерировано TV Studio"), "{}", t.screen());
+    assert!(t.dir.join("src/ui.rs").exists());
+    // F12 из кода формы — обратно в дизайнер.
+    t.cmd(CM_FORM_CODE);
+    let top = t.app.desktop().group.current_view().map(|v| v.vs().id);
+    assert_eq!(top, Ide::top_designer(&t.app));
+    assert!(Ide::windows::<DesignWindow>(&t.app).len() == 1);
+}
+
+#[test]
+fn new_form_via_dialog() {
+    let mut t = T::new("newform");
+    t.app.put_event(Event::command_event(CM_NEW_FORM));
+    // Имя выделено — набор заменяет.
+    for c in "settings".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    t.pump();
+    let p = t.ide.project.as_ref().unwrap();
+    assert!(p.forms.contains(&"settings".to_string()), "{:?}", p.forms);
+    assert!(p.form_path("settings").exists());
+    let d = Ide::top_doc(&t.app).unwrap();
+    assert_eq!(d.borrow().form.name, "settings");
+    assert!(t.screen().contains("settings"), "дерево проекта обновлено");
+}
+
+/// Полный цикл: проект собирается cargo, ошибка в main.rs находится,
+/// F8 открывает файл на строке ошибки, в полосе номеров — пометка.
+#[test]
+fn build_finds_error_and_jumps() {
+    let mut t = T::new("build");
+    std::env::set_var("CARGO_TARGET_DIR", std::env::temp_dir().join("tvstudio_ui_target"));
+    let main = t.dir.join("src/main.rs");
+    let mut src = std::fs::read_to_string(&main).unwrap();
+    src.push_str("\nfn broken() -> u32 {\n    \"не число\"\n}\n");
+    std::fs::write(&main, src.clone()).unwrap();
+    let err_line = src.lines().position(|l| l.contains("не число")).unwrap() + 1;
+    t.cmd(CM_CHECK);
+    let t0 = std::time::Instant::now();
+    while t.ide.job.is_some() && t0.elapsed().as_secs() < 240 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        t.pump();
+    }
+    assert!(t.ide.job.is_none(), "cargo не завершился");
+    let s = t.screen();
+    assert!(s.contains("не удалась"), "итог сборки:\n{}", s);
+    t.cmd(CM_NEXT_ERR);
+    let ids = Ide::windows::<CodeWindow>(&t.app);
+    let w = t.app.find::<CodeWindow>(*ids.last().expect("файл открыт")).unwrap();
+    assert!(w.path().ends_with("src/main.rs"));
+    assert_eq!(w.editor().fe.editor.cursor().line + 1, err_line);
+    assert!(t.screen().contains('●'), "пометка ошибки в полосе номеров");
+    // Исправляем и собираем снова — ошибок нет.
+    std::fs::write(&main, src.replace("\"не число\"", "42")).unwrap();
+    {
+        let w = t.app.find_mut::<CodeWindow>(*ids.last().unwrap()).unwrap();
+        w.editor_mut().fe.load_file();
+    }
+    t.cmd(CM_CHECK);
+    let t0 = std::time::Instant::now();
+    while t.ide.job.is_some() && t0.elapsed().as_secs() < 240 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        t.pump();
+    }
+    assert!(t.screen().contains("завершена"), "{}", t.screen());
+}

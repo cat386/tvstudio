@@ -1,0 +1,419 @@
+//! Диалоги среды: свойства элемента, новый проект, новая форма,
+//! параметры среды и программы, недавние проекты.
+
+use std::path::PathBuf;
+
+use tvision::*;
+
+use crate::cmds::*;
+use crate::json::{self, Json};
+use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, Kind};
+use crate::props::{self, Prop};
+
+/// Строка «метка + поле ввода» (+ кнопка списка). Возвращает id поля.
+pub fn field(d: &mut Dialog, x: i32, y: i32, label: &str, text: &str, w: i32, combo: Option<&[&str]>) -> ViewId {
+    let iw = if combo.is_some() { w - 3 } else { w };
+    let mut il = InputLine::new(Rect::new(x, y, x + iw, y + 1), 512);
+    il.set_text(text);
+    let id = d.add(il);
+    if let Some(items) = combo {
+        d.add(Combo::new(Rect::new(x + iw, y, x + w, y + 1), id, cbx::NO_TRANSFER, items));
+    }
+    d.add(Label::new(Rect::new(1, y, x, y + 1), label, Some(id)));
+    id
+}
+
+/// Кнопки OK и «Отмена» по центру строки `y`.
+pub fn ok_cancel(d: &mut Dialog, y: i32) {
+    let w = d.win.group.vs.size.x;
+    d.add(Button::new(Rect::new(w / 2 - 13, y, w / 2 - 2, y + 2), "O~K~", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(w / 2 + 1, y, w / 2 + 12, y + 2), "Отмена", cm::CANCEL, bf::NORMAL));
+}
+
+fn strs(v: &Value) -> Vec<Value> {
+    v.as_list().map(|l| l.to_vec()).unwrap_or_default()
+}
+
+fn s_at(v: &[Value], i: usize) -> String {
+    v.get(i).and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+
+// ======================================================================
+// Свойства элемента
+// ======================================================================
+
+/// Многострочное ли свойство для данного вида элемента.
+fn is_multi(p: Prop, kind: Option<Kind>) -> bool {
+    match p {
+        Prop::Items => true,
+        Prop::Text => matches!(kind, Some(Kind::StaticText) | Some(Kind::Memo)),
+        _ => false,
+    }
+}
+
+/// Диалог всех свойств выделенного элемента (или формы).
+pub fn props_dialog(form: &Form, sel: Option<usize>) -> (Dialog, Vec<Prop>) {
+    let kind = sel.and_then(|i| form.controls.get(i)).map(|c| c.kind);
+    let list = props::props_for(form, sel);
+    let lines: i32 = list.iter().map(|p| if is_multi(*p, kind) { 4 } else { 1 }).sum();
+    let h = (lines + 6).min(23);
+    let title = match sel.and_then(|i| form.controls.get(i)) {
+        Some(c) => format!("Свойства: {} ({})", c.name, c.kind.title()),
+        None => format!("Свойства формы {}", form.name),
+    };
+    let mut d = Dialog::centered(66, h, &title);
+    d.win.group.vs.help_ctx = HC_INSPECTOR;
+    let mut y = 1;
+    let x = 16;
+    let mut first = None;
+    for p in &list {
+        if is_multi(*p, kind) {
+            let sb = d.add(ScrollBar::new(Rect::new(x + 47, y, x + 48, y + 4)));
+            let mut m = Memo::new(Rect::new(x, y, x + 47, y + 4), None, Some(sb));
+            m.editor.set_text(&props::get_full(form, sel, *p));
+            m.editor.modified = false;
+            let id = d.add(m);
+            d.add(Label::new(Rect::new(1, y, x, y + 1), p.label(kind), Some(id)));
+            first.get_or_insert(id);
+            y += 4;
+        } else {
+            let id = field(&mut d, x, y, p.label(kind), &props::get(form, sel, *p), 48, None);
+            first.get_or_insert(id);
+            y += 1;
+        }
+    }
+    let hint = if kind.is_some() {
+        "Tab — следующее поле. Пункты списка — по одному в строке."
+    } else {
+        "Цвет: серый, синий, бирюзовый. Логические: да / нет."
+    };
+    d.add(StaticText::new(Rect::new(2, y + 1, 64, y + 2), hint));
+    ok_cancel(&mut d, y + 2);
+    if let Some(f) = first {
+        d.select(f);
+    }
+    (d, list)
+}
+
+/// Применить данные диалога свойств. При ошибке форма не меняется.
+pub fn apply_props(form: &mut Form, sel: Option<usize>, list: &[Prop], data: &Value) -> Result<(), String> {
+    let kind = sel.and_then(|i| form.controls.get(i)).map(|c| c.kind);
+    let vals = strs(data);
+    let mut f = form.clone();
+    for (i, p) in list.iter().enumerate() {
+        let v = s_at(&vals, i);
+        if is_multi(*p, kind) {
+            if v != props::get_full(&f, sel, *p) {
+                props::set_full(&mut f, sel, *p, &v).map_err(|e| format!("{}: {}", p.label(kind), e))?;
+            }
+        } else if v != props::get(&f, sel, *p) {
+            props::set(&mut f, sel, *p, &v).map_err(|e| format!("{}: {}", p.label(kind), e))?;
+        }
+    }
+    *form = f;
+    Ok(())
+}
+
+// ======================================================================
+// Новый проект
+// ======================================================================
+
+/// Параметры нового проекта.
+pub struct NewProject {
+    pub name: String,
+    pub parent: PathBuf,
+    pub dep: Dependency,
+}
+
+pub fn new_project_dialog(cfg: &Config) -> Dialog {
+    let mut d = Dialog::centered(70, 16, "Новый проект");
+    let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
+    let first = field(&mut d, 16, 2, "~И~мя", "my_app", 30, None);
+    field(&mut d, 16, 4, "~К~аталог", &cwd, 50, None);
+    let mut rb = RadioButtons::radio_buttons(Rect::new(16, 6, 50, 8), &["~g~it (репозиторий)", "~п~уть на диске"]);
+    rb.value = if cfg.dep_git { 0 } else { 1 };
+    let rb = d.add(rb);
+    d.add(Label::new(Rect::new(1, 6, 16, 7), "~t~vision-rs", Some(rb)));
+    field(&mut d, 16, 9, "~О~ткуда", &cfg.dep_value, 50, None);
+    d.add(StaticText::new(Rect::new(2, 11, 68, 12), "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,"));
+    d.add(StaticText::new(Rect::new(2, 12, 68, 13), "файлом проекта .tvsp и формой «О программе». Путь — от каталога проекта."));
+    ok_cancel(&mut d, 13);
+    d.select(first);
+    d
+}
+
+pub fn read_new_project(v: &Value) -> Result<NewProject, String> {
+    let v = strs(v);
+    let name = s_at(&v, 0).trim().to_string();
+    if !is_crate_name(&name) {
+        return Err(format!("«{}» не годится как имя пакета: латинские буквы, цифры, _ и -.", name));
+    }
+    let parent = PathBuf::from(s_at(&v, 1).trim());
+    let src = s_at(&v, 3).trim().to_string();
+    if src.is_empty() {
+        return Err("Укажите, откуда брать tvision-rs.".into());
+    }
+    let dep = if v.get(2).and_then(|x| x.as_u32()).unwrap_or(0) == 0 { Dependency::Git(src) } else { Dependency::Path(src) };
+    Ok(NewProject { name, parent, dep })
+}
+
+// ======================================================================
+// Новая форма
+// ======================================================================
+
+pub fn new_form_dialog(existing: &[String]) -> Dialog {
+    let name = (1..).map(|n| format!("form{}", n)).find(|n| !existing.contains(n)).unwrap();
+    let mut d = Dialog::centered(56, 13, "Новая форма");
+    let first = field(&mut d, 16, 2, "~И~мя", &name, 30, None);
+    field(&mut d, 16, 3, "~З~аголовок", "Диалог", 36, None);
+    field(&mut d, 16, 5, "~Ш~ирина", "50", 6, None);
+    field(&mut d, 16, 6, "~В~ысота", "14", 6, None);
+    d.add(StaticText::new(Rect::new(2, 8, 54, 9), "Имя — модуль forms::имя (латиница, цифры, _)."));
+    ok_cancel(&mut d, 10);
+    d.select(first);
+    d
+}
+
+pub fn read_new_form(v: &Value, existing: &[String]) -> Result<Form, String> {
+    let v = strs(v);
+    let name = s_at(&v, 0).trim().to_string();
+    if !is_ident(&name) {
+        return Err(format!("«{}» не годится как имя формы.", name));
+    }
+    if existing.contains(&name) {
+        return Err(format!("Форма «{}» уже есть в проекте.", name));
+    }
+    let mut f = Form::new(&name, &s_at(&v, 1));
+    f.w = s_at(&v, 2).trim().parse::<i32>().unwrap_or(50).clamp(30, 200);
+    f.h = s_at(&v, 3).trim().parse::<i32>().unwrap_or(14).clamp(6, 80);
+    // Кнопки OK и «Отмена» — у нижнего края.
+    let mut ok = f.new_control(Kind::Button, f.w / 2 - 13, f.h - 3);
+    ok.name = "ok".into();
+    ok.default = true;
+    let mut cancel = f.new_control(Kind::Button, f.w / 2 + 1, f.h - 3);
+    cancel.name = "cancel".into();
+    cancel.text = "Отмена".into();
+    cancel.command = "cm::CANCEL".into();
+    f.controls.push(ok);
+    f.controls.push(cancel);
+    Ok(f)
+}
+
+// ======================================================================
+// Параметры программы (модели)
+// ======================================================================
+
+pub fn app_options_dialog(app: &AppModel, forms: &[String]) -> Dialog {
+    let mut d = Dialog::centered(60, 12, "Параметры программы");
+    d.win.group.vs.help_ctx = HC_APP_MODEL;
+    let first = field(&mut d, 18, 2, "~З~аголовок", &app.title, 38, None);
+    let mut cb = CheckBoxes::check_boxes(Rect::new(18, 4, 56, 5), &["~Р~усские надписи tvision-rs"]);
+    cb.value = u32::from(app.russian);
+    let cb = d.add(cb);
+    d.add(Label::new(Rect::new(1, 4, 18, 5), "~Я~зык", Some(cb)));
+    let items: Vec<&str> = forms.iter().map(|s| s.as_str()).collect();
+    field(&mut d, 18, 6, "~С~тартовая форма", &app.startup_form, 30, Some(&items));
+    ok_cancel(&mut d, 9);
+    d.select(first);
+    d
+}
+
+pub fn read_app_options(app: &mut AppModel, v: &Value, forms: &[String]) -> Result<(), String> {
+    let v = strs(v);
+    let start = s_at(&v, 2).trim().to_string();
+    if !start.is_empty() && !forms.contains(&start) {
+        return Err(format!("В проекте нет формы «{}».", start));
+    }
+    app.title = s_at(&v, 0);
+    app.russian = v.get(1).and_then(|x| x.as_u32()).unwrap_or(0) & 1 != 0;
+    app.startup_form = start;
+    Ok(())
+}
+
+// ======================================================================
+// Параметры среды
+// ======================================================================
+
+/// Настройки среды (файл `tvstudio.json` в каталоге настроек пользователя).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Config {
+    /// Тема: 0 — gruvbox, 1 — классическая, 2 — чёрно-белая.
+    pub theme: u32,
+    /// Сохранять все файлы перед сборкой.
+    pub autosave: bool,
+    /// Программа cargo.
+    pub cargo: String,
+    /// tvision-rs для новых проектов: git (иначе путь).
+    pub dep_git: bool,
+    pub dep_value: String,
+    /// Недавние проекты (файлы .tvsp).
+    pub recent: Vec<String>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            theme: 0,
+            autosave: true,
+            cargo: "cargo".into(),
+            dep_git: true,
+            dep_value: "https://github.com/cat386/tvision-rs".into(),
+            recent: Vec::new(),
+        }
+    }
+}
+
+impl Config {
+    /// Путь к файлу настроек.
+    pub fn path() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("TVSTUDIO_CONFIG") {
+            return Some(PathBuf::from(p));
+        }
+        #[cfg(windows)]
+        let base = std::env::var("APPDATA").ok().map(PathBuf::from);
+        #[cfg(not(windows))]
+        let base =
+            std::env::var("XDG_CONFIG_HOME").ok().map(PathBuf::from).or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")));
+        base.map(|b| b.join("tvstudio.json"))
+    }
+
+    pub fn load() -> Config {
+        let mut c = Config::default();
+        let Some(p) = Self::path() else { return c };
+        let Ok(s) = std::fs::read_to_string(p) else { return c };
+        let Ok(j) = json::parse(&s) else { return c };
+        c.theme = j.int("theme", 0).clamp(0, 2) as u32;
+        c.autosave = j.bool("autosave", true);
+        c.cargo = Some(j.str("cargo")).filter(|s| !s.is_empty()).unwrap_or(c.cargo);
+        c.dep_git = j.bool("dep_git", true);
+        c.dep_value = Some(j.str("dep_value")).filter(|s| !s.is_empty()).unwrap_or(c.dep_value);
+        c.recent = j.strings("recent");
+        c
+    }
+
+    pub fn save(&self) {
+        let Some(p) = Self::path() else { return };
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let j = Json::obj(vec![
+            ("theme", Json::i(self.theme as i64)),
+            ("autosave", Json::Bool(self.autosave)),
+            ("cargo", Json::s(&self.cargo)),
+            ("dep_git", Json::Bool(self.dep_git)),
+            ("dep_value", Json::s(&self.dep_value)),
+            ("recent", Json::from_strings(&self.recent)),
+        ]);
+        let _ = std::fs::write(p, j.to_pretty());
+    }
+
+    /// Запомнить недавний проект.
+    pub fn add_recent(&mut self, file: &str) {
+        self.recent.retain(|r| r != file);
+        self.recent.insert(0, file.to_string());
+        self.recent.truncate(10);
+    }
+
+    /// Палитра приложения по теме.
+    pub fn palette(&self) -> Vec<Attr> {
+        use tvision::color::palettes;
+        match self.theme {
+            1 => palettes::APP_COLOR.to_vec(),
+            2 => palettes::APP_BLACK_WHITE.to_vec(),
+            _ => {
+                if tvision::color::color_mode() == tvision::color::ColorMode::Ansi16 {
+                    palettes::APP_COLOR.to_vec()
+                } else {
+                    palettes::GRUVBOX.to_vec()
+                }
+            }
+        }
+    }
+}
+
+pub fn options_dialog(cfg: &Config) -> Dialog {
+    let mut d = Dialog::centered(66, 17, "Параметры среды");
+    let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
+    th.value = cfg.theme;
+    let th = d.add(th);
+    d.add(Label::new(Rect::new(1, 2, 18, 3), "~Т~ема", Some(th)));
+    let mut cb = CheckBoxes::check_boxes(Rect::new(18, 6, 62, 7), &["~С~охранять всё перед сборкой"]);
+    cb.value = u32::from(cfg.autosave);
+    let cb = d.add(cb);
+    d.add(Label::new(Rect::new(1, 6, 18, 7), "Сб~о~рка", Some(cb)));
+    field(&mut d, 18, 8, "~c~argo", &cfg.cargo, 44, None);
+    let mut rb = RadioButtons::radio_buttons(Rect::new(18, 10, 50, 12), &["~g~it", "~п~уть на диске"]);
+    rb.value = if cfg.dep_git { 0 } else { 1 };
+    let rb = d.add(rb);
+    d.add(Label::new(Rect::new(1, 10, 18, 11), "t~v~ision-rs", Some(rb)));
+    field(&mut d, 18, 12, "~О~ткуда", &cfg.dep_value, 44, None);
+    ok_cancel(&mut d, 14);
+    d.select(th);
+    d
+}
+
+pub fn read_options(cfg: &mut Config, v: &Value) {
+    let v = strs(v);
+    cfg.theme = v.first().and_then(|x| x.as_u32()).unwrap_or(0).min(2);
+    cfg.autosave = v.get(1).and_then(|x| x.as_u32()).unwrap_or(1) & 1 != 0;
+    let cargo = s_at(&v, 2);
+    if !cargo.trim().is_empty() {
+        cfg.cargo = cargo.trim().to_string();
+    }
+    cfg.dep_git = v.get(3).and_then(|x| x.as_u32()).unwrap_or(0) == 0;
+    let dv = s_at(&v, 4);
+    if !dv.trim().is_empty() {
+        cfg.dep_value = dv.trim().to_string();
+    }
+}
+
+// ======================================================================
+// Недавние проекты
+// ======================================================================
+
+pub fn recent_dialog(recent: &[String]) -> (Dialog, ViewId) {
+    let mut d = Dialog::centered(70, 16, "Недавние проекты");
+    let sb = d.add(ScrollBar::new(Rect::new(66, 2, 67, 12)));
+    let mut l = ListBox::new(Rect::new(2, 2, 66, 12), 1, Some(sb));
+    l.set_items(recent.to_vec());
+    let id = d.add(l);
+    ok_cancel(&mut d, 13);
+    d.select(id);
+    (d, id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::about_form;
+
+    #[test]
+    fn props_dialog_roundtrip() {
+        let mut f = about_form("x");
+        let (d, list) = props_dialog(&f, Some(1));
+        let mut data = strs(&d.get_data());
+        assert_eq!(data.len(), list.len());
+        // Меняем надпись кнопки (свойство Text = индекс 5).
+        let ti = list.iter().position(|p| *p == Prop::Text).unwrap();
+        data[ti] = Value::Str("~З~акрыть".into());
+        apply_props(&mut f, Some(1), &list, &Value::List(data.clone())).unwrap();
+        assert_eq!(f.controls[1].text, "~З~акрыть");
+        // Ошибка — форма не меняется.
+        let wi = list.iter().position(|p| *p == Prop::W).unwrap();
+        data[wi] = Value::Str("широко".into());
+        let before = f.clone();
+        assert!(apply_props(&mut f, Some(1), &list, &Value::List(data)).is_err());
+        assert_eq!(f, before);
+    }
+
+    #[test]
+    fn new_form_has_buttons() {
+        let f = read_new_form(
+            &Value::List(vec![Value::Str("edit_user".into()), Value::Str("Пользователь".into()), Value::Str("40".into()), Value::Str("10".into())]),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(f.controls.len(), 2);
+        assert!(f.check().is_empty(), "{:?}", f.check());
+    }
+}

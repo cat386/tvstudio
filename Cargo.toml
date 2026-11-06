@@ -1,0 +1,20 @@
+[package]
+name = "tvstudio"
+version = "0.1.0"
+edition = "2021"
+description = "TV Studio — среда визуальной разработки текстовых приложений на tvision-rs"
+license = "MIT"
+
+# Единственная зависимость — сама библиотека tvision-rs (лежит рядом).
+# Можно заменить на git-зависимость:
+# tvision-rs = { git = "https://github.com/cat386/tvision-rs" }
+[dependencies]
+tvision-rs = { path = "../tvision-rs" }
+
+[lib]
+name = "tvstudio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tvstudio"
+path = "src/main.rs"
