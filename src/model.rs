@@ -812,6 +812,20 @@ pub enum Dependency {
 }
 
 impl Dependency {
+    /// Определить вид зависимости по строке: ссылка (`https://…`,
+    /// `git@…`, `ssh://…`) — git, иначе — путь на диске. Пустая строка — `None`.
+    pub fn detect(s: &str) -> Option<Dependency> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        if s.contains("://") || s.starts_with("git@") {
+            Some(Dependency::Git(s.to_string()))
+        } else {
+            Some(Dependency::Path(s.to_string()))
+        }
+    }
+
     pub fn cargo_line(&self) -> String {
         match self {
             Dependency::Path(p) => format!("tvision-rs = {{ path = \"{}\" }}", p.replace('\\', "/")),
@@ -904,6 +918,17 @@ impl Project {
         let dir = tvision::widgets::editor::absolute(&parent.join(name));
         if dir.join("Cargo.toml").exists() {
             return Err(format!("в каталоге {} уже есть проект Cargo", dir.display()));
+        }
+        if let Dependency::Path(p) = dep {
+            // Относительный путь считается от каталога проекта (как в Cargo).
+            let lib = if Path::new(p).is_absolute() { PathBuf::from(p) } else { dir.join(p) };
+            if !lib.join("Cargo.toml").exists() {
+                return Err(format!(
+                    "по пути «{}» нет tvision-rs (не найден {}).\nУкажите каталог библиотеки или ссылку git https://github.com/cat386/tvision-rs",
+                    p,
+                    lib.join("Cargo.toml").display()
+                ));
+            }
         }
         let mk = |p: &Path| std::fs::create_dir_all(p).map_err(|e| format!("{}: {}", p.display(), e));
         mk(&dir.join("src").join("forms"))?;
@@ -1090,6 +1115,22 @@ mod tests {
         assert_eq!(a.command_value("cm::QUIT"), Some(1));
         assert_eq!(a.command_expr("ABOUT"), "cmd::ABOUT");
         assert_eq!(a.next_command_value(), 101);
+    }
+
+    #[test]
+    fn dependency_detect() {
+        assert_eq!(
+            Dependency::detect(" https://github.com/cat386/tvision-rs "),
+            Some(Dependency::Git("https://github.com/cat386/tvision-rs".into()))
+        );
+        assert_eq!(Dependency::detect("git@github.com:cat386/tvision-rs.git"), Some(Dependency::Git("git@github.com:cat386/tvision-rs.git".into())));
+        assert_eq!(Dependency::detect("D:\\develop\\tvision-rs"), Some(Dependency::Path("D:\\develop\\tvision-rs".into())));
+        assert_eq!(Dependency::detect(""), None);
+        // Несуществующий путь — понятная ошибка, а не сломанный Cargo.toml.
+        let base = std::env::temp_dir().join(format!("tvs_dep_{}", std::process::id()));
+        let e = Project::create(&base, "x", &Dependency::Path("../нет-такой".into())).unwrap_err();
+        assert!(e.contains("нет tvision-rs"), "{}", e);
+        assert!(!base.join("x").exists());
     }
 
     #[test]

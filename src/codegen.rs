@@ -572,7 +572,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tvs_cg_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let p = Project::create(&dir, "demo_app", &Dependency::Path("../tvision-rs".into())).unwrap();
+        let tv = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tvision-rs");
+        let p = Project::create(&dir, "demo_app", &Dependency::Path(tv.display().to_string())).unwrap();
         let mut f = about_form("x");
         let mut i = f.new_control(Kind::InputLine, 3, 6);
         i.validator = "range:1..9".into();

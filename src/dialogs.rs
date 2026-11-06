@@ -126,18 +126,14 @@ pub struct NewProject {
 }
 
 pub fn new_project_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(70, 16, "Новый проект");
-    let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
+    let mut d = Dialog::centered(72, 15, "Новый проект");
     let first = field(&mut d, 16, 2, "~И~мя", "my_app", 30, None);
-    field(&mut d, 16, 4, "~К~аталог", &cwd, 50, None);
-    let mut rb = RadioButtons::radio_buttons(Rect::new(16, 6, 50, 8), &["~g~it (репозиторий)", "~п~уть на диске"]);
-    rb.value = if cfg.dep_git { 0 } else { 1 };
-    let rb = d.add(rb);
-    d.add(Label::new(Rect::new(1, 6, 16, 7), "~t~vision-rs", Some(rb)));
-    field(&mut d, 16, 9, "~О~ткуда", &cfg.dep_value, 50, None);
-    d.add(StaticText::new(Rect::new(2, 11, 68, 12), "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,"));
-    d.add(StaticText::new(Rect::new(2, 12, 68, 13), "файлом проекта .tvsp и формой «О программе». Путь — от каталога проекта."));
-    ok_cancel(&mut d, 13);
+    field(&mut d, 16, 4, "~К~аталог", &cfg.default_parent().display().to_string(), 54, None);
+    field(&mut d, 16, 6, "~t~vision-rs", &cfg.dep_value, 54, None);
+    d.add(StaticText::new(Rect::new(2, 7, 70, 8), "  ссылка git (https://…) или путь к каталогу tvision-rs на диске"));
+    d.add(StaticText::new(Rect::new(2, 9, 70, 10), "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,"));
+    d.add(StaticText::new(Rect::new(2, 10, 70, 11), "файлом проекта .tvsp и формой «О программе»."));
+    ok_cancel(&mut d, 12);
     d.select(first);
     d
 }
@@ -149,11 +145,7 @@ pub fn read_new_project(v: &Value) -> Result<NewProject, String> {
         return Err(format!("«{}» не годится как имя пакета: латинские буквы, цифры, _ и -.", name));
     }
     let parent = PathBuf::from(s_at(&v, 1).trim());
-    let src = s_at(&v, 3).trim().to_string();
-    if src.is_empty() {
-        return Err("Укажите, откуда брать tvision-rs.".into());
-    }
-    let dep = if v.get(2).and_then(|x| x.as_u32()).unwrap_or(0) == 0 { Dependency::Git(src) } else { Dependency::Path(src) };
+    let dep = Dependency::detect(&s_at(&v, 2)).ok_or_else(|| "Укажите, откуда брать tvision-rs.".to_string())?;
     Ok(NewProject { name, parent, dep })
 }
 
@@ -307,6 +299,26 @@ impl Config {
         let _ = std::fs::write(p, j.to_pretty());
     }
 
+    /// Каталог для нового проекта: рядом с последним проектом, иначе —
+    /// текущий каталог (но не каталог сборки самой среды `target/…`).
+    pub fn default_parent(&self) -> PathBuf {
+        if let Some(p) = self.recent.first().map(PathBuf::from).and_then(|f| f.parent()?.parent().map(|d| d.to_path_buf())) {
+            if p.is_dir() {
+                return p;
+            }
+        }
+        let cwd = std::env::current_dir().unwrap_or_default();
+        // Запуск из target/release: поднимаемся выше каталога target.
+        let mut c = cwd.as_path();
+        while let Some(parent) = c.parent() {
+            if c.file_name().map(|n| n == "target").unwrap_or(false) {
+                return parent.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| parent.to_path_buf());
+            }
+            c = parent;
+        }
+        cwd
+    }
+
     /// Запомнить недавний проект.
     pub fn add_recent(&mut self, file: &str) {
         self.recent.retain(|r| r != file);
@@ -342,11 +354,8 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     let cb = d.add(cb);
     d.add(Label::new(Rect::new(1, 6, 18, 7), "Сб~о~рка", Some(cb)));
     field(&mut d, 18, 8, "~c~argo", &cfg.cargo, 44, None);
-    let mut rb = RadioButtons::radio_buttons(Rect::new(18, 10, 50, 12), &["~g~it", "~п~уть на диске"]);
-    rb.value = if cfg.dep_git { 0 } else { 1 };
-    let rb = d.add(rb);
-    d.add(Label::new(Rect::new(1, 10, 18, 11), "t~v~ision-rs", Some(rb)));
-    field(&mut d, 18, 12, "~О~ткуда", &cfg.dep_value, 44, None);
+    field(&mut d, 18, 10, "t~v~ision-rs", &cfg.dep_value, 44, None);
+    d.add(StaticText::new(Rect::new(18, 11, 64, 12), "ссылка git или путь для новых проектов"));
     ok_cancel(&mut d, 14);
     d.select(th);
     d
@@ -360,9 +369,9 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     if !cargo.trim().is_empty() {
         cfg.cargo = cargo.trim().to_string();
     }
-    cfg.dep_git = v.get(3).and_then(|x| x.as_u32()).unwrap_or(0) == 0;
-    let dv = s_at(&v, 4);
-    if !dv.trim().is_empty() {
+    let dv = s_at(&v, 3);
+    if let Some(dep) = Dependency::detect(&dv) {
+        cfg.dep_git = matches!(dep, Dependency::Git(_));
         cfg.dep_value = dv.trim().to_string();
     }
 }
