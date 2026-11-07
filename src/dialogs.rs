@@ -244,6 +244,9 @@ pub struct Config {
     pub lsp_enabled: bool,
     /// Команда запуска сервера (по умолчанию — `rust-analyzer`).
     pub lsp_command: String,
+    /// Редактор кода: подсветка строки и столбца курсора.
+    pub hl_line: bool,
+    pub hl_col: bool,
 }
 
 impl Default for Config {
@@ -257,6 +260,8 @@ impl Default for Config {
             recent: Vec::new(),
             lsp_enabled: true,
             lsp_command: "rust-analyzer".into(),
+            hl_line: true,
+            hl_col: true,
         }
     }
 }
@@ -287,6 +292,8 @@ impl Config {
         c.dep_value = Some(j.str("dep_value")).filter(|s| !s.is_empty()).unwrap_or(c.dep_value);
         c.recent = j.strings("recent");
         c.lsp_enabled = j.bool("lsp_enabled", true);
+        c.hl_line = j.bool("hl_line", true);
+        c.hl_col = j.bool("hl_col", true);
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
         c
     }
@@ -305,6 +312,8 @@ impl Config {
             ("recent", Json::from_strings(&self.recent)),
             ("lsp_enabled", Json::Bool(self.lsp_enabled)),
             ("lsp_command", Json::s(&self.lsp_command)),
+            ("hl_line", Json::Bool(self.hl_line)),
+            ("hl_col", Json::Bool(self.hl_col)),
         ]);
         let _ = std::fs::write(p, j.to_pretty());
     }
@@ -354,7 +363,7 @@ impl Config {
 }
 
 pub fn options_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(66, 21, "Параметры среды");
+    let mut d = Dialog::centered(66, 23, "Параметры среды");
     let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
     th.value = cfg.theme;
     let th = d.add(th);
@@ -368,7 +377,11 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     d.add(StaticText::new(Rect::new(18, 12, 64, 13), "ссылка git или путь для новых проектов"));
     field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
-    ok_cancel(&mut d, 18);
+    let mut hl = CheckBoxes::check_boxes(Rect::new(18, 17, 62, 19), &["Подсвечивать ~с~троку курсора", "Подсвечивать с~т~олбец курсора"]);
+    hl.value = u32::from(cfg.hl_line) | (u32::from(cfg.hl_col) << 1);
+    let hl = d.add(hl);
+    d.add(Label::new(Rect::new(1, 17, 18, 18), "~Р~едактор", Some(hl)));
+    ok_cancel(&mut d, 20);
     d.select(th);
     d
 }
@@ -392,6 +405,9 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     if !lsp.trim().is_empty() {
         cfg.lsp_command = lsp.trim().to_string();
     }
+    let hl = v.get(5).and_then(|x| x.as_u32()).unwrap_or(3);
+    cfg.hl_line = hl & 1 != 0;
+    cfg.hl_col = hl & 2 != 0;
 }
 
 // ======================================================================

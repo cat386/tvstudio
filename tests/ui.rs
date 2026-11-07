@@ -325,3 +325,38 @@ fn build_finds_error_and_jumps() {
     }
     assert!(t.screen().contains("завершена"), "{}", t.screen());
 }
+
+#[test]
+fn cursor_line_and_column_highlight() {
+    let mut t = T::new("hl");
+    let f = t.dir.join("src").join("hl.rs");
+    std::fs::write(&f, "aaaa1\nbbbb2\ncccc3\ndddd4\n").unwrap();
+    let id = t.ide.open_file(&mut t.app, &f, Some((3, 5))).unwrap();
+    t.pump();
+    // Где на экране строки файла.
+    let text = t.screen();
+    let rows: Vec<&str> = text.lines().collect();
+    let find = |s: &str| {
+        let y = rows.iter().position(|r| r.contains(s)).unwrap();
+        let cs: Vec<char> = rows[y].chars().collect();
+        let x = cs.windows(s.chars().count()).position(|w| w.iter().collect::<String>() == s).unwrap();
+        (x as i32, y as i32)
+    };
+    let (xa, ya) = find("aaaa1");
+    let (xc, yc) = find("cccc3");
+    let at = |t: &T, x: i32, y: i32| t.app.screen().get(x as usize, y as usize).attr;
+    // Строка курсора — другим фоном, чем обычная строка.
+    assert_ne!(at(&t, xc + 1, yc), at(&t, xa + 1, ya), "строка курсора не подсвечена");
+    // Столбец курсора (5-й символ) подсвечен и в других строках — тем же фоном.
+    assert_ne!(at(&t, xa + 4, ya), at(&t, xa + 3, ya), "столбец курсора не подсвечен");
+    assert_eq!(at(&t, xa + 4, ya), at(&t, xc + 1, yc));
+    // Выключили — всё одним цветом.
+    {
+        let w = t.app.find_mut::<CodeWindow>(id).unwrap();
+        w.editor_mut().hl_line = false;
+        w.editor_mut().hl_col = false;
+    }
+    t.pump();
+    assert_eq!(at(&t, xc + 1, yc), at(&t, xa + 1, ya));
+    assert_eq!(at(&t, xa + 4, ya), at(&t, xa + 3, ya));
+}

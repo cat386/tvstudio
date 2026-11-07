@@ -414,6 +414,8 @@ impl Ide {
                 if let Some(m) = self.marks.get(&abs) {
                     w.set_marks(m.clone());
                 }
+                w.editor_mut().hl_line = self.cfg.hl_line;
+                w.editor_mut().hl_col = self.cfg.hl_col;
                 self.lsp_state.diags_dirty = true;
                 app.insert_window(w)
             }
@@ -1302,6 +1304,12 @@ impl Ide {
         }
         let before = (self.cfg.lsp_enabled, self.cfg.lsp_command.clone());
         dialogs::read_options(&mut self.cfg, &d.get_data());
+        for id in Self::windows::<CodeWindow>(app) {
+            if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                w.editor_mut().hl_line = self.cfg.hl_line;
+                w.editor_mut().hl_col = self.cfg.hl_col;
+            }
+        }
         // Сервер LSP включили, выключили или сменили — перезапуск.
         if before != (self.cfg.lsp_enabled, self.cfg.lsp_command.clone()) {
             if self.cfg.lsp_enabled && self.project.is_some() {

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tvision::color::{attr, attr256, is_bg256, is_fg256, with_back, with_bg256, with_fg256, with_fore};
+use tvision::color::{attr, attr256, back, bg256, is_bg256, is_fg256, shade_bg, with_back, with_bg256, with_fg256, with_fore};
 use tvision::widgets::editor::TAB_SIZE;
 use tvision::*;
 
@@ -15,6 +15,15 @@ use crate::cmds::*;
 use crate::highlight::{highlight_line, Class, Lang, State};
 use crate::lsp::CompletionItem;
 use crate::toolwins::MsgKind;
+
+/// Атрибут `a` с фоном, взятым из `src` (цвет текста остаётся).
+pub fn with_bg_of(a: Attr, src: Attr) -> Attr {
+    if is_bg256(src) {
+        with_bg256(a, bg256(src))
+    } else {
+        with_back(a, back(src))
+    }
+}
 
 /// Ширина полосы номеров строк.
 pub const GUTTER_W: i32 = 7;
@@ -106,6 +115,10 @@ pub struct CodeEditor {
     pub diags: Vec<Underline>,
     /// Список дополнения (если открыт).
     pub completion: Option<Completion>,
+    /// Подсвечивать строку курсора.
+    pub hl_line: bool,
+    /// Подсвечивать столбец курсора.
+    pub hl_col: bool,
 }
 
 impl CodeEditor {
@@ -113,7 +126,7 @@ impl CodeEditor {
         let mut fe = FileEditor::new(bounds, h, v, ind, path);
         fe.editor.vs.help_ctx = HC_EDITOR;
         // Отступы в Rust — 4 пробела; табуляции в файле тоже показываются.
-        CodeEditor { fe, lang: Lang::from_path(path), diags: Vec::new(), completion: None }
+        CodeEditor { fe, lang: Lang::from_path(path), diags: Vec::new(), completion: None, hl_line: true, hl_col: true }
     }
 
     /// Начало слова под курсором (слева от курсора).
@@ -345,6 +358,14 @@ impl View for CodeEditor {
         let warn_bg = |a: Attr| if wide { with_bg256(a, 58) } else { with_back(a, 6) };
         let popup = self.completion_rows();
         let (pop_n, pop_s) = if wide { (attr256(223, 237), attr256(235, 214)) } else { (attr(0, 7), attr(15, 2)) };
+        // Строка и столбец курсора — чуть другим фоном (только в активном
+        // редакторе, чтобы в остальных окнах не рябило).
+        let active = ed.vs.is_focused();
+        let cur = ed.cursor();
+        let cur_bg = shade_bg(normal);
+        let hl_line = active && self.hl_line;
+        // Экранный столбец курсора (с учётом табуляций и широких символов).
+        let cur_x = if active && self.hl_col { Some(ed.col_to_x(cur.line, cur.col)) } else { None };
         let top = ed.delta.y.max(0) as usize;
         let dx = ed.delta.x.max(0) as usize;
         // Состояние разбора на первой видимой строке.
@@ -357,8 +378,23 @@ impl View for CodeEditor {
         }
         for row in 0..size.y {
             let mut b = DrawBuffer::new(w);
-            b.move_char(0, ' ', normal, w);
             let li = top + row as usize;
+            let on_line = hl_line && li == cur.line;
+            // Фон ячейки: строка или столбец курсора.
+            let shade = |a: Attr, x: usize, cw: usize| {
+                let on_col = cur_x.map(|cx| cx >= x && cx < x + cw).unwrap_or(false);
+                if on_line || on_col {
+                    with_bg_of(a, cur_bg)
+                } else {
+                    a
+                }
+            };
+            b.move_char(0, ' ', if on_line { with_bg_of(normal, cur_bg) } else { normal }, w);
+            if let Some(cx) = cur_x {
+                if cx >= dx && cx - dx < w {
+                    b.move_char(cx - dx, ' ', with_bg_of(normal, cur_bg), 1);
+                }
+            }
             if li < n {
                 let line: Vec<char> = ed.line(li).chars().collect();
                 let classes = highlight_line(&line, &mut state, self.lang);
@@ -382,7 +418,7 @@ impl View for CodeEditor {
                         match diag_at(ci) {
                             Some(true) => attr = err_bg(attr),
                             Some(false) => attr = warn_bg(attr),
-                            None => {}
+                            None => attr = shade(attr, x, cw),
                         }
                     }
                     let vis_a = x.max(dx);
