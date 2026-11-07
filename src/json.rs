@@ -110,6 +110,41 @@ impl Json {
         out
     }
 
+    /// Запись в одну строку без пробелов (для протоколов вроде LSP).
+    pub fn to_compact(&self) -> String {
+        let mut out = String::new();
+        self.write_compact(&mut out);
+        out
+    }
+
+    fn write_compact(&self, out: &mut String) {
+        match self {
+            Json::Arr(a) => {
+                out.push('[');
+                for (i, v) in a.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    v.write_compact(out);
+                }
+                out.push(']');
+            }
+            Json::Obj(p) => {
+                out.push('{');
+                for (i, (k, v)) in p.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    write_str(out, k);
+                    out.push(':');
+                    v.write_compact(out);
+                }
+                out.push('}');
+            }
+            other => other.write(out, 0),
+        }
+    }
+
     fn write(&self, out: &mut String, indent: usize) {
         match self {
             Json::Null => out.push_str("null"),

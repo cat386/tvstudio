@@ -21,9 +21,13 @@ use crate::codegen;
 use crate::designer::{Align, DesignWindow, DocRef, FormDoc, Reorder};
 use crate::dialogs::{self, Config};
 use crate::inspector::InspectorWindow;
+use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
 use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, PaletteWindow, ProjectWindow};
+
+mod lsp_glue;
+pub use lsp_glue::LspState;
 
 /// Текст справки (формат tvhc), встроен в программу.
 pub const HELP_SOURCE: &str = include_str!("help.txt");
@@ -88,7 +92,14 @@ pub fn menu_bar() -> Menu {
                 .item("Найти в ~ф~айлах...", CM_FIND_FILES)
                 .separator()
                 .item_key("~С~ледующая ошибка", CM_NEXT_ERR, kb::f(8), "F8")
-                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8"),
+                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8")
+                .separator()
+                .item_key("~Д~ополнить", CM_COMPLETE, k(Key::Char(' '), Mods::CTRL), "Ctrl+Space")
+                .item_key("К ~о~пределению", CM_GOTO_DEF, kb::f(12), "F12")
+                .item_key("Найти сс~ы~лки", CM_FIND_REFS, kb::shift_f(12), "Shift+F12")
+                .item_key("Н~а~зад", CM_NAV_BACK, k(Key::Left, Mods::ALT), "Alt+←")
+                .item("Д~и~агностика LSP", CM_DIAGNOSTICS)
+                .item("Перезапустить сервер ~L~SP", CM_LSP_RESTART),
         )
         .submenu(
             "Фо~р~ма",
@@ -197,12 +208,14 @@ pub fn status_line() -> Vec<StatusDef> {
             HC_EDITOR,
             HC_EDITOR,
             with(vec![
-                StatusItem::new("~F2~ Сохранить", kb::F2, cm::SAVE),
-                StatusItem::new("~F9~ Собрать", kb::f(9), CM_BUILD),
-                StatusItem::new("~Ctrl+F9~ Запуск", kb::ctrl_f(9), CM_RUN),
-                StatusItem::new("~Alt+G~ Строка", kb::alt('G'), CM_GOTO),
+                StatusItem::new("~F2~ Сохр.", kb::F2, cm::SAVE),
+                StatusItem::new("~F9~ Сборка", kb::f(9), CM_BUILD),
+                StatusItem::new("~F12~ Опред.", kb::f(12), CM_GOTO_DEF),
+                StatusItem::new("~Shift+F12~ Ссылки", kb::shift_f(12), CM_FIND_REFS),
+                StatusItem::new("", k(Key::Left, Mods::ALT), CM_NAV_BACK),
+                StatusItem::new("", kb::ctrl_f(9), CM_RUN),
+                StatusItem::new("", kb::alt('G'), CM_GOTO),
                 StatusItem::new("~F8~ Ошибка", kb::f(8), CM_NEXT_ERR),
-                StatusItem::new("~F10~ Меню", kb::F10, cm::MENU),
             ]),
         ),
         StatusDef::range(
@@ -248,6 +261,9 @@ pub struct Ide {
     tree_dirty: bool,
     /// Последняя ошибка (в тестовом режиме ошибки не показываются окном).
     pub last_error: Option<String>,
+    /// Сервер LSP (rust-analyzer) открытого проекта.
+    pub lsp: Option<LspClient>,
+    pub lsp_state: LspState,
 }
 
 impl Ide {
@@ -267,6 +283,8 @@ impl Ide {
             win_no: 0,
             tree_dirty: false,
             last_error: None,
+            lsp: None,
+            lsp_state: LspState::default(),
         }
     }
 
@@ -396,6 +414,7 @@ impl Ide {
                 if let Some(m) = self.marks.get(&abs) {
                     w.set_marks(m.clone());
                 }
+                self.lsp_state.diags_dirty = true;
                 app.insert_window(w)
             }
         };
@@ -479,6 +498,7 @@ impl Ide {
         for id in Self::windows::<CodeWindow>(app).into_iter().chain(Self::windows::<DesignWindow>(app)) {
             app.desktop_mut().group.remove(id);
         }
+        self.lsp_stop(app);
         self.project = None;
         self.marks.clear();
         self.tree_dirty = true;
@@ -503,6 +523,7 @@ impl Ide {
                 self.tree_dirty = true;
                 self.ensure_tools(app);
                 self.say(app, &format!("Открыт проект {} ({})", name, f));
+                self.lsp_start(app);
                 for path in files {
                     if path.exists() {
                         self.open_file(app, &path, None);
@@ -766,6 +787,8 @@ impl Ide {
             }
         }
         self.marks = marks;
+        // Где есть свежая диагностика сервера — она важнее.
+        self.lsp_state.diags_dirty = true;
     }
 
     /// Перейти к месту из строки сообщений.
@@ -1099,11 +1122,13 @@ impl Ide {
     /// Начало работы: окна-инструменты, проект или файлы из командной строки.
     pub fn startup(&mut self, app: &mut Program, args: Vec<String>) {
         app.palette = self.cfg.palette();
-        let hint: Box<dyn Fn(u16) -> String> = Box::new(|ctx| match ctx {
+        let diag_hint = self.lsp_state.hint.clone();
+        let hint: Box<dyn Fn(u16) -> String> = Box::new(move |ctx| match ctx {
             HC_DESIGNER => "Стрелки — сдвиг, Shift — размер".into(),
             HC_PALETTE => "Enter — добавить на форму".into(),
             HC_PROJECT => "Enter — открыть".into(),
             HC_MESSAGES => "Enter — к месту ошибки".into(),
+            HC_EDITOR => diag_hint.borrow().clone(),
             _ => String::new(),
         });
         if let Some(sl) = app.status_line_mut() {
@@ -1143,6 +1168,9 @@ impl Ide {
     pub fn shutdown(&mut self, app: &mut Program) {
         if let Some(job) = &self.job {
             job.kill();
+        }
+        if let Some(c) = self.lsp.take() {
+            c.stop();
         }
         if let Some(p) = &mut self.project {
             let files: Vec<String> = Self::windows::<CodeWindow>(app)
@@ -1201,6 +1229,11 @@ impl Ide {
         }
         let code = Self::current_window(app).map(|id| app.find::<CodeWindow>(id).is_some()).unwrap_or(false);
         set(app, CM_GOTO, code);
+        for c in [CM_COMPLETE, CM_GOTO_DEF, CM_FIND_REFS] {
+            set(app, c, code && self.lsp.is_some());
+        }
+        set(app, CM_NAV_BACK, !self.lsp_state.nav.is_empty());
+        set(app, CM_DIAGNOSTICS, self.lsp.is_some());
         let locs = self.messages.and_then(|id| app.find::<MessagesWindow>(id)).map(|m| m.entries.iter().any(|e| e.loc.is_some())).unwrap_or(false);
         set(app, CM_NEXT_ERR, locs);
         set(app, CM_PREV_ERR, locs);
@@ -1267,7 +1300,16 @@ impl Ide {
         if cmd != cm::OK {
             return;
         }
+        let before = (self.cfg.lsp_enabled, self.cfg.lsp_command.clone());
         dialogs::read_options(&mut self.cfg, &d.get_data());
+        // Сервер LSP включили, выключили или сменили — перезапуск.
+        if before != (self.cfg.lsp_enabled, self.cfg.lsp_command.clone()) {
+            if self.cfg.lsp_enabled && self.project.is_some() {
+                self.lsp_restart(app);
+            } else {
+                self.lsp_stop(app);
+            }
+        }
         app.palette = self.cfg.palette();
         if !self.headless {
             self.cfg.save();
@@ -1331,6 +1373,18 @@ impl Ide {
                 }
             }
             CM_FIND_FILES => self.find_in_files(app),
+            CM_COMPLETE => {
+                let trigger = match info {
+                    Info::Str(s) => s.chars().last(),
+                    _ => None,
+                };
+                self.lsp_complete(app, trigger);
+            }
+            CM_GOTO_DEF => self.lsp_goto_def(app),
+            CM_FIND_REFS => self.lsp_find_refs(app),
+            CM_NAV_BACK => self.nav_back(app),
+            CM_DIAGNOSTICS => self.list_diagnostics(app),
+            CM_LSP_RESTART => self.lsp_restart(app),
             CM_NEXT_ERR => self.next_error(app, true),
             CM_PREV_ERR => self.next_error(app, false),
             CM_MSG_GOTO => {
@@ -1526,6 +1580,7 @@ impl AppHandler for Ide {
 
     fn idle(&mut self, app: &mut Program) {
         self.poll_job(app);
+        self.lsp_idle(app);
         self.sync_windows(app);
         self.update_commands(app);
     }

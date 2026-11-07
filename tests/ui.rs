@@ -34,7 +34,9 @@ impl T {
         // Без автоматического Esc при простое: он снимал бы выделение в дизайнере.
         b.esc_budget = 0;
         let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
-        let mut ide = Ide::new(Config::default(), true);
+        // Сервер LSP проверяется отдельно (tests/lsp.rs).
+        let cfg = Config { lsp_enabled: false, ..Config::default() };
+        let mut ide = Ide::new(cfg, true);
         ide.startup(&mut app, vec![p.file().display().to_string()]);
         app.pump(&mut ide);
         T { app, ide, dir: p.dir }

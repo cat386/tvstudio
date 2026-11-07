@@ -7,12 +7,13 @@
 
 use std::path::{Path, PathBuf};
 
-use tvision::color::{is_bg256, is_fg256, with_fg256, with_fore};
+use tvision::color::{attr, attr256, is_bg256, is_fg256, with_back, with_bg256, with_fg256, with_fore};
 use tvision::widgets::editor::TAB_SIZE;
 use tvision::*;
 
 use crate::cmds::*;
 use crate::highlight::{highlight_line, Class, Lang, State};
+use crate::lsp::CompletionItem;
 use crate::toolwins::MsgKind;
 
 /// Ширина полосы номеров строк.
@@ -55,10 +56,56 @@ pub fn class_attr(normal: Attr, c: Class) -> Attr {
 // Редактор с подсветкой
 // ======================================================================
 
-/// `FileEditor` с подсветкой синтаксиса.
+/// Подчёркнутый диагностикой участок строки (столбцы — в символах).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Underline {
+    pub line: usize,
+    pub c0: usize,
+    pub c1: usize,
+    /// Ошибка (иначе — предупреждение).
+    pub error: bool,
+}
+
+/// Открытый список дополнения.
+///
+/// Список рисует сам редактор поверх текста (рядом с курсором), а
+/// клавиши Up/Down/PgUp/PgDn/Enter/Tab/Esc перехватывает, пока список
+/// открыт. Всё остальное идёт в редактор как обычно, после чего список
+/// фильтруется по набранному от `start` до курсора.
+#[derive(Clone, Debug)]
+pub struct Completion {
+    pub items: Vec<CompletionItem>,
+    /// С какого места заменять (начало слова или `textEdit.range.start`).
+    pub start: Pos,
+    /// Номера показанных вариантов (после фильтра).
+    pub shown: Vec<usize>,
+    pub sel: usize,
+    pub top: usize,
+}
+
+/// Наибольшая высота списка дополнения.
+pub const COMPLETION_ROWS: usize = 8;
+
+/// Буква идентификатора Rust.
+pub fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Совпадает ли `pat` с `text` как подпоследовательность (без учёта регистра).
+fn subsequence(pat: &str, text: &str) -> bool {
+    let mut t = text.chars().flat_map(|c| c.to_lowercase());
+    pat.chars().flat_map(|c| c.to_lowercase()).all(|p| t.any(|c| c == p))
+}
+
+/// `FileEditor` с подсветкой синтаксиса, подчёркиванием диагностик
+/// и списком дополнения.
 pub struct CodeEditor {
     pub fe: FileEditor,
     pub lang: Lang,
+    /// Диагностики сервера LSP для этого файла.
+    pub diags: Vec<Underline>,
+    /// Список дополнения (если открыт).
+    pub completion: Option<Completion>,
 }
 
 impl CodeEditor {
@@ -66,7 +113,204 @@ impl CodeEditor {
         let mut fe = FileEditor::new(bounds, h, v, ind, path);
         fe.editor.vs.help_ctx = HC_EDITOR;
         // Отступы в Rust — 4 пробела; табуляции в файле тоже показываются.
-        CodeEditor { fe, lang: Lang::from_path(path) }
+        CodeEditor { fe, lang: Lang::from_path(path), diags: Vec::new(), completion: None }
+    }
+
+    /// Начало слова под курсором (слева от курсора).
+    pub fn word_start(&self) -> Pos {
+        let cur = self.fe.editor.cursor();
+        let line: Vec<char> = self.fe.editor.line(cur.line).chars().collect();
+        let mut c = cur.col.min(line.len());
+        while c > 0 && is_ident_char(line[c - 1]) {
+            c -= 1;
+        }
+        Pos::new(cur.line, c)
+    }
+
+    /// Слово под курсором (целиком, в обе стороны) и его начало.
+    pub fn word_at_cursor(&self) -> (String, Pos) {
+        let cur = self.fe.editor.cursor();
+        let line: Vec<char> = self.fe.editor.line(cur.line).chars().collect();
+        let mut a = cur.col.min(line.len());
+        while a > 0 && is_ident_char(line[a - 1]) {
+            a -= 1;
+        }
+        let mut b = cur.col.min(line.len());
+        while b < line.len() && is_ident_char(line[b]) {
+            b += 1;
+        }
+        (line[a..b].iter().collect(), Pos::new(cur.line, a))
+    }
+
+    /// Открыть список дополнения.
+    pub fn open_completion(&mut self, items: Vec<CompletionItem>, start: Pos) {
+        if items.is_empty() {
+            self.completion = None;
+            return;
+        }
+        self.completion = Some(Completion { items, start, shown: Vec::new(), sel: 0, top: 0 });
+        self.refilter();
+    }
+
+    /// Набранное от начала замены до курсора (`None` — курсор ушёл).
+    fn typed_prefix(&self) -> Option<String> {
+        let c = self.completion.as_ref()?;
+        let cur = self.fe.editor.cursor();
+        if cur.line != c.start.line || cur.col < c.start.col {
+            return None;
+        }
+        let line: Vec<char> = self.fe.editor.line(cur.line).chars().collect();
+        let s: String = line[c.start.col.min(line.len())..cur.col.min(line.len())].iter().collect();
+        // Набран не идентификатор (пробел, скобка…) — список больше не нужен.
+        if s.chars().any(|ch| !is_ident_char(ch)) {
+            return None;
+        }
+        Some(s)
+    }
+
+    /// Отфильтровать варианты по набранному; закрыть список, если подходящих нет.
+    pub fn refilter(&mut self) {
+        let Some(prefix) = self.typed_prefix() else {
+            self.completion = None;
+            return;
+        };
+        let c = self.completion.as_mut().unwrap();
+        let low = prefix.to_lowercase();
+        // Сначала — начинающиеся с набранного, затем — содержащие его буквы по порядку.
+        let mut shown: Vec<usize> = (0..c.items.len()).filter(|&i| c.items[i].filter.to_lowercase().starts_with(&low)).collect();
+        shown.extend((0..c.items.len()).filter(|&i| !c.items[i].filter.to_lowercase().starts_with(&low) && subsequence(&low, &c.items[i].filter)));
+        if shown.is_empty() {
+            self.completion = None;
+            return;
+        }
+        let keep = c.shown.get(c.sel).copied();
+        c.shown = shown;
+        c.sel = keep.and_then(|k| c.shown.iter().position(|&i| i == k)).unwrap_or(0);
+        c.top = c.top.min(c.sel);
+        if c.sel >= c.top + COMPLETION_ROWS {
+            c.top = c.sel + 1 - COMPLETION_ROWS;
+        }
+    }
+
+    /// Выбранный вариант.
+    pub fn selected_completion(&self) -> Option<&CompletionItem> {
+        let c = self.completion.as_ref()?;
+        c.items.get(*c.shown.get(c.sel)?)
+    }
+
+    /// Вставить выбранный вариант (заменив набранное начало слова).
+    pub fn accept_completion(&mut self) {
+        let Some(item) = self.selected_completion().cloned() else { return };
+        let start = self.completion.as_ref().unwrap().start;
+        self.completion = None;
+        let e = &mut self.fe.editor;
+        let cur = e.cursor();
+        // Если сервер предлагал заменить и хвост слова справа — заменяем
+        // до конца слова, иначе только набранное.
+        let line: Vec<char> = e.line(cur.line).chars().collect();
+        let mut end = cur.col.min(line.len());
+        if let Some(r) = item.range {
+            if r.end.line == cur.line && r.end.col > end {
+                while end < line.len() && is_ident_char(line[end]) {
+                    end += 1;
+                }
+            }
+        }
+        e.set_select(start, Pos::new(cur.line, end));
+        e.insert_text(&item.insert, false);
+        // Курсор — внутрь скобок, если вставлен вызов без аргументов «f()»…
+        // нет: оставляем после вставки, как делает большинство редакторов
+        // без поддержки сниппетов.
+        e.track_cursor(false);
+    }
+
+    fn move_completion(&mut self, delta: i32) {
+        let Some(c) = &mut self.completion else { return };
+        let n = c.shown.len() as i32;
+        let s = (c.sel as i32 + delta).rem_euclid(n.max(1));
+        // PgUp/PgDn не «заворачиваются» через край.
+        let s = if delta.abs() > 1 { (c.sel as i32 + delta).clamp(0, n - 1) } else { s };
+        c.sel = s as usize;
+        if c.sel < c.top {
+            c.top = c.sel;
+        }
+        if c.sel >= c.top + COMPLETION_ROWS {
+            c.top = c.sel + 1 - COMPLETION_ROWS;
+        }
+    }
+
+    /// Обновить полосы прокрутки и индикатор после правки в обход событий.
+    fn resync(&mut self, ctx: &mut Ctx) {
+        let mut nothing = Event::Broadcast(Message::new(0xFFFE));
+        self.fe.handle_event(&mut nothing, ctx);
+    }
+
+    /// После набранного символа: `.` и `::` сами открывают дополнение.
+    fn after_typing(&mut self, key: Key, ctx: &mut Ctx) {
+        let Key::Char(ch) = key else { return };
+        if self.lang != Lang::Rust || (ch != '.' && ch != ':') {
+            return;
+        }
+        let cur = self.fe.editor.cursor();
+        let line: Vec<char> = self.fe.editor.line(cur.line).chars().collect();
+        let before = |k: usize| if cur.col >= k { line.get(cur.col - k).copied() } else { None };
+        if before(1) != Some(ch) {
+            return;
+        }
+        let trigger = match ch {
+            // «..» (диапазон) и число «1.» — не поле.
+            '.' if before(2) == Some('.') || before(2).map(|c| c.is_ascii_digit()).unwrap_or(false) => return,
+            '.' => ".",
+            _ if before(2) == Some(':') => "::",
+            _ => return,
+        };
+        ctx.post_command(CM_COMPLETE, Info::Str(trigger.into()));
+    }
+
+    /// Строки списка дополнения: (строка экрана, столбец, текст, выбран ли).
+    fn completion_rows(&self) -> Vec<(i32, i32, String, bool)> {
+        let Some(c) = &self.completion else { return Vec::new() };
+        let e = &self.fe.editor;
+        let size = e.vs.size;
+        let rows = c.shown.len().min(COMPLETION_ROWS);
+        let label_w = c.shown.iter().map(|&i| c.items[i].label.chars().count()).max().unwrap_or(0);
+        let detail_w = c.shown.iter().map(|&i| c.items[i].detail.chars().count()).max().unwrap_or(0).min(30);
+        let w = (label_w + if detail_w > 0 { detail_w + 2 } else { 0 } + 4).clamp(16, 64).min(size.x.max(1) as usize) as i32;
+        let cur_row = e.cursor().line as i32 - e.delta.y;
+        let x0 = e.col_to_x(c.start.line, c.start.col) as i32 - e.delta.x - 2;
+        let x = x0.clamp(0, (size.x - w).max(0));
+        // Под курсором, если помещается; иначе — над ним.
+        let y = if cur_row + 1 + rows as i32 <= size.y { cur_row + 1 } else { (cur_row - rows as i32).max(0) };
+        let mut out = Vec::new();
+        for r in 0..rows {
+            let k = c.top + r;
+            let Some(&i) = c.shown.get(k) else { break };
+            let it = &c.items[i];
+            let icon = match it.kind {
+                2..=4 => 'ƒ',  // метод, функция, конструктор
+                5 | 10 => '·', // поле, свойство
+                6 => 'v',      // переменная
+                7 | 22 => 'S', // класс, структура
+                8 => 'T',      // интерфейс (типаж)
+                9 => 'm',      // модуль
+                13 => 'E',     // перечисление
+                14 => 'k',     // ключевое слово
+                15 => '»',     // сниппет
+                20 => 'e',     // вариант перечисления
+                21 => 'c',     // константа
+                _ => ' ',
+            };
+            let mut text = format!(" {} {:<lw$}", icon, it.label, lw = label_w);
+            if detail_w > 0 {
+                let d: String = it.detail.chars().take(detail_w).collect();
+                text.push_str("  ");
+                text.push_str(&d);
+            }
+            let text: String = text.chars().take(w as usize).collect();
+            let pad = w as usize - text.chars().count().min(w as usize);
+            out.push((y + r as i32, x, format!("{}{}", text, " ".repeat(pad)), k == c.sel));
+        }
+        out
     }
 }
 
@@ -95,6 +339,12 @@ impl View for CodeEditor {
         let w = size.x.max(0) as usize;
         let sel = ed.selection();
         let n = ed.line_count();
+        let wide = is_bg256(normal) || is_fg256(normal);
+        // Фон подчёркнутых диагностикой мест.
+        let err_bg = |a: Attr| if wide { with_bg256(a, 52) } else { with_back(a, 4) };
+        let warn_bg = |a: Attr| if wide { with_bg256(a, 58) } else { with_back(a, 6) };
+        let popup = self.completion_rows();
+        let (pop_n, pop_s) = if wide { (attr256(223, 237), attr256(235, 214)) } else { (attr(0, 7), attr(15, 2)) };
         let top = ed.delta.y.max(0) as usize;
         let dx = ed.delta.x.max(0) as usize;
         // Состояние разбора на первой видимой строке.
@@ -113,10 +363,28 @@ impl View for CodeEditor {
                 let line: Vec<char> = ed.line(li).chars().collect();
                 let classes = highlight_line(&line, &mut state, self.lang);
                 let in_sel = |col: usize| sel.map(|(a, bb)| Pos::new(li, col) >= a && Pos::new(li, col) < bb).unwrap_or(false);
+                // Диагностика на символе: ошибка «главнее» предупреждения.
+                let diag_at = |col: usize| -> Option<bool> {
+                    let mut r = None;
+                    for d in self.diags.iter().filter(|d| d.line == li) {
+                        let c1 = if d.c1 > d.c0 { d.c1 } else { d.c0 + 1 };
+                        if col >= d.c0 && col < c1 {
+                            r = Some(r.unwrap_or(false) || d.error);
+                        }
+                    }
+                    r
+                };
                 let mut x = 0usize;
                 for (ci, &c) in line.iter().enumerate() {
                     let cw = if c == '\t' { TAB_SIZE - x % TAB_SIZE } else { tvision::text::char_width(c).max(1) };
-                    let attr = if in_sel(ci) { selected } else { class_attr(normal, classes.get(ci).copied().unwrap_or(Class::Normal)) };
+                    let mut attr = if in_sel(ci) { selected } else { class_attr(normal, classes.get(ci).copied().unwrap_or(Class::Normal)) };
+                    if !in_sel(ci) {
+                        match diag_at(ci) {
+                            Some(true) => attr = err_bg(attr),
+                            Some(false) => attr = warn_bg(attr),
+                            None => {}
+                        }
+                    }
                     let vis_a = x.max(dx);
                     let vis_b = (x + cw).min(dx + w);
                     if vis_a < vis_b {
@@ -138,6 +406,19 @@ impl View for CodeEditor {
                         b.move_char(x - dx, ' ', selected, 1);
                     }
                 }
+                // Диагностика «в конце строки» (например, нет `;`) — пробел с фоном.
+                if x >= dx && x - dx < w {
+                    match diag_at(line.len()) {
+                        Some(true) => b.move_char(x - dx, ' ', err_bg(normal), 1),
+                        Some(false) => b.move_char(x - dx, ' ', warn_bg(normal), 1),
+                        None => {}
+                    }
+                }
+            }
+            for (py, px, text, on) in &popup {
+                if *py == row {
+                    b.move_str_limited(*px as usize, text, if *on { pop_s } else { pop_n }, w.saturating_sub(*px as usize));
+                }
             }
             dc.write_line(0, row, size.x, 1, &b);
         }
@@ -148,6 +429,46 @@ impl View for CodeEditor {
     }
 
     fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
+        let focused = self.fe.editor.vs.is_focused();
+        // Открытый список дополнения перехватывает клавиши выбора.
+        if self.completion.is_some() {
+            match ev {
+                Event::KeyDown(k) if focused => {
+                    let k = *k;
+                    let page = COMPLETION_ROWS as i32 - 1;
+                    match (k.key, k.mods) {
+                        (Key::Up, Mods::NONE) => self.move_completion(-1),
+                        (Key::Down, Mods::NONE) => self.move_completion(1),
+                        (Key::PgUp, Mods::NONE) => self.move_completion(-page),
+                        (Key::PgDn, Mods::NONE) => self.move_completion(page),
+                        (Key::Enter, Mods::NONE) | (Key::Tab, Mods::NONE) => {
+                            self.accept_completion();
+                            self.resync(ctx);
+                        }
+                        (Key::Esc, _) => self.completion = None,
+                        _ => {
+                            // Остальное — в редактор, затем перефильтровать.
+                            self.fe.handle_event(ev, ctx);
+                            self.refilter();
+                            self.after_typing(k.key, ctx);
+                            return;
+                        }
+                    }
+                    ev.clear();
+                    return;
+                }
+                Event::MouseDown(_) => self.completion = None,
+                _ => {}
+            }
+        }
+        if let Event::KeyDown(k) = ev {
+            // Ctrl+Space — дополнение (в терминалах приходит и как Ctrl+@ / NUL).
+            if focused && ((k.key == Key::Char(' ') && k.mods.ctrl) || k.key == Key::Char('\0')) {
+                ctx.post_command(CM_COMPLETE, Info::None);
+                ev.clear();
+                return;
+            }
+        }
         // Tab в коде — четыре пробела до ближайшей кратной позиции.
         if let Event::KeyDown(k) = ev {
             if k.key == Key::Tab && k.mods == Mods::NONE && self.fe.editor.vs.is_focused() && self.fe.editor.selection().is_none() {
@@ -157,12 +478,18 @@ impl View for CodeEditor {
                 self.fe.editor.track_cursor(false);
                 ev.clear();
                 // Обновить полосы и индикатор — обработкой «пустого» события.
-                let mut nothing = Event::Broadcast(Message::new(0xFFFE));
-                self.fe.handle_event(&mut nothing, ctx);
+                self.resync(ctx);
                 return;
             }
         }
+        let key = match ev {
+            Event::KeyDown(k) if focused => Some(k.key),
+            _ => None,
+        };
         self.fe.handle_event(ev, ctx);
+        if let Some(k) = key {
+            self.after_typing(k, ctx);
+        }
     }
 
     fn exec_result(&mut self, tag: u16, command: u16, view: Box<dyn View>, ctx: &mut Ctx) {

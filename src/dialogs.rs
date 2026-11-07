@@ -240,6 +240,10 @@ pub struct Config {
     pub dep_value: String,
     /// Недавние проекты (файлы .tvsp).
     pub recent: Vec<String>,
+    /// Сервер LSP для редактора кода (дополнение, переходы, диагностика).
+    pub lsp_enabled: bool,
+    /// Команда запуска сервера (по умолчанию — `rust-analyzer`).
+    pub lsp_command: String,
 }
 
 impl Default for Config {
@@ -251,6 +255,8 @@ impl Default for Config {
             dep_git: true,
             dep_value: "https://github.com/cat386/tvision-rs".into(),
             recent: Vec::new(),
+            lsp_enabled: true,
+            lsp_command: "rust-analyzer".into(),
         }
     }
 }
@@ -280,6 +286,8 @@ impl Config {
         c.dep_git = j.bool("dep_git", true);
         c.dep_value = Some(j.str("dep_value")).filter(|s| !s.is_empty()).unwrap_or(c.dep_value);
         c.recent = j.strings("recent");
+        c.lsp_enabled = j.bool("lsp_enabled", true);
+        c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
         c
     }
 
@@ -295,6 +303,8 @@ impl Config {
             ("dep_git", Json::Bool(self.dep_git)),
             ("dep_value", Json::s(&self.dep_value)),
             ("recent", Json::from_strings(&self.recent)),
+            ("lsp_enabled", Json::Bool(self.lsp_enabled)),
+            ("lsp_command", Json::s(&self.lsp_command)),
         ]);
         let _ = std::fs::write(p, j.to_pretty());
     }
@@ -344,19 +354,21 @@ impl Config {
 }
 
 pub fn options_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(66, 17, "Параметры среды");
+    let mut d = Dialog::centered(66, 21, "Параметры среды");
     let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
     th.value = cfg.theme;
     let th = d.add(th);
     d.add(Label::new(Rect::new(1, 2, 18, 3), "~Т~ема", Some(th)));
-    let mut cb = CheckBoxes::check_boxes(Rect::new(18, 6, 62, 7), &["~С~охранять всё перед сборкой"]);
-    cb.value = u32::from(cfg.autosave);
+    let mut cb = CheckBoxes::check_boxes(Rect::new(18, 6, 62, 8), &["~С~охранять всё перед сборкой", "Сервер ~L~SP в редакторе кода"]);
+    cb.value = u32::from(cfg.autosave) | (u32::from(cfg.lsp_enabled) << 1);
     let cb = d.add(cb);
     d.add(Label::new(Rect::new(1, 6, 18, 7), "Сб~о~рка", Some(cb)));
-    field(&mut d, 18, 8, "~c~argo", &cfg.cargo, 44, None);
-    field(&mut d, 18, 10, "t~v~ision-rs", &cfg.dep_value, 44, None);
-    d.add(StaticText::new(Rect::new(18, 11, 64, 12), "ссылка git или путь для новых проектов"));
-    ok_cancel(&mut d, 14);
+    field(&mut d, 18, 9, "~c~argo", &cfg.cargo, 44, None);
+    field(&mut d, 18, 11, "t~v~ision-rs", &cfg.dep_value, 44, None);
+    d.add(StaticText::new(Rect::new(18, 12, 64, 13), "ссылка git или путь для новых проектов"));
+    field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
+    d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
+    ok_cancel(&mut d, 18);
     d.select(th);
     d
 }
@@ -364,7 +376,9 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
 pub fn read_options(cfg: &mut Config, v: &Value) {
     let v = strs(v);
     cfg.theme = v.first().and_then(|x| x.as_u32()).unwrap_or(0).min(2);
-    cfg.autosave = v.get(1).and_then(|x| x.as_u32()).unwrap_or(1) & 1 != 0;
+    let flags = v.get(1).and_then(|x| x.as_u32()).unwrap_or(3);
+    cfg.autosave = flags & 1 != 0;
+    cfg.lsp_enabled = flags & 2 != 0;
     let cargo = s_at(&v, 2);
     if !cargo.trim().is_empty() {
         cfg.cargo = cargo.trim().to_string();
@@ -373,6 +387,10 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     if let Some(dep) = Dependency::detect(&dv) {
         cfg.dep_git = matches!(dep, Dependency::Git(_));
         cfg.dep_value = dv.trim().to_string();
+    }
+    let lsp = s_at(&v, 4);
+    if !lsp.trim().is_empty() {
+        cfg.lsp_command = lsp.trim().to_string();
     }
 }
 
