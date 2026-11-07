@@ -74,6 +74,12 @@ pub fn build_dialog(form: &Form, resolve: &dyn Fn(&str) -> u16) -> (Dialog, Hash
         crate::model::Pal::Cyan => DialogPalette::Cyan,
     });
     d.win.group.vs.help_ctx = form.help_ctx.clamp(0, 65535) as u16;
+    // Окно (Window) выглядит как окно: номер, значки закрытия и распахивания.
+    // Проверка формы показывает его модально, но элементы — те же.
+    if form.class == crate::model::FormClass::Window {
+        d.win.number = form.number;
+        d.win.flags = if form.resizable { wf::MOVE | wf::GROW | wf::CLOSE | wf::ZOOM } else { wf::MOVE | wf::CLOSE };
+    }
     let mut ids: HashMap<String, ViewId> = HashMap::new();
     for i in build_order(form) {
         let c = &form.controls[i];

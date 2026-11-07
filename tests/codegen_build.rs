@@ -80,6 +80,29 @@ fn big_form() -> Form {
     f
 }
 
+/// Форма-окно (Window): немодальное, с номером, растягивается.
+fn window_form() -> Form {
+    let mut f = Form::new("notes", "Заметки");
+    f.class = FormClass::Window;
+    f.number = 2;
+    f.palette = Pal::Cyan;
+    f.help_ctx = 5;
+    f.w = 40;
+    f.h = 12;
+    let mut i = f.new_control(Kind::InputLine, 2, 2);
+    i.w = 30;
+    f.controls.push(i);
+    let mut m = f.new_control(Kind::Memo, 2, 4);
+    m.w = 34;
+    m.h = 3;
+    f.controls.push(m);
+    let mut b = f.new_control(Kind::Button, 14, 8);
+    b.text = "~З~акрыть".into();
+    b.command = "cm::CLOSE".into();
+    f.controls.push(b);
+    f
+}
+
 #[test]
 #[ignore]
 fn generated_project_builds() {
@@ -94,6 +117,9 @@ fn generated_project_builds() {
     p.app
         .commands
         .push(CommandDef { name: "ALL".into(), value: 102, action: Action::Form("all_controls".into()), comment: "все элементы".into() });
+    p.app
+        .commands
+        .push(CommandDef { name: "NOTES".into(), value: 103, action: Action::Form("notes".into()), comment: "окно заметок".into() });
     p.app.startup_form = "about".into();
     p.app.menu.push(MenuNode::Sub {
         title: "~Т~ест".into(),
@@ -101,6 +127,7 @@ fn generated_project_builds() {
         help: 4,
         children: vec![
             MenuNode::Item { title: "~В~се элементы".into(), command: "ALL".into(), key: "Ctrl+F2".into(), help: 3 },
+            MenuNode::Item { title: "~З~аметки".into(), command: "NOTES".into(), key: "".into(), help: 0 },
             MenuNode::Sub {
                 title: "~В~ложенное".into(),
                 key: String::new(),
@@ -110,7 +137,7 @@ fn generated_project_builds() {
         ],
     });
     p.app.status.push(StatusEntry { text: "~Привет~".into(), key: "".into(), command: "HELLO".into() });
-    let forms = vec![about_form("gen_test"), big_form()];
+    let forms = vec![about_form("gen_test"), big_form(), window_form()];
     p.forms = forms.iter().map(|f| f.name.clone()).collect();
     let warnings = tvstudio::codegen::check_project(&p, &forms);
     assert!(warnings.is_empty(), "{:?}", warnings);

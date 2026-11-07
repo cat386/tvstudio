@@ -7,7 +7,7 @@ use tvision::*;
 
 use crate::cmds::*;
 use crate::json::{self, Json};
-use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, Kind};
+use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, FormClass, Kind};
 use crate::props::{self, Prop};
 
 /// Строка «метка + поле ввода» (+ кнопка списка). Возвращает id поля.
@@ -85,7 +85,7 @@ pub fn props_dialog(form: &Form, sel: Option<usize>) -> (Dialog, Vec<Prop>) {
     let hint = if kind.is_some() {
         "Tab — следующее поле. Пункты списка — по одному в строке."
     } else {
-        "Цвет: серый, синий, бирюзовый. Логические: да / нет."
+        "Класс: Dialog / Window. Цвет: серый, синий, бирюзовый. Да / нет."
     };
     d.add(StaticText::new(Rect::new(2, y + 1, 64, y + 2), hint));
     ok_cancel(&mut d, y + 2);
@@ -155,13 +155,19 @@ pub fn read_new_project(v: &Value) -> Result<NewProject, String> {
 
 pub fn new_form_dialog(existing: &[String]) -> Dialog {
     let name = (1..).map(|n| format!("form{}", n)).find(|n| !existing.contains(n)).unwrap();
-    let mut d = Dialog::centered(56, 13, "Новая форма");
+    let mut d = Dialog::centered(58, 17, "Новая форма");
     let first = field(&mut d, 16, 2, "~И~мя", &name, 30, None);
     field(&mut d, 16, 3, "~З~аголовок", "Диалог", 36, None);
     field(&mut d, 16, 5, "~Ш~ирина", "50", 6, None);
     field(&mut d, 16, 6, "~В~ысота", "14", 6, None);
-    d.add(StaticText::new(Rect::new(2, 8, 54, 9), "Имя — модуль forms::имя (латиница, цифры, _)."));
-    ok_cancel(&mut d, 10);
+    let titles: Vec<&str> = FormClass::ALL.iter().map(|c| c.title()).collect();
+    let class = d.add(RadioButtons::radio_buttons(Rect::new(16, 8, 52, 10), &titles));
+    d.add(Label::new(Rect::new(2, 8, 16, 9), "~К~ласс", Some(class)));
+    d.add(StaticText::new(
+        Rect::new(2, 11, 56, 13),
+        "Имя — модуль forms::имя (латиница, цифры, _).\nDialog — run() ждёт OK/Отмены; Window — open() и дальше.",
+    ));
+    ok_cancel(&mut d, 14);
     d.select(first);
     d
 }
@@ -178,6 +184,16 @@ pub fn read_new_form(v: &Value, existing: &[String]) -> Result<Form, String> {
     let mut f = Form::new(&name, &s_at(&v, 1));
     f.w = s_at(&v, 2).trim().parse::<i32>().unwrap_or(50).clamp(30, 200);
     f.h = s_at(&v, 3).trim().parse::<i32>().unwrap_or(14).clamp(6, 80);
+    f.class = FormClass::ALL.get(v.get(4).and_then(|x| x.as_u32()).unwrap_or(0) as usize).copied().unwrap_or_default();
+    if f.class == FormClass::Window {
+        // Немодальное окно закрывается своей рамкой или кнопкой «Закрыть» (cm::CLOSE).
+        let mut close = f.new_control(Kind::Button, f.w / 2 - 6, f.h - 3);
+        close.name = "close".into();
+        close.text = "~З~акрыть".into();
+        close.command = "cm::CLOSE".into();
+        f.controls.push(close);
+        return Ok(f);
+    }
     // Кнопки OK и «Отмена» — у нижнего края.
     let mut ok = f.new_control(Kind::Button, f.w / 2 - 13, f.h - 3);
     ok.name = "ok".into();
@@ -458,5 +474,35 @@ mod tests {
         .unwrap();
         assert_eq!(f.controls.len(), 2);
         assert!(f.check().is_empty(), "{:?}", f.check());
+    }
+
+    #[test]
+    fn new_form_as_window() {
+        let v = |c: u32| {
+            Value::List(vec![
+                Value::Str("notes".into()),
+                Value::Str("Заметки".into()),
+                Value::Str("40".into()),
+                Value::Str("10".into()),
+                Value::U32(c),
+            ])
+        };
+        let f = read_new_form(&v(1), &[]).unwrap();
+        assert_eq!(f.class, FormClass::Window);
+        assert_eq!(f.controls.len(), 1);
+        assert_eq!(f.controls[0].command, "cm::CLOSE");
+        assert!(f.check().is_empty(), "{:?}", f.check());
+        assert_eq!(read_new_form(&v(0), &[]).unwrap().class, FormClass::Dialog);
+        // Класс сохраняется в .tvf и читается обратно.
+        let back = Form::from_json(&f.to_json()).unwrap();
+        assert_eq!(back, f);
+        // Свойства формы: у окна есть номер и растяжение.
+        let list = crate::props::props_for(&f, None);
+        assert!(list.contains(&Prop::FormNumber) && list.contains(&Prop::FormResizable));
+        let mut g = f.clone();
+        crate::props::set(&mut g, None, Prop::FormClass, "диалог").unwrap();
+        assert_eq!(g.class, FormClass::Dialog);
+        assert!(!crate::props::props_for(&g, None).contains(&Prop::FormNumber));
+        assert!(crate::props::set(&mut g, None, Prop::FormClass, "кнопка").is_err());
     }
 }

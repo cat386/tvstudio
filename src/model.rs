@@ -519,7 +519,45 @@ impl Pal {
     }
 }
 
-/// Форма — диалоговое окно.
+/// Из какого класса tvision-rs строится форма.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FormClass {
+    /// `Dialog` — модальный диалог: `run()` показывает его и ждёт
+    /// OK / Отмены; Enter нажимает кнопку по умолчанию, Esc — Отмена.
+    #[default]
+    Dialog,
+    /// `Window` — немодальное окно на рабочем столе: `open()` вставляет
+    /// его и сразу возвращается; окно двигают, закрывают (и, если можно,
+    /// растягивают), команды кнопок идут обработчику программы.
+    Window,
+}
+
+impl FormClass {
+    pub const ALL: [FormClass; 2] = [FormClass::Dialog, FormClass::Window];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            FormClass::Dialog => "Dialog",
+            FormClass::Window => "Window",
+        }
+    }
+    pub fn from_id(s: &str) -> Option<FormClass> {
+        match s.trim().to_lowercase().as_str() {
+            "dialog" | "диалог" | "" => Some(FormClass::Dialog),
+            "window" | "окно" => Some(FormClass::Window),
+            _ => None,
+        }
+    }
+    /// Подпись для пользователя.
+    pub fn title(self) -> &'static str {
+        match self {
+            FormClass::Dialog => "Dialog (модальный диалог)",
+            FormClass::Window => "Window (немодальное окно)",
+        }
+    }
+}
+
+/// Форма — диалог (`Dialog`) или окно (`Window`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Form {
     /// Имя формы (модуль `forms::<name>`).
@@ -535,6 +573,12 @@ pub struct Form {
     pub centered: bool,
     pub palette: Pal,
     pub help_ctx: i64,
+    /// Класс: диалог или окно.
+    pub class: FormClass,
+    /// Окно: номер (Alt+1…9), 0 — без номера.
+    pub number: i16,
+    /// Окно: можно растягивать и распахивать.
+    pub resizable: bool,
     /// Элементы в порядке перехода по Tab.
     pub controls: Vec<Control>,
 }
@@ -551,6 +595,9 @@ impl Form {
             centered: true,
             palette: Pal::Gray,
             help_ctx: 0,
+            class: FormClass::Dialog,
+            number: 0,
+            resizable: true,
             controls: Vec::new(),
         }
     }
@@ -620,6 +667,9 @@ impl Form {
             ("centered", Json::Bool(self.centered)),
             ("palette", Json::s(self.palette.id())),
             ("help_ctx", Json::i(self.help_ctx)),
+            ("class", Json::s(self.class.id())),
+            ("number", Json::i(self.number as i64)),
+            ("resizable", Json::Bool(self.resizable)),
             ("controls", Json::Arr(self.controls.iter().map(|c| c.to_json()).collect())),
         ])
     }
@@ -633,6 +683,9 @@ impl Form {
         f.centered = j.bool("centered", true);
         f.palette = Pal::from_id(&j.str("palette")).unwrap_or(Pal::Gray);
         f.help_ctx = j.int("help_ctx", 0);
+        f.class = FormClass::from_id(&j.str("class")).unwrap_or_default();
+        f.number = j.int("number", 0).clamp(0, 9) as i16;
+        f.resizable = j.bool("resizable", true);
         for c in j.arr("controls") {
             f.controls.push(Control::from_json(c)?);
         }

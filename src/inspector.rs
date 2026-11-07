@@ -192,18 +192,30 @@ impl InspectorWindow {
         }
     }
 
-    /// Пробел на логическом свойстве — переключить значение.
+    /// Пробел на логическом свойстве (или классе формы) — переключить значение.
     fn toggle_bool(&mut self) -> bool {
         let Some(p) = self.current_prop() else { return false };
-        if !p.is_bool() {
+        // Класс формы (Dialog ↔ Window) тоже переключается пробелом.
+        if !p.is_bool() && p != Prop::FormClass {
             return false;
         }
         let Some(doc) = self.target.borrow().clone() else { return false };
         let mut d = doc.borrow_mut();
         let sel = d.primary();
-        let cur = props::parse_bool(&props::get(&d.form, sel, p)).unwrap_or(false);
+        let now = props::get(&d.form, sel, p);
+        let next = if p == Prop::FormClass {
+            if now == "Dialog" {
+                "Window"
+            } else {
+                "Dialog"
+            }
+        } else if props::parse_bool(&now).unwrap_or(false) {
+            "нет"
+        } else {
+            "да"
+        };
         let before = (d.form.clone(), d.sel.clone());
-        if props::set(&mut d.form, sel, p, if cur { "нет" } else { "да" }).is_ok() && d.form != before.0 {
+        if props::set(&mut d.form, sel, p, next).is_ok() && d.form != before.0 {
             d.push_undo(before);
             d.changed();
         }

@@ -1,7 +1,7 @@
 //! Свойства элементов и формы: какие есть у каждого вида, как их показать
 //! в инспекторе и как применить введённое значение.
 
-use crate::model::{is_ident, Control, Form, Kind, Pal};
+use crate::model::{is_ident, Control, Form, FormClass, Kind, Pal};
 
 /// Свойство элемента или формы.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +42,9 @@ pub enum Prop {
     FormCentered,
     FormPalette,
     FormHelp,
+    FormClass,
+    FormNumber,
+    FormResizable,
 }
 
 impl Prop {
@@ -91,6 +94,9 @@ impl Prop {
             Prop::FormTitle => "Заголовок",
             Prop::FormCentered => "По центру",
             Prop::FormPalette => "Цвет",
+            Prop::FormClass => "Класс",
+            Prop::FormNumber => "Номер окна",
+            Prop::FormResizable => "Растягивается",
         }
     }
 
@@ -111,7 +117,10 @@ impl Prop {
             | Prop::RowNumbers
             | Prop::Checks
             | Prop::Lines
-            | Prop::Expanded => "да / нет",
+            | Prop::Expanded
+            | Prop::FormResizable => "да / нет",
+            Prop::FormClass => "Dialog — модальный диалог, Window — немодальное окно",
+            Prop::FormNumber => "0…9: окно выбирается Alt+номер; 0 — без номера",
             Prop::Link => "имя элемента, который выбирает метка",
             Prop::Validator => "picture:###-## | range:0..100 | filter:0123456789 | lookup:a|b",
             Prop::History => "номер списка истории, 0 — без истории",
@@ -142,6 +151,7 @@ impl Prop {
                 | Prop::Checks
                 | Prop::Lines
                 | Prop::Expanded
+                | Prop::FormResizable
         )
     }
 }
@@ -169,17 +179,21 @@ pub fn control_props(kind: Kind) -> Vec<Prop> {
     v
 }
 
-/// Свойства формы.
-pub fn form_props() -> Vec<Prop> {
+/// Свойства формы (у окна — ещё номер и растяжение).
+pub fn form_props(form: &Form) -> Vec<Prop> {
     use Prop::*;
-    vec![FormName, FormTitle, FormX, FormY, FormW, FormH, FormCentered, FormPalette, FormHelp]
+    let mut v = vec![FormName, FormTitle, FormClass, FormX, FormY, FormW, FormH, FormCentered, FormPalette, FormHelp];
+    if form.class == crate::model::FormClass::Window {
+        v.extend([FormNumber, FormResizable]);
+    }
+    v
 }
 
 /// Свойства выделения: элемента `sel` или формы.
 pub fn props_for(form: &Form, sel: Option<usize>) -> Vec<Prop> {
     match sel.and_then(|i| form.controls.get(i)) {
         Some(c) => control_props(c.kind),
-        None => form_props(),
+        None => form_props(form),
     }
 }
 
@@ -263,6 +277,9 @@ pub fn get(form: &Form, sel: Option<usize>, p: Prop) -> String {
         Prop::FormCentered => yes_no(form.centered),
         Prop::FormPalette => form.palette.title().into(),
         Prop::FormHelp => form.help_ctx.to_string(),
+        Prop::FormClass => form.class.id().into(),
+        Prop::FormNumber => form.number.to_string(),
+        Prop::FormResizable => yes_no(form.resizable),
         _ => String::new(),
     }
 }
@@ -437,6 +454,9 @@ pub fn set(form: &mut Form, sel: Option<usize>, p: Prop, v: &str) -> Result<(), 
         Prop::FormCentered => form.centered = parse_bool(v)?,
         Prop::FormPalette => form.palette = Pal::from_id(v).ok_or_else(|| format!("«{}» — цвет: серый, синий или бирюзовый", v))?,
         Prop::FormHelp => form.help_ctx = int(v)?.clamp(0, 65535),
+        Prop::FormClass => form.class = FormClass::from_id(v).ok_or_else(|| format!("«{}» — класс: Dialog или Window", v))?,
+        Prop::FormNumber => form.number = int(v)?.clamp(0, 9) as i16,
+        Prop::FormResizable => form.resizable = parse_bool(v)?,
         _ => return Err("у формы нет такого свойства".into()),
     }
     Ok(())

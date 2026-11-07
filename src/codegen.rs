@@ -15,7 +15,9 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use crate::builder::input_width;
-use crate::model::{build_order, camel, key_expr, parse_key, parse_tree, rust_str, Action, AppModel, Control, Form, Kind, MenuNode, Pal, Project};
+use crate::model::{
+    build_order, camel, key_expr, parse_key, parse_tree, rust_str, Action, AppModel, Control, Form, FormClass, Kind, MenuNode, Pal, Project,
+};
 
 /// Метка сгенерированных файлов (первая строка).
 pub const GENERATED_MARK: &str = "// Сгенерировано TV Studio. Не редактируйте: файл перезаписывается.";
@@ -167,6 +169,15 @@ pub fn ui_rs(p: &Project, forms: &[Form]) -> String {
     for c in &app.commands {
         match &c.action {
             Action::None => {}
+            Action::Form(f) if forms.iter().any(|x| &x.name == f && x.class == FormClass::Window) => {
+                let _ = writeln!(
+                    s,
+                    "        cmd::{} => {{\n            crate::forms::{f}::open(app, &crate::forms::{f}::{}Data::default());\n            true\n        }}",
+                    c.name,
+                    camel(f),
+                    f = f
+                );
+            }
             Action::Form(f) if forms.iter().any(|x| &x.name == f) => {
                 let _ = writeln!(
                     s,
@@ -200,7 +211,12 @@ pub fn ui_rs(p: &Project, forms: &[Form]) -> String {
     s.push_str("}\n\n/// Действия сразу после запуска (стартовая форма).\npub fn startup(app: &mut Program) {\n");
     if !app.startup_form.is_empty() && forms.iter().any(|f| f.name == app.startup_form) {
         let f = &app.startup_form;
-        let _ = writeln!(s, "    let mut data = crate::forms::{f}::{}Data::default();\n    crate::forms::{f}::run(app, &mut data);", camel(f), f = f);
+        if forms.iter().any(|x| &x.name == f && x.class == FormClass::Window) {
+            let _ = writeln!(s, "    crate::forms::{f}::open(app, &crate::forms::{f}::{}Data::default());", camel(f), f = f);
+        } else {
+            let _ =
+                writeln!(s, "    let mut data = crate::forms::{f}::{}Data::default();\n    crate::forms::{f}::run(app, &mut data);", camel(f), f = f);
+        }
     } else {
         s.push_str("    let _ = app;\n");
     }
@@ -484,18 +500,38 @@ pub fn form_rs(p: &Project, f: &Form) -> String {
     s.push_str("}\n\n");
 
     // --- build ---
-    let _ = writeln!(s, "/// Построить диалог «{}».\npub fn build() -> (Dialog, {}Ids) {{", f.title, ty);
-    let _ = writeln!(s, "    let mut d = Dialog::new({}, {});", rect(f.x, f.y, f.x + f.w, f.y + f.h), rust_str(&f.title));
-    if f.centered {
-        s.push_str("    d.win.group.vs.options |= of::CENTERED;\n");
+    let window = f.class == FormClass::Window;
+    // Путь к группе окна: у Dialog окно вложено (`d.win`), у Window — это оно само.
+    let grp = if window { "d.group" } else { "d.win.group" };
+    if window {
+        let _ = writeln!(s, "/// Построить окно «{}».\npub fn build() -> (Window, {}Ids) {{", f.title, ty);
+        let _ = writeln!(s, "    let mut d = Window::new({}, {}, {});", rect(f.x, f.y, f.x + f.w, f.y + f.h), rust_str(&f.title), f.number);
+        // Элементы управления рассчитаны на палитру диалога — окно берёт её же.
+        let pal = match f.palette {
+            Pal::Gray => "GRAY_DIALOG",
+            Pal::Blue => "BLUE_DIALOG",
+            Pal::Cyan => "CYAN_DIALOG",
+        };
+        let _ = writeln!(s, "    d.palette = tvision::color::palettes::{};", pal);
+        if f.resizable {
+            s.push_str("    d.flags = wf::MOVE | wf::GROW | wf::CLOSE | wf::ZOOM;\n");
+        } else {
+            s.push_str("    d.flags = wf::MOVE | wf::CLOSE;\n");
+        }
+    } else {
+        let _ = writeln!(s, "/// Построить диалог «{}».\npub fn build() -> (Dialog, {}Ids) {{", f.title, ty);
+        let _ = writeln!(s, "    let mut d = Dialog::new({}, {});", rect(f.x, f.y, f.x + f.w, f.y + f.h), rust_str(&f.title));
+        match f.palette {
+            Pal::Gray => {}
+            Pal::Blue => s.push_str("    d.set_palette(DialogPalette::Blue);\n"),
+            Pal::Cyan => s.push_str("    d.set_palette(DialogPalette::Cyan);\n"),
+        }
     }
-    match f.palette {
-        Pal::Gray => {}
-        Pal::Blue => s.push_str("    d.set_palette(DialogPalette::Blue);\n"),
-        Pal::Cyan => s.push_str("    d.set_palette(DialogPalette::Cyan);\n"),
+    if f.centered {
+        let _ = writeln!(s, "    {}.vs.options |= of::CENTERED;", grp);
     }
     if f.help_ctx != 0 {
-        let _ = writeln!(s, "    d.win.group.vs.help_ctx = {};", f.help_ctx);
+        let _ = writeln!(s, "    {}.vs.help_ctx = {};", grp, f.help_ctx);
     }
     for i in build_order(f) {
         let c = &f.controls[i];
@@ -508,6 +544,18 @@ pub fn form_rs(p: &Project, f: &Form) -> String {
     }
     let names: Vec<&str> = f.controls.iter().map(|c| c.name.as_str()).collect();
     let _ = writeln!(s, "    (d, {}Ids {{ {} }})\n}}\n", ty, names.join(", "));
+
+    if window {
+        // --- open / read ---
+        s.push_str("/// Открыть окно на рабочем столе (немодально) с данными `data`.\n");
+        s.push_str("/// Возвращает id окна: по нему окно находят, читают и закрывают.\n");
+        let _ = writeln!(s, "pub fn open(app: &mut Program, data: &{}Data) -> ViewId {{", ty);
+        s.push_str("    let (mut d, _ids) = build();\n    d.group.set_data(&data.to_value());\n    app.insert_window(d)\n}\n\n");
+        s.push_str("/// Прочитать данные открытого окна (`None` — окно уже закрыто).\n");
+        let _ = writeln!(s, "pub fn read(app: &Program, id: ViewId) -> Option<{}Data> {{", ty);
+        let _ = writeln!(s, "    app.find::<Window>(id).map(|w| {}Data::from_value(&w.group.get_data()))\n}}", ty);
+        return s;
+    }
 
     // --- run ---
     s.push_str("/// Показать форму модально. `data` заносятся в диалог, а если диалог\n");
@@ -664,7 +712,19 @@ mod tests {
         let ui = ui_rs(&p, &[f.clone()]);
         assert!(ui.contains("pub const ABOUT: u16 = 100;"));
         assert!(ui.contains("crate::forms::about::run"));
-        assert!(check_project(&p, &[f]).is_empty());
+        assert!(check_project(&p, &[f.clone()]).is_empty());
+        // Та же форма как окно: build() → Window, open()/read() вместо run().
+        f.class = FormClass::Window;
+        f.number = 3;
+        f.resizable = false;
+        let code = form_rs(&p, &f);
+        assert!(code.contains("pub fn build() -> (Window, AboutIds)"));
+        assert!(code.contains("Window::new(") && code.contains(", 3);"));
+        assert!(code.contains("d.flags = wf::MOVE | wf::CLOSE;"));
+        assert!(code.contains("d.group.vs.options |= of::CENTERED;"));
+        assert!(code.contains("pub fn open(") && code.contains("pub fn read(") && !code.contains("pub fn run("));
+        let ui = ui_rs(&p, &[f.clone()]);
+        assert!(ui.contains("crate::forms::about::open(app"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

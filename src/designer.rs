@@ -971,6 +971,11 @@ impl DesignWindow {
             self.win.title = f.title.clone();
         }
         self.win.palette = f.palette.palette();
+        // Номер окна-формы виден в рамке дизайнера (как будет в программе).
+        let n = if f.class == crate::model::FormClass::Window { f.number } else { 0 };
+        if self.win.number != n {
+            self.win.number = n;
+        }
     }
 
     /// Перенести в форму положение и размер окна (после перетаскивания).
