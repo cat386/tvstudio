@@ -395,6 +395,41 @@ impl Ide {
         self.project.as_ref().map(|p| p.dir.clone())
     }
 
+    /// Настройки среды → редактор кода.
+    fn editor_cfg(&self, e: &mut crate::codeedit::CodeEditor) {
+        e.hl_line = self.cfg.hl_line;
+        e.hl_col = self.cfg.hl_col;
+        e.fmt_cmd = if self.cfg.fmt_on_save { Some(self.cfg.rustfmt.clone()) } else { None };
+    }
+
+    /// Ошибки rustfmt из редакторов — в окно сообщений.
+    fn collect_fmt_errors(&mut self, app: &mut Program) {
+        let mut errs = Vec::new();
+        for id in Self::windows::<CodeWindow>(app) {
+            if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                if let Some(e) = w.editor_mut().fmt_error.take() {
+                    errs.push((w.path(), e));
+                }
+            }
+        }
+        for (p, e) in errs {
+            let name = self.project.as_ref().map(|pr| pr.rel(&p)).unwrap_or_else(|| p.display().to_string());
+            self.say(app, &format!("rustfmt: {} не отформатирован (сохранён как есть):", name));
+            for l in e.lines() {
+                // « --> <stdin>:3:5» — место в этом файле: Enter ведёт к нему.
+                let entry = match l.trim_start().strip_prefix("--> <stdin>:") {
+                    Some(rest) => {
+                        let mut it = rest.split(':').map(|x| x.trim().parse::<usize>().unwrap_or(1));
+                        let (ln, col) = (it.next().unwrap_or(1), it.next().unwrap_or(1));
+                        MsgEntry { text: format!("  {}:{}:{}", name, ln, col), kind: MsgKind::Error, loc: Some((p.display().to_string(), ln, col)) }
+                    }
+                    None => parse_cargo_line(&format!("  {}", l)),
+                };
+                self.msgs(app).push(entry);
+            }
+        }
+    }
+
     /// Открыть файл в редакторе кода (или переключиться на открытый).
     pub fn open_file(&mut self, app: &mut Program, path: &Path, at: Option<(usize, usize)>) -> Option<ViewId> {
         let abs = if path.as_os_str().is_empty() { PathBuf::new() } else { tvision::widgets::editor::absolute(path) };
@@ -414,8 +449,7 @@ impl Ide {
                 if let Some(m) = self.marks.get(&abs) {
                     w.set_marks(m.clone());
                 }
-                w.editor_mut().hl_line = self.cfg.hl_line;
-                w.editor_mut().hl_col = self.cfg.hl_col;
+                self.editor_cfg(w.editor_mut());
                 self.lsp_state.diags_dirty = true;
                 app.insert_window(w)
             }
@@ -446,6 +480,9 @@ impl Ide {
         let mut errs = Vec::new();
         for id in Self::windows::<CodeWindow>(app) {
             if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                if w.editor().fe.editor.modified {
+                    w.editor_mut().format_now();
+                }
                 let fe = &mut w.editor_mut().fe;
                 if fe.editor.modified && !fe.file_name.as_os_str().is_empty() && !fe.save_file() {
                     errs.push(fe.last_error.take().unwrap_or_default());
@@ -1306,8 +1343,7 @@ impl Ide {
         dialogs::read_options(&mut self.cfg, &d.get_data());
         for id in Self::windows::<CodeWindow>(app) {
             if let Some(w) = app.find_mut::<CodeWindow>(id) {
-                w.editor_mut().hl_line = self.cfg.hl_line;
-                w.editor_mut().hl_col = self.cfg.hl_col;
+                self.editor_cfg(w.editor_mut());
             }
         }
         // Сервер LSP включили, выключили или сменили — перезапуск.
@@ -1588,6 +1624,7 @@ impl AppHandler for Ide {
 
     fn idle(&mut self, app: &mut Program) {
         self.poll_job(app);
+        self.collect_fmt_errors(app);
         self.lsp_idle(app);
         self.sync_windows(app);
         self.update_commands(app);

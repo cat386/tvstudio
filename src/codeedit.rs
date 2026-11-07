@@ -119,6 +119,10 @@ pub struct CodeEditor {
     pub hl_line: bool,
     /// Подсвечивать столбец курсора.
     pub hl_col: bool,
+    /// Форматировать перед сохранением этой командой (`None` — не форматировать).
+    pub fmt_cmd: Option<String>,
+    /// Ошибка последнего форматирования (среда забирает её в окно сообщений).
+    pub fmt_error: Option<String>,
 }
 
 impl CodeEditor {
@@ -126,7 +130,55 @@ impl CodeEditor {
         let mut fe = FileEditor::new(bounds, h, v, ind, path);
         fe.editor.vs.help_ctx = HC_EDITOR;
         // Отступы в Rust — 4 пробела; табуляции в файле тоже показываются.
-        CodeEditor { fe, lang: Lang::from_path(path), diags: Vec::new(), completion: None, hl_line: true, hl_col: true }
+        CodeEditor {
+            fe,
+            lang: Lang::from_path(path),
+            diags: Vec::new(),
+            completion: None,
+            hl_line: true,
+            hl_col: true,
+            fmt_cmd: None,
+            fmt_error: None,
+        }
+    }
+
+    /// Отформатировать текст rustfmt (если включено и это файл .rs).
+    /// Курсор остаётся на той же строке; правка — один шаг отмены.
+    /// `true` — текст изменился. При ошибке текст не трогается, а
+    /// сообщение кладётся в `fmt_error`.
+    pub fn format_now(&mut self) -> bool {
+        let Some(cmd) = self.fmt_cmd.clone() else { return false };
+        let path = self.fe.file_name.clone();
+        if self.lang != Lang::Rust || path.extension().map(|x| x != "rs").unwrap_or(true) {
+            return false;
+        }
+        let e = &mut self.fe.editor;
+        let text = e.text();
+        let new = match crate::rustfmt::format(&text, &path, &cmd) {
+            Ok(t) => t,
+            Err(err) => {
+                self.fmt_error = Some(err);
+                return false;
+            }
+        };
+        // Редактор хранит строки без завершающего «\n» у последней:
+        // сравниваем без учёта перевода строки в конце файла.
+        if new.trim_end_matches('\n') == text.trim_end_matches('\n') {
+            return false;
+        }
+        let cur = e.cursor();
+        let delta = e.delta;
+        let last = e.line_count().saturating_sub(1);
+        let end = Pos::new(last, e.line(last).chars().count());
+        e.set_select(Pos::new(0, 0), end);
+        e.insert_text(&new, false);
+        let line = cur.line.min(e.line_count().saturating_sub(1));
+        let p = Pos::new(line, cur.col.min(e.line(line).chars().count()));
+        e.set_select(p, p);
+        e.scroll_to(delta.x, delta.y);
+        e.track_cursor(false);
+        self.completion = None;
+        true
     }
 
     /// Начало слова под курсором (слева от курсора).
@@ -518,6 +570,10 @@ impl View for CodeEditor {
                 return;
             }
         }
+        // Сохранение: сначала rustfmt.
+        if focused && matches!(ev.command(), Some(cm::SAVE) | Some(cm::SAVE_AS)) && self.format_now() {
+            self.resync(ctx);
+        }
         let key = match ev {
             Event::KeyDown(k) if focused => Some(k.key),
             _ => None,
@@ -537,6 +593,10 @@ impl View for CodeEditor {
     }
 
     fn valid(&mut self, command: u16, ctx: &mut Ctx) -> bool {
+        // Закрытие с вопросом «сохранить?» — сохранится уже отформатированный текст.
+        if matches!(command, cm::CLOSE | cm::QUIT) && self.fe.editor.modified && self.format_now() {
+            self.resync(ctx);
+        }
         self.fe.valid(command, ctx)
     }
 

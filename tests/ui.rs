@@ -360,3 +360,35 @@ fn cursor_line_and_column_highlight() {
     assert_eq!(at(&t, xc + 1, yc), at(&t, xa + 1, ya));
     assert_eq!(at(&t, xa + 4, ya), at(&t, xa + 3, ya));
 }
+
+#[test]
+fn rustfmt_on_save() {
+    if std::process::Command::new("rustfmt").arg("--version").output().is_err() {
+        return;
+    }
+    let mut t = T::new("fmt");
+    let f = t.dir.join("src").join("messy.rs");
+    std::fs::write(&f, "pub fn  add(a:i32,b:i32)->i32{a+b}\n").unwrap();
+    let id = t.ide.open_file(&mut t.app, &f, None).unwrap();
+    t.pump();
+    // Правка и F2: файл сохраняется уже отформатированным.
+    t.app.find_mut::<CodeWindow>(id).unwrap().goto(1, 37);
+    t.keys(&[KeyEvent::new(Key::Enter, Mods::NONE)]);
+    let typed = t.typed("pub fn  sub(a:i32,b:i32)->i32{a-b}");
+    t.keys(&typed);
+    t.key(kb::F2);
+    let want = "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\npub fn sub(a: i32, b: i32) -> i32 {\n    a - b\n}\n";
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), want);
+    let w = t.app.find::<CodeWindow>(id).unwrap();
+    assert!(!w.editor().fe.editor.modified);
+    assert_eq!(w.editor().fe.editor.line(3), "pub fn sub(a: i32, b: i32) -> i32 {");
+    // Ошибка синтаксиса: сохраняется как есть, rustfmt пишет, где ошибка.
+    t.app.find_mut::<CodeWindow>(id).unwrap().goto(1, 1);
+    let typed = t.typed("fn broken( {");
+    t.keys(&typed);
+    t.key(kb::F2);
+    assert!(std::fs::read_to_string(&f).unwrap().starts_with("fn broken( {pub fn add"));
+    let m = t.app.find::<tvstudio::toolwins::MessagesWindow>(t.ide.messages.unwrap()).unwrap();
+    assert!(m.entries.iter().any(|e| e.text.contains("rustfmt: src/messy.rs не отформатирован")), "{:?}", m.entries);
+    assert!(m.entries.iter().any(|e| e.loc.as_ref().map(|l| l.0.ends_with("messy.rs")).unwrap_or(false)));
+}

@@ -39,4 +39,5 @@ pub mod lsp;
 pub mod model;
 pub mod props;
 pub mod runner;
+pub mod rustfmt;
 pub mod toolwins;
