@@ -6,6 +6,8 @@
 //!       или путь к библиотеке (по умолчанию git cat386/tvision-rs)
 //! tvs-import --examples ПУТЬ_К_TVISION_RS КАТАЛОГ
 //!     — все примеры tvision-rs, каждый в КАТАЛОГ/<имя примера>
+//! tvs-import --forms ПРОЕКТ...
+//!     — найти диалоги в коде проектов и добавить их формами (forms/*.tvf)
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -63,8 +65,30 @@ fn main() {
         println!("Импортировано {} из {}", ok, list.len());
         std::process::exit(if ok == list.len() { 0 } else { 1 });
     }
+    if args.first().map(|a| a == "--forms").unwrap_or(false) && args.len() > 1 {
+        let mut ok = true;
+        for dir in &args[1..] {
+            let dir = PathBuf::from(dir);
+            let file = std::fs::read_dir(&dir)
+                .ok()
+                .and_then(|rd| rd.flatten().map(|e| e.path()).find(|p| p.extension().map(|x| x == "tvsp").unwrap_or(false)));
+            let Some(file) = file else {
+                eprintln!("✗ {}: нет файла проекта .tvsp", dir.display());
+                ok = false;
+                continue;
+            };
+            match tvstudio::model::Project::load(&file).and_then(|mut p| tvstudio::formextract::extract_into_project(&mut p).map(|r| (p, r))) {
+                Ok((p, r)) => println!("✓ {:<16} {}", p.name, r.summary().replace('\n', "\n  ")),
+                Err(e) => {
+                    eprintln!("✗ {}: {}", dir.display(), e);
+                    ok = false;
+                }
+            }
+        }
+        std::process::exit(if ok { 0 } else { 1 });
+    }
     if args.len() < 3 {
-        eprintln!("tvs-import ПРОГРАММА.rs КАТАЛОГ ИМЯ [tvision-rs]\ntvs-import --examples ПУТЬ_К_TVISION_RS КАТАЛОГ");
+        eprintln!("tvs-import ПРОГРАММА.rs КАТАЛОГ ИМЯ [tvision-rs]\ntvs-import --examples ПУТЬ_К_TVISION_RS КАТАЛОГ\ntvs-import --forms ПРОЕКТ...");
         std::process::exit(2);
     }
     let main = PathBuf::from(&args[0]);

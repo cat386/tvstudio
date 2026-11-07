@@ -1,0 +1,81 @@
+{
+  "format": "tvstudio-form",
+  "version": 1,
+  "name": "find",
+  "title": "Поиск файлов",
+  "x": 10,
+  "y": 3,
+  "w": 56,
+  "h": 11,
+  "centered": true,
+  "palette": "gray",
+  "help_ctx": 0,
+  "controls": [
+    {
+      "kind": "input_line",
+      "name": "pid",
+      "x": 3,
+      "y": 3,
+      "w": 50,
+      "h": 1,
+      "text": "*",
+      "max_len": 255,
+      "scrollbar": false
+    },
+    {
+      "kind": "label",
+      "name": "label1",
+      "x": 2,
+      "y": 2,
+      "w": 38,
+      "h": 1,
+      "text": "~И~мя (шаблоны через запятую):",
+      "link": "pid",
+      "scrollbar": false
+    },
+    {
+      "kind": "input_line",
+      "name": "tid",
+      "x": 3,
+      "y": 6,
+      "w": 50,
+      "h": 1,
+      "max_len": 255,
+      "scrollbar": false
+    },
+    {
+      "kind": "label",
+      "name": "label2",
+      "x": 2,
+      "y": 5,
+      "w": 38,
+      "h": 1,
+      "text": "~С~одержит текст (необязательно):",
+      "link": "tid",
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "button1",
+      "x": 14,
+      "y": 8,
+      "w": 12,
+      "h": 2,
+      "text": "~И~скать",
+      "command": "cm::OK",
+      "default": true,
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "button2",
+      "x": 29,
+      "y": 8,
+      "w": 12,
+      "h": 2,
+      "text": "Отмена",
+      "command": "cm::CANCEL",
+      "scrollbar": false
+    }
+  ]
+}

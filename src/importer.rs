@@ -27,7 +27,7 @@ use crate::model::{parse_key, Action, AppModel, CommandDef, Dependency, MenuNode
 // ======================================================================
 
 #[derive(Clone, Debug, PartialEq)]
-enum Tk {
+pub(crate) enum Tk {
     Id(String),
     Str(String),
     Chr(char),
@@ -36,14 +36,14 @@ enum Tk {
 }
 
 #[derive(Clone, Debug)]
-struct Tok {
-    t: Tk,
+pub(crate) struct Tok {
+    pub(crate) t: Tk,
     /// Байтовые смещения в исходнике.
-    s: usize,
-    e: usize,
+    pub(crate) s: usize,
+    pub(crate) e: usize,
 }
 
-fn lex(src: &str) -> Vec<Tok> {
+pub(crate) fn lex(src: &str) -> Vec<Tok> {
     let b: Vec<(usize, char)> = src.char_indices().collect();
     let n = b.len();
     let end_of = |i: usize| if i < n { b[i].0 } else { src.len() };
@@ -644,7 +644,7 @@ impl Report {
 
 /// Номер строки начала, начало строки и конец строки (с переводом строки)
 /// для байтового смещения.
-fn line_bounds(src: &str, pos: usize) -> (usize, usize) {
+pub(crate) fn line_bounds(src: &str, pos: usize) -> (usize, usize) {
     let start = src[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let end = src[pos..].find('\n').map(|i| pos + i + 1).unwrap_or(src.len());
     (start, end)

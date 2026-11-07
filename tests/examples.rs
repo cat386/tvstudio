@@ -34,9 +34,35 @@ fn examples_are_consistent() {
             assert_eq!(std::fs::read_to_string(p.form_code_path(&f.name)).unwrap(), codegen::form_rs(p, f), "{}: форма {}", p.name, f.name);
         }
     }
-    // Формы дизайнера есть у учебных примеров.
+    // Формы — у всех примеров с диалогами (25 форм в 13 проектах).
     let with_forms: Vec<&str> = ps.iter().filter(|p| !p.forms.is_empty()).map(|p| p.name.as_str()).collect();
-    assert_eq!(with_forms, vec!["hello", "learn_05_dialog", "learn_06_form"]);
+    assert_eq!(
+        with_forms,
+        vec![
+            "demo",
+            "guide_contacts",
+            "hello",
+            "json_load",
+            "json_table",
+            "learn_04_coords",
+            "learn_05_dialog",
+            "learn_06_form",
+            "lfm",
+            "progress",
+            "table",
+            "treeview",
+            "tvdemo"
+        ]
+    );
+    assert_eq!(ps.iter().map(|p| p.forms.len()).sum::<usize>(), 25);
+    // Повторное извлечение ничего не добавляет (формы уже есть).
+    for p in &ps {
+        let src = std::fs::read_to_string(p.dir.join("src/main.rs")).unwrap();
+        let found = tvstudio::formextract::extract(&src, &std::collections::HashMap::new());
+        for x in found {
+            assert!(p.forms.contains(&x.form.name), "{}: форма {} не извлечена", p.name, x.form.name);
+        }
+    }
 }
 
 #[test]

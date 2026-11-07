@@ -1,0 +1,46 @@
+{
+  "format": "tvstudio-form",
+  "version": 1,
+  "name": "run_primes",
+  "title": "Поиск простых чисел",
+  "x": 10,
+  "y": 3,
+  "w": 50,
+  "h": 10,
+  "centered": true,
+  "palette": "gray",
+  "help_ctx": 0,
+  "controls": [
+    {
+      "kind": "static_text",
+      "name": "info",
+      "x": 3,
+      "y": 2,
+      "w": 44,
+      "h": 1,
+      "text": "Запуск потока…",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "bar",
+      "x": 3,
+      "y": 4,
+      "w": 44,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "cancel",
+      "x": 19,
+      "y": 6,
+      "w": 12,
+      "h": 2,
+      "text": "Отмена",
+      "command": "cm::CANCEL",
+      "default": true,
+      "scrollbar": false
+    }
+  ]
+}

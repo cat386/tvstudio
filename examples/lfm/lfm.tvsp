@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "lfm",
-  "forms": [],
+  "forms": ["sort", "find", "run_and_show", "run_job", "choose", "input_box_hist", "run_search"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "lfm",

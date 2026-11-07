@@ -353,13 +353,11 @@ fn control_code(app: &AppModel, c: &Control) -> Vec<String> {
             let (vr, sb) = scroll_code(c, &mut lines);
             setup.push("v.vs.grow_mode = 0;".into());
             let nodes: Vec<String> = parse_tree(&c.items).iter().map(|t| tree_code(t, c.expanded)).collect();
+            let nodes =
+                if nodes.is_empty() { "vec![]".to_string() } else { format!("vec![\n            {},\n        ]", nodes.join(",\n            ")) };
             format!(
-                "TreeView::new(\n        {},\n        vec![\n            {},\n        ],\n        {},\n        None,\n    )\n    .lines({})\n    .checkboxes({})",
-                vr,
-                nodes.join(",\n            "),
-                sb,
-                c.lines,
-                c.checks
+                "TreeView::new(\n        {},\n        {},\n        {},\n        None,\n    )\n    .lines({})\n    .checkboxes({})",
+                vr, nodes, sb, c.lines, c.checks
             )
         }
     };

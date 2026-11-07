@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "guide_contacts",
-  "forms": [],
+  "forms": ["contact_dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "guide_contacts",

@@ -22,6 +22,8 @@ pub mod cmd {
     pub const CM_EVENT_VIEW: u16 = 112;
     pub const CM_CH_BACKGROUND: u16 = 113;
     pub const CM_VIDEO_MODE: u16 = 115;
+    /// кнопка формы ch_background
+    pub const CM_APPLY_BACKGROUND: u16 = 120;
 }
 
 /// Строка меню.

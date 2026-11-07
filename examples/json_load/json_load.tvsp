@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "json_load",
-  "forms": [],
+  "forms": ["load_with_progress", "summary_dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "json_load",

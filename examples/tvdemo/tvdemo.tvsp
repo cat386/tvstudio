@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "tvdemo",
-  "forms": [],
+  "forms": ["ch_background", "calculator", "about", "mouse_dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "tvdemo",
@@ -266,6 +266,12 @@
         "value": 115,
         "action": "",
         "comment": ""
+      },
+      {
+        "name": "CM_APPLY_BACKGROUND",
+        "value": 120,
+        "action": "",
+        "comment": "кнопка формы ch_background"
       }
     ]
   }

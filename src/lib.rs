@@ -18,6 +18,7 @@
 //! | [`codeedit`], [`highlight`] | редактор кода и подсветка |
 //! | [`runner`] | запуск cargo в фоне |
 //! | [`dialogs`] | прочие диалоги и настройки среды |
+//! | [`formextract`] | извлечение форм из диалогов в коде |
 //! | [`importer`] | импорт готовой программы на tvision-rs |
 //! | [`ide`] | сама среда: меню и обработчик команд |
 
@@ -28,6 +29,7 @@ pub mod codeedit;
 pub mod codegen;
 pub mod designer;
 pub mod dialogs;
+pub mod formextract;
 pub mod highlight;
 pub mod ide;
 pub mod importer;

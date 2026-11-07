@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "learn_04_coords",
-  "forms": [],
+  "forms": ["layout_dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "learn_04_coords",

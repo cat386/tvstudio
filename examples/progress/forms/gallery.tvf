@@ -1,0 +1,121 @@
+{
+  "format": "tvstudio-form",
+  "version": 1,
+  "name": "gallery",
+  "title": "Виды полос",
+  "x": 4,
+  "y": 2,
+  "w": 56,
+  "h": 18,
+  "centered": false,
+  "palette": "gray",
+  "help_ctx": 0,
+  "controls": [
+    {
+      "kind": "static_text",
+      "name": "text1",
+      "x": 3,
+      "y": 2,
+      "w": 50,
+      "h": 1,
+      "text": "Плавная (по умолчанию):",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "progress1",
+      "x": 3,
+      "y": 3,
+      "w": 50,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text2",
+      "x": 3,
+      "y": 5,
+      "w": 50,
+      "h": 1,
+      "text": "Блоками, как в DOS:",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "progress2",
+      "x": 3,
+      "y": 6,
+      "w": 50,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text3",
+      "x": 3,
+      "y": 8,
+      "w": 50,
+      "h": 1,
+      "text": "Шаблон надписи:",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "progress3",
+      "x": 3,
+      "y": 9,
+      "w": 50,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text4",
+      "x": 3,
+      "y": 11,
+      "w": 50,
+      "h": 1,
+      "text": "Свои цвета:",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "progress4",
+      "x": 3,
+      "y": 12,
+      "w": 50,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text5",
+      "x": 3,
+      "y": 14,
+      "w": 50,
+      "h": 1,
+      "text": "Неизвестная длительность:",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "progress5",
+      "x": 3,
+      "y": 15,
+      "w": 50,
+      "h": 1,
+      "max": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text6",
+      "x": 3,
+      "y": 16,
+      "w": 50,
+      "h": 1,
+      "text": "\u0003«+» / «-» — изменить значение, Esc — закрыть",
+      "scrollbar": false
+    }
+  ]
+}

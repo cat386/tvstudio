@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "json_table",
-  "forms": [],
+  "forms": ["record_dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "json_table",

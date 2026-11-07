@@ -52,6 +52,7 @@ use tvision::fileops::{self, Conflict, FileJob, JobKind};
 use tvision::*;
 
 // Меню, строка состояния и команды — из модели проекта (ui.rs генерирует TV Studio).
+mod forms;
 mod ui;
 #[allow(unused_imports)]
 use ui::cmd::*;

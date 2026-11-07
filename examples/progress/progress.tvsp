@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "progress",
-  "forms": [],
+  "forms": ["copy_dialog", "run_primes", "gallery"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "progress",

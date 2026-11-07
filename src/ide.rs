@@ -120,6 +120,7 @@ pub fn menu_bar() -> Menu {
                 .item("~К~оманды...", CM_EDIT_COMMANDS)
                 .item("~П~араметры программы...", CM_APP_OPTIONS)
                 .separator()
+                .item("~Ф~ормы из кода", CM_EXTRACT_FORMS)
                 .item("~Г~енерировать код", CM_GENERATE)
                 .item("~Д~ерево проекта", CM_SHOW_PROJECT),
         )
@@ -1048,6 +1049,35 @@ impl Ide {
         self.say(app, "Модель приложения изменена (код обновится при генерации или сборке).");
     }
 
+    /// Диалоги из кода программы → формы проекта.
+    fn extract_forms(&mut self, app: &mut Program) {
+        let errs = self.save_all(app);
+        if !errs.is_empty() {
+            return Self::error(app, &errs.join("\n"));
+        }
+        let Some(p) = &mut self.project else { return };
+        match crate::formextract::extract_into_project(p) {
+            Ok(r) => {
+                self.tree_dirty = true;
+                let text = format!("Формы из кода: {}", r.summary());
+                self.say(app, &text);
+                // Открытые файлы могли измениться (mod forms, константы команд).
+                for id in Self::windows::<CodeWindow>(app) {
+                    if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                        let fe = &mut w.editor_mut().fe;
+                        if !fe.editor.modified {
+                            fe.load_file();
+                        }
+                    }
+                }
+                if let Some(id) = self.messages {
+                    app.focus(id);
+                }
+            }
+            Err(e) => Self::error(app, &e),
+        }
+    }
+
     fn app_options(&mut self, app: &mut Program) {
         let Some(p) = &self.project else { return };
         let (cmd, d) = app.exec_dialog(dialogs::app_options_dialog(&p.app, &p.forms));
@@ -1145,7 +1175,17 @@ impl Ide {
             set(app, c, has_p && !running);
         }
         set(app, CM_STOP, running);
-        for c in [CM_NEW_FORM, CM_OPEN_FORM, CM_EDIT_MENU, CM_EDIT_STATUS, CM_EDIT_COMMANDS, CM_APP_OPTIONS, CM_CLOSE_PROJECT, CM_FIND_FILES] {
+        for c in [
+            CM_EXTRACT_FORMS,
+            CM_NEW_FORM,
+            CM_OPEN_FORM,
+            CM_EDIT_MENU,
+            CM_EDIT_STATUS,
+            CM_EDIT_COMMANDS,
+            CM_APP_OPTIONS,
+            CM_CLOSE_PROJECT,
+            CM_FIND_FILES,
+        ] {
             set(app, c, has_p);
         }
         for c in [CM_DS_PROPS, CM_FORM_TEST, CM_DS_DUP, CM_GRID, CM_TABNUM, CM_DS_FRONT, CM_DS_BACK, CM_DS_FORWARD, CM_DS_BACKWARD] {
@@ -1347,6 +1387,7 @@ impl Ide {
             CM_EDIT_STATUS => self.edit_model(app, LeKind::Status),
             CM_EDIT_COMMANDS => self.edit_model(app, LeKind::Commands),
             CM_APP_OPTIONS => self.app_options(app),
+            CM_EXTRACT_FORMS => self.extract_forms(app),
             CM_GENERATE => {
                 self.save_all(app);
                 self.generate(app, false);

@@ -43,6 +43,7 @@ pub const CM_GOTO: u16 = 198;
 pub const CM_NEXT_ERR: u16 = 199;
 pub const CM_PREV_ERR: u16 = 200;
 pub const CM_RENAME_FORM: u16 = 201;
+pub const CM_EXTRACT_FORMS: u16 = 202;
 
 // --- Всегда разрешённые ---
 pub const CM_NEW_PROJECT: u16 = 1100;

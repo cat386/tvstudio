@@ -1,0 +1,65 @@
+{
+  "format": "tvstudio-form",
+  "version": 1,
+  "name": "copy_dialog",
+  "title": "Копирование файлов",
+  "x": 10,
+  "y": 3,
+  "w": 52,
+  "h": 12,
+  "centered": true,
+  "palette": "gray",
+  "help_ctx": 0,
+  "controls": [
+    {
+      "kind": "static_text",
+      "name": "name",
+      "x": 3,
+      "y": 2,
+      "w": 46,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "file_bar",
+      "x": 3,
+      "y": 3,
+      "w": 46,
+      "h": 1,
+      "max": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "static_text",
+      "name": "text1",
+      "x": 3,
+      "y": 5,
+      "w": 46,
+      "h": 1,
+      "text": "Всего:",
+      "scrollbar": false
+    },
+    {
+      "kind": "progress_bar",
+      "name": "total_bar",
+      "x": 3,
+      "y": 6,
+      "w": 46,
+      "h": 1,
+      "scrollbar": false
+    },
+    {
+      "kind": "button",
+      "name": "cancel",
+      "x": 20,
+      "y": 8,
+      "w": 12,
+      "h": 2,
+      "text": "Отмена",
+      "command": "cm::CANCEL",
+      "default": true,
+      "scrollbar": false
+    }
+  ]
+}

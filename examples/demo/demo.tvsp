@@ -2,7 +2,7 @@
   "format": "tvstudio-project",
   "version": 1,
   "name": "demo",
-  "forms": [],
+  "forms": ["dialog"],
   "open_files": ["src/main.rs"],
   "app": {
     "title": "demo",
