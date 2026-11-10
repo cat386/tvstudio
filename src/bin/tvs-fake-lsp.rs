@@ -4,6 +4,8 @@
 //! stdin/stdout, заголовок Content-Length), но «понимает» код очень
 //! просто — этого достаточно, чтобы проверить клиент и среду:
 //! * диагностика: слово `ОШИБКА` в строке — ошибка, `warn_me` — предупреждение;
+//!   для документов не на Rust сообщение начинается с `[languageId]`
+//!   (так тесты видят, какому серверу какой файл достался);
 //! * дополнение: всегда `push_str` (сниппет с textEdit), `len`, `capacity`;
 //! * определение: строка `fn <слово>` в любом открытом документе;
 //! * ссылки: все вхождения слова целиком во всех открытых документах.
@@ -100,16 +102,18 @@ fn occurrences(text: &str, word: &str) -> Vec<(usize, usize)> {
     out
 }
 
-fn publish(uri: &str, text: &str) {
+fn publish(uri: &str, text: &str, lang: &str) {
     let mut diags = Vec::new();
+    let tag = if lang == "rust" { String::new() } else { format!("[{}] ", lang) };
     for (word, sev, msg) in [("ОШИБКА", 1, "найдена ОШИБКА"), ("warn_me", 2, "предупреждение warn_me")] {
+        let msg = format!("{}{}", tag, msg);
         for (l, c) in occurrences(text, word) {
             diags.push(Json::obj(vec![
                 ("range", range(l, c, c + word.chars().count())),
                 ("severity", Json::i(sev)),
                 ("code", Json::s("E9999")),
                 ("source", Json::s("fake")),
-                ("message", Json::s(msg)),
+                ("message", Json::s(&msg)),
             ]));
         }
     }
@@ -118,6 +122,7 @@ fn publish(uri: &str, text: &str) {
 
 fn main() {
     let mut docs: HashMap<String, String> = HashMap::new();
+    let mut langs: HashMap<String, String> = HashMap::new();
     let mut r = BufReader::new(std::io::stdin().lock());
     let mut next = 1000;
     while let Some(m) = read(&mut r) {
@@ -156,15 +161,17 @@ fn main() {
             "textDocument/didOpen" => {
                 let t = p.get("textDocument").cloned().unwrap_or(Json::Null);
                 docs.insert(t.str("uri"), t.str("text"));
-                publish(&t.str("uri"), &t.str("text"));
+                langs.insert(t.str("uri"), t.str("languageId"));
+                publish(&t.str("uri"), &t.str("text"), &t.str("languageId"));
             }
             "textDocument/didChange" => {
                 let text = p.arr("contentChanges").last().map(|c| c.str("text")).unwrap_or_default();
                 docs.insert(doc_uri.clone(), text.clone());
-                publish(&doc_uri, &text);
+                publish(&doc_uri, &text, langs.get(&doc_uri).map(|s| s.as_str()).unwrap_or("rust"));
             }
             "textDocument/didClose" => {
                 docs.remove(&doc_uri);
+                langs.remove(&doc_uri);
             }
             "textDocument/completion" => {
                 let text = docs.get(&doc_uri).cloned().unwrap_or_default();

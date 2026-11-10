@@ -47,7 +47,7 @@ impl T {
         let mut b = HeadlessBackend::new(120, 40);
         b.esc_budget = 0;
         let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
-        let cfg = Config { lsp_command: env!("CARGO_BIN_EXE_tvs-fake-lsp").into(), ..Config::default() };
+        let cfg = Config { lsp_command: env!("CARGO_BIN_EXE_tvs-fake-lsp").into(), toml_lsp_command: String::new(), ..Config::default() };
         let mut ide = Ide::new(cfg, true);
         ide.startup(&mut app, vec![p.file().display().to_string()]);
         app.pump(&mut ide);
@@ -251,7 +251,9 @@ fn missing_server_is_reported() {
     let mut b = HeadlessBackend::new(120, 40);
     b.esc_budget = 0;
     let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
-    let cfg = Config { lsp_command: "rust-analyzer-нет-такого".into(), ..Config::default() };
+    let cfg = Config {
+        lsp_command: "rust-analyzer-нет-такого".into(), toml_lsp_command: "taplo-нет-такого lsp stdio".into(), ..Config::default()
+    };
     let mut ide = Ide::new(cfg, true);
     ide.startup(&mut app, vec![p.file().display().to_string()]);
     app.pump(&mut ide);
@@ -259,4 +261,81 @@ fn missing_server_is_reported() {
     let m = app.find::<MessagesWindow>(ide.messages.unwrap()).unwrap();
     assert!(m.entries.iter().any(|e| e.text.contains("Сервер LSP недоступен")), "{:?}", m.entries);
     assert!(m.entries.iter().any(|e| e.text.contains("rustup component add rust-analyzer")));
+    assert!(ide.lsp_toml.is_none());
+    assert!(m.entries.iter().any(|e| e.text.contains("Сервер TOML недоступен")), "{:?}", m.entries);
+    assert!(m.entries.iter().any(|e| e.text.contains("cargo install taplo-cli")));
+}
+
+/// Cargo.toml идёт своему серверу (taplo), файлы .rs — rust-analyzer;
+/// у каждого свои документы, диагностика и запросы.
+#[test]
+fn toml_server_for_cargo_toml() {
+    let base = std::env::temp_dir().join(format!("tvs_lsp_toml_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let p = Project::create(&base, "demo", &Dependency::Git("https://example.invalid/tvision-rs".into())).unwrap();
+    let cargo = p.dir.join("Cargo.toml");
+    let mut text = std::fs::read_to_string(&cargo).unwrap();
+    text.push_str("\n[package.metadata]\nx = \"ОШИБКА\"\n");
+    std::fs::write(&cargo, &text).unwrap();
+    let err_line = text.lines().position(|l| l.contains("ОШИБКА")).unwrap();
+    let rs = p.dir.join("src").join("demo.rs");
+    std::fs::write(&rs, SRC).unwrap();
+
+    let mut b = HeadlessBackend::new(120, 40);
+    b.esc_budget = 0;
+    let app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+    let fake = env!("CARGO_BIN_EXE_tvs-fake-lsp");
+    let cfg = Config { lsp_command: fake.into(), toml_lsp_command: fake.into(), ..Config::default() };
+    let mut ide = Ide::new(cfg, true);
+    let mut app = app;
+    ide.startup(&mut app, vec![p.file().display().to_string()]);
+    app.pump(&mut ide);
+    let rs_win = ide.open_file(&mut app, &rs, None).unwrap();
+    let win = ide.open_file(&mut app, &cargo, None).unwrap();
+    let mut t = T { app, ide, win, file: cargo.clone() };
+    assert!(t.wait(|t| t.ide.lsp.as_ref().map(|c| c.ready).unwrap_or(false) && t.ide.lsp_toml.as_ref().map(|c| c.ready).unwrap_or(false)));
+
+    // Каждый файл — своему серверу, с правильным languageId.
+    assert!(t.wait(|t| t.ed().diags.len() == 1), "нет диагностики в Cargo.toml: {:?}", t.ed().diags);
+    assert_eq!((t.ed().diags[0].line, t.ed().diags[0].error), (err_line, true));
+    assert!(t.ide.lsp_toml.as_ref().unwrap().is_open(&cargo));
+    assert!(!t.ide.lsp_toml.as_ref().unwrap().is_open(&rs));
+    assert!(t.ide.lsp.as_ref().unwrap().is_open(&rs));
+    assert!(!t.ide.lsp.as_ref().unwrap().is_open(&cargo));
+    t.goto(err_line + 1, 1);
+    assert_eq!(*t.ide.lsp_state.hint.borrow(), "■ [toml] найдена ОШИБКА");
+    let rs_diags = |t: &T| t.app.find::<CodeWindow>(rs_win).unwrap().editor().diags.len();
+    assert!(t.wait(|t| rs_diags(t) == 2), "диагностика .rs пропала");
+    // Заголовок окна сообщений — оба сервера.
+    assert!(t.msgs().win.title.contains(" · "), "{}", t.msgs().win.title);
+
+    // Правка Cargo.toml уходит серверу TOML.
+    t.goto(err_line + 1, 1);
+    t.key(KeyEvent::new(Key::End, Mods::NONE));
+    t.typed("\ny = \"ОШИБКА\"");
+    assert!(t.wait(|t| t.ed().diags.len() == 2), "{:?}", t.ed().diags);
+
+    // Дополнение в Cargo.toml: Ctrl+Space и само после «.».
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    t.key(KeyEvent::new(Key::Char(' '), Mods::CTRL));
+    assert!(t.wait(|t| t.ed().completion.is_some()), "список не открылся");
+    t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+    t.typed("package.");
+    assert!(t.wait(|t| t.ed().completion.is_some()), "после «.» список не открылся");
+    t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+
+    // Список диагностик — из обоих серверов.
+    t.cmd(CM_DIAGNOSTICS);
+    assert_eq!(t.located().len(), 4, "{:?}", t.msgs().entries);
+
+    // Перезапуск — оба сервера снова в строю.
+    t.cmd(CM_LSP_RESTART);
+    assert!(t.wait(|t| t.ide.lsp_toml.as_ref().map(|c| c.ready).unwrap_or(false) && t.ide.lsp.is_some()));
+    assert!(t.wait(|t| t.ed().diags.len() == 2));
+
+    // Закрыли проект (сохранив правки — иначе среда спросит) — остановлены оба.
+    assert!(t.ide.save_all(&mut t.app).is_empty());
+    t.cmd(CM_CLOSE_PROJECT);
+    assert!(t.ide.lsp.is_none() && t.ide.lsp_toml.is_none());
 }

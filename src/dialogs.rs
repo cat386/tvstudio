@@ -260,6 +260,9 @@ pub struct Config {
     pub lsp_enabled: bool,
     /// Команда запуска сервера (по умолчанию — `rust-analyzer`).
     pub lsp_command: String,
+    /// Сервер для файлов `.toml` (Cargo.toml): по умолчанию
+    /// `taplo lsp stdio`; пустая строка — не запускать.
+    pub toml_lsp_command: String,
     /// Редактор кода: подсветка строки и столбца курсора.
     pub hl_line: bool,
     pub hl_col: bool,
@@ -280,6 +283,7 @@ impl Default for Config {
             recent: Vec::new(),
             lsp_enabled: true,
             lsp_command: "rust-analyzer".into(),
+            toml_lsp_command: "taplo lsp stdio".into(),
             hl_line: true,
             hl_col: true,
             fmt_on_save: true,
@@ -319,6 +323,10 @@ impl Config {
         c.fmt_on_save = j.bool("fmt_on_save", true);
         c.rustfmt = Some(j.str("rustfmt")).filter(|s| !s.trim().is_empty()).unwrap_or(c.rustfmt);
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
+        // Пустая строка — сервер TOML выключен; нет ключа — по умолчанию.
+        if let Some(Json::Str(t)) = j.get("toml_lsp_command") {
+            c.toml_lsp_command = t.trim().to_string();
+        }
         c
     }
 
@@ -336,6 +344,7 @@ impl Config {
             ("recent", Json::from_strings(&self.recent)),
             ("lsp_enabled", Json::Bool(self.lsp_enabled)),
             ("lsp_command", Json::s(&self.lsp_command)),
+            ("toml_lsp_command", Json::s(&self.toml_lsp_command)),
             ("hl_line", Json::Bool(self.hl_line)),
             ("hl_col", Json::Bool(self.hl_col)),
             ("fmt_on_save", Json::Bool(self.fmt_on_save)),
@@ -389,7 +398,7 @@ impl Config {
 }
 
 pub fn options_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(66, 24, "Параметры среды");
+    let mut d = Dialog::centered(66, 26, "Параметры среды");
     let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
     th.value = cfg.theme;
     let th = d.add(th);
@@ -403,14 +412,16 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     d.add(StaticText::new(Rect::new(18, 12, 64, 13), "ссылка git или путь для новых проектов"));
     field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
+    field(&mut d, 18, 16, "Сервер TO~M~L", &cfg.toml_lsp_command, 44, None);
+    d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install taplo-cli --features lsp"));
     let mut hl = CheckBoxes::check_boxes(
-        Rect::new(18, 17, 62, 20),
+        Rect::new(18, 19, 62, 22),
         &["Подсвечивать ~с~троку курсора", "Подсвечивать с~т~олбец курсора", "~r~ustfmt при сохранении (.rs)"],
     );
     hl.value = u32::from(cfg.hl_line) | (u32::from(cfg.hl_col) << 1) | (u32::from(cfg.fmt_on_save) << 2);
     let hl = d.add(hl);
-    d.add(Label::new(Rect::new(1, 17, 18, 18), "~Р~едактор", Some(hl)));
-    ok_cancel(&mut d, 21);
+    d.add(Label::new(Rect::new(1, 19, 18, 20), "~Р~едактор", Some(hl)));
+    ok_cancel(&mut d, 23);
     d.select(th);
     d
 }
@@ -434,7 +445,9 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     if !lsp.trim().is_empty() {
         cfg.lsp_command = lsp.trim().to_string();
     }
-    let hl = v.get(5).and_then(|x| x.as_u32()).unwrap_or(7);
+    // Сервер TOML: пустое поле — выключен.
+    cfg.toml_lsp_command = s_at(&v, 5).trim().to_string();
+    let hl = v.get(6).and_then(|x| x.as_u32()).unwrap_or(7);
     cfg.hl_line = hl & 1 != 0;
     cfg.hl_col = hl & 2 != 0;
     cfg.fmt_on_save = hl & 4 != 0;
@@ -518,5 +531,18 @@ mod tests {
         assert_eq!(g.class, FormClass::Dialog);
         assert!(!crate::props::props_for(&g, None).contains(&Prop::FormNumber));
         assert!(crate::props::set(&mut g, None, Prop::FormClass, "кнопка").is_err());
+    }
+
+    /// Параметры среды: что показал диалог, то и прочиталось (в том числе
+    /// сервер TOML; пустое поле — выключен).
+    #[test]
+    fn options_dialog_round_trip() {
+        for toml in ["taplo lsp stdio", ""] {
+            let cfg = Config { toml_lsp_command: toml.into(), lsp_command: "ra".into(), hl_col: false, theme: 1, ..Config::default() };
+            let d = options_dialog(&cfg);
+            let mut back = Config::default();
+            read_options(&mut back, &d.get_data());
+            assert_eq!(back, cfg);
+        }
     }
 }
