@@ -1,5 +1,6 @@
-//! Связь среды с серверами LSP: rust-analyzer для файлов `.rs` и taplo
-//! для `.toml` (Cargo.toml, rustfmt.toml).
+//! Связь среды с серверами LSP: rust-analyzer для файлов `.rs` и
+//! crates-lsp для `.toml` (Cargo.toml: версии и features зависимостей;
+//! вместо него можно указать другой сервер TOML, например taplo).
 //!
 //! Серверов два, каждый со своей кодировкой столбцов и своими номерами
 //! запросов ([`Srv`]); какой из них отвечает за файл — решает расширение.
@@ -48,7 +49,7 @@ pub struct DocSync {
 pub enum Srv {
     /// rust-analyzer: файлы `.rs`.
     Rust,
-    /// taplo: файлы `.toml`.
+    /// Сервер TOML (по умолчанию crates-lsp): файлы `.toml`.
     Toml,
 }
 
@@ -112,7 +113,7 @@ pub struct LspState {
     pub status: String,
     /// Имя сервера из ответа initialize.
     pub name: String,
-    /// Имя сервера TOML (taplo) из ответа initialize.
+    /// Имя сервера TOML (crates-lsp) из ответа initialize.
     pub toml_name: String,
     /// Сообщение диагностики текущей строки — для строки состояния.
     pub hint: Rc<RefCell<String>>,
@@ -186,11 +187,15 @@ impl Ide {
                     if srv == Srv::Rust && cmd.starts_with("rust-analyzer") {
                         self.say(app, "  Установите его: rustup component add rust-analyzer (или укажите путь в Настройки → Параметры среды).");
                     }
-                    if srv == Srv::Toml && cmd.starts_with("taplo") {
-                        self.say(
-                            app,
-                            "  Установите его: cargo install taplo-cli --locked --features lsp (или очистите поле «Сервер TOML» в Настройки → Параметры среды).",
-                        );
+                    if srv == Srv::Toml {
+                        let how = if cmd.starts_with("taplo") {
+                            "cargo install taplo-cli --locked --features lsp"
+                        } else {
+                            "cargo install --locked crates-lsp"
+                        };
+                        if cmd.starts_with("taplo") || cmd.starts_with("crates-lsp") {
+                            self.say(app, &format!("  Установите его: {} (или очистите поле «Сервер TOML» в Настройки → Параметры среды).", how));
+                        }
                     }
                     false
                 }

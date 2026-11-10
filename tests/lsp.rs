@@ -252,7 +252,7 @@ fn missing_server_is_reported() {
     b.esc_budget = 0;
     let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
     let cfg = Config {
-        lsp_command: "rust-analyzer-нет-такого".into(), toml_lsp_command: "taplo-нет-такого lsp stdio".into(), ..Config::default()
+        lsp_command: "rust-analyzer-нет-такого".into(), toml_lsp_command: "crates-lsp-нет-такого".into(), ..Config::default()
     };
     let mut ide = Ide::new(cfg, true);
     ide.startup(&mut app, vec![p.file().display().to_string()]);
@@ -263,10 +263,10 @@ fn missing_server_is_reported() {
     assert!(m.entries.iter().any(|e| e.text.contains("rustup component add rust-analyzer")));
     assert!(ide.lsp_toml.is_none());
     assert!(m.entries.iter().any(|e| e.text.contains("Сервер TOML недоступен")), "{:?}", m.entries);
-    assert!(m.entries.iter().any(|e| e.text.contains("cargo install taplo-cli")));
+    assert!(m.entries.iter().any(|e| e.text.contains("cargo install --locked crates-lsp")));
 }
 
-/// Cargo.toml идёт своему серверу (taplo), файлы .rs — rust-analyzer;
+/// Cargo.toml идёт своему серверу (crates-lsp), файлы .rs — rust-analyzer;
 /// у каждого свои документы, диагностика и запросы.
 #[test]
 fn toml_server_for_cargo_toml() {
@@ -324,6 +324,17 @@ fn toml_server_for_cargo_toml() {
     t.typed("package.");
     assert!(t.wait(|t| t.ed().completion.is_some()), "после «.» список не открылся");
     t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+    // Кавычка значения после «=» — версии пакета (crates-lsp): тоже сам.
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    t.typed("serde = \"");
+    assert!(t.wait(|t| t.ed().completion.is_some()), "после «= \"» список не открылся");
+    t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+    // Закрывающая кавычка — нет.
+    t.typed("1\"");
+    for _ in 0..20 {
+        t.app.pump(&mut t.ide);
+    }
+    assert!(t.ed().completion.is_none(), "закрывающая кавычка открыла список");
 
     // Список диагностик — из обоих серверов.
     t.cmd(CM_DIAGNOSTICS);

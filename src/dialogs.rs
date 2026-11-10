@@ -333,6 +333,10 @@ pub fn read_app_options(app: &mut AppModel, v: &Value, forms: &[String]) -> Resu
 // Параметры среды
 // ======================================================================
 
+/// Сервер LSP для Cargo.toml по умолчанию: crates-lsp (версии и features
+/// зависимостей). Установка: `cargo install --locked crates-lsp`.
+pub const TOML_LSP_DEFAULT: &str = "crates-lsp";
+
 /// Настройки среды (файл `tvstudio.json` в каталоге настроек пользователя).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
@@ -352,7 +356,7 @@ pub struct Config {
     /// Команда запуска сервера (по умолчанию — `rust-analyzer`).
     pub lsp_command: String,
     /// Сервер для файлов `.toml` (Cargo.toml): по умолчанию
-    /// `taplo lsp stdio`; пустая строка — не запускать.
+    /// `crates-lsp`; пустая строка — не запускать.
     pub toml_lsp_command: String,
     /// Редактор кода: подсветка строки и столбца курсора.
     pub hl_line: bool,
@@ -374,7 +378,7 @@ impl Default for Config {
             recent: Vec::new(),
             lsp_enabled: true,
             lsp_command: "rust-analyzer".into(),
-            toml_lsp_command: "taplo lsp stdio".into(),
+            toml_lsp_command: TOML_LSP_DEFAULT.into(),
             hl_line: true,
             hl_col: true,
             fmt_on_save: true,
@@ -398,10 +402,15 @@ impl Config {
     }
 
     pub fn load() -> Config {
+        let Some(p) = Self::path() else { return Config::default() };
+        let Ok(s) = std::fs::read_to_string(p) else { return Config::default() };
+        let Ok(j) = json::parse(&s) else { return Config::default() };
+        Self::from_json(&j)
+    }
+
+    /// Настройки из разобранного файла (недостающее — по умолчанию).
+    pub fn from_json(j: &Json) -> Config {
         let mut c = Config::default();
-        let Some(p) = Self::path() else { return c };
-        let Ok(s) = std::fs::read_to_string(p) else { return c };
-        let Ok(j) = json::parse(&s) else { return c };
         c.theme = j.int("theme", 0).clamp(0, 2) as u32;
         c.autosave = j.bool("autosave", true);
         c.cargo = Some(j.str("cargo")).filter(|s| !s.is_empty()).unwrap_or(c.cargo);
@@ -415,8 +424,10 @@ impl Config {
         c.rustfmt = Some(j.str("rustfmt")).filter(|s| !s.trim().is_empty()).unwrap_or(c.rustfmt);
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
         // Пустая строка — сервер TOML выключен; нет ключа — по умолчанию.
+        // Прежнее значение по умолчанию (taplo) — заменяется новым.
         if let Some(Json::Str(t)) = j.get("toml_lsp_command") {
-            c.toml_lsp_command = t.trim().to_string();
+            let t = t.trim();
+            c.toml_lsp_command = if t == "taplo lsp stdio" { TOML_LSP_DEFAULT.into() } else { t.to_string() };
         }
         c
     }
@@ -504,7 +515,7 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
     field(&mut d, 18, 16, "Сервер TO~M~L", &cfg.toml_lsp_command, 44, None);
-    d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install taplo-cli --features lsp"));
+    d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install --locked crates-lsp"));
     let mut hl = CheckBoxes::check_boxes(
         Rect::new(18, 19, 62, 22),
         &["Подсвечивать ~с~троку курсора", "Подсвечивать с~т~олбец курсора", "~r~ustfmt при сохранении (.rs)"],
@@ -624,11 +635,28 @@ mod tests {
         assert!(crate::props::set(&mut g, None, Prop::FormClass, "кнопка").is_err());
     }
 
+    /// Сервер для Cargo.toml: по умолчанию crates-lsp; прежнее значение по
+    /// умолчанию (taplo) заменяется, своё значение и «выключен» — остаются.
+    #[test]
+    fn toml_server_setting_migrates() {
+        let load = |v: Option<&str>| {
+            let mut pairs = vec![("theme", Json::Num(1.0))];
+            if let Some(v) = v {
+                pairs.push(("toml_lsp_command", Json::s(v)));
+            }
+            Config::from_json(&Json::obj(pairs)).toml_lsp_command
+        };
+        assert_eq!(load(None), "crates-lsp");
+        assert_eq!(load(Some("taplo lsp stdio")), "crates-lsp", "прежнее значение по умолчанию");
+        assert_eq!(load(Some("taplo lsp stdio --colors never")), "taplo lsp stdio --colors never", "своё — как есть");
+        assert_eq!(load(Some("")), "", "выключен");
+    }
+
     /// Параметры среды: что показал диалог, то и прочиталось (в том числе
     /// сервер TOML; пустое поле — выключен).
     #[test]
     fn options_dialog_round_trip() {
-        for toml in ["taplo lsp stdio", ""] {
+        for toml in [TOML_LSP_DEFAULT, "taplo lsp stdio", ""] {
             let cfg = Config { toml_lsp_command: toml.into(), lsp_command: "ra".into(), hl_col: false, theme: 1, ..Config::default() };
             let d = options_dialog(&cfg);
             let mut back = Config::default();

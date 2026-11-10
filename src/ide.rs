@@ -263,7 +263,7 @@ pub struct Ide {
     pub last_error: Option<String>,
     /// Сервер LSP (rust-analyzer) открытого проекта.
     pub lsp: Option<LspClient>,
-    /// Сервер LSP для `.toml` (taplo).
+    /// Сервер LSP для `.toml` (crates-lsp: версии и features зависимостей в Cargo.toml).
     pub lsp_toml: Option<LspClient>,
     pub lsp_state: LspState,
 }

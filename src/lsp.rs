@@ -1,4 +1,4 @@
-//! Клиент Language Server Protocol (rust-analyzer для `.rs`, taplo для `.toml`).
+//! Клиент Language Server Protocol (rust-analyzer для `.rs`, crates-lsp для `Cargo.toml`).
 //!
 //! Сервер — отдельный процесс; обмен — JSON-RPC 2.0 через stdin/stdout,
 //! каждое сообщение предваряется заголовком `Content-Length: N\r\n\r\n`.
@@ -409,7 +409,7 @@ fn read_message<R: BufRead>(r: &mut R) -> Option<Json> {
 
 impl LspClient {
     /// Запустить сервер `command` (например, `rust-analyzer` или
-    /// `taplo lsp stdio`) для проекта `root`; `language` — `languageId`
+    /// `crates-lsp`) для проекта `root`; `language` — `languageId`
     /// документов, которые ему показываются.
     pub fn start(command: &str, root: &Path, language: &str) -> Result<LspClient, String> {
         let mut parts = command.split_whitespace();
@@ -627,8 +627,8 @@ impl LspClient {
             let id = id.clone();
             let result = match method.as_str() {
                 // Настройки: по одной «по умолчанию» на каждый запрошенный раздел.
-                // rust-analyzer ждёт null; taplo разбирает раздел как объект
-                // настроек, и пустой объект для него — «всё по умолчанию».
+                // rust-analyzer ждёт null; серверы TOML (crates-lsp, taplo)
+                // разбирают раздел как объект настроек — пустой значит «по умолчанию».
                 "workspace/configuration" => {
                     let dflt = if self.language == "rust" { Json::Null } else { Json::obj(vec![]) };
                     Json::Arr(m.get("params").map(|p| p.arr("items")).unwrap_or(&[]).iter().map(|_| dflt.clone()).collect())

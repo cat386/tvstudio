@@ -148,14 +148,17 @@ if forms::login::run(app, &mut data) == cm::OK {
 команду или путь можно задать в Настройки → Параметры среды (там же он
 выключается).
 
-**LSP для Cargo.toml (taplo)** — файлы `.toml` (Cargo.toml, rustfmt.toml)
-обслуживает второй сервер, [taplo](https://taplo.tamasfe.dev/): проверка
-синтаксиса и ключей по мере набора, дополнение разделов и ключей
-(Ctrl+Space, само — после `.`), те же пометки ● / ▲ и общий список
-диагностик. Установка: `cargo install taplo-cli --locked --features lsp`;
-команда по умолчанию — `taplo lsp stdio`, меняется в поле «Сервер TOML»
-параметров среды (пустое поле — не запускать). Серверы работают
-независимо: если taplo нет или он упал, rust-analyzer продолжает работу.
+**LSP для Cargo.toml (crates-lsp)** — файлы `.toml` обслуживает второй
+сервер, [crates-lsp](https://github.com/MathiasPius/crates-lsp): в
+`Cargo.toml` он дополняет версии и features зависимостей (Ctrl+Space,
+само — после `serde = "` и после `.`) и помечает устаревшие и
+несуществующие версии теми же ● / ▲, они же — в общем списке диагностик.
+Установка: `cargo install --locked crates-lsp`; команда по умолчанию —
+`crates-lsp`, меняется в поле «Сервер TOML» параметров среды (например,
+на `taplo lsp stdio` — проверка синтаксиса и ключей TOML; пустое поле — не
+запускать). Серверы работают независимо: если crates-lsp нет или он упал,
+rust-analyzer продолжает работу. Версии crates-lsp берёт с crates.io —
+нужна сеть.
 
 Клиент — свой (`src/lsp.rs`), без внешних зависимостей:
 JSON-RPC через stdin/stdout, позиции в UTF-32 (или UTF-16, если сервер
@@ -216,8 +219,8 @@ cargo run --bin tvs-import -- --examples ../tvision-rs examples
 | `runner` | cargo в фоновом потоке |
 | `importer` | импорт программ на tvision-rs (лексер Rust, разбор цепочек `Menu::new()`) |
 | `formextract` | диалоги из кода → формы (интерпретатор подмножества Rust) |
-| `lsp` | клиент Language Server Protocol (rust-analyzer, taplo) |
-| `ide` | меню, строка состояния, обработчик команд среды; `ide/lsp_glue` — LSP в редакторах (`.rs` → rust-analyzer, `.toml` → taplo) |
+| `lsp` | клиент Language Server Protocol (rust-analyzer, crates-lsp) |
+| `ide` | меню, строка состояния, обработчик команд среды; `ide/lsp_glue` — LSP в редакторах (`.rs` → rust-analyzer, `.toml` → crates-lsp) |
 
 Файлы проекта (`.tvsp`) и форм (`.tvf`) — TOML: меню, строка состояния и
 команды — массивы таблиц `[[app.menu]]`, `[[app.status]]`, `[[app.commands]]`,
@@ -244,7 +247,7 @@ command = "cm::CANCEL"
 ## Тесты
 
 ```
-cargo test                                      # 62 теста, в т.ч. на «невидимом» терминале
+cargo test                                      # 63 теста, в т.ч. на «невидимом» терминале
 cargo test --test codegen_build -- --ignored    # сгенерированный проект со всеми элементами собирается без предупреждений
 cargo test --test examples -- --ignored         # все 23 примера собираются и проходят свои тесты
 ```

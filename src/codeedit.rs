@@ -310,13 +310,14 @@ impl CodeEditor {
         self.fe.handle_event(&mut nothing, ctx);
     }
 
-    /// После набранного символа: `.` и `::` (Rust), `.` (TOML: ключи
-    /// `package.`, `dependencies.`) сами открывают дополнение.
+    /// После набранного символа: `.` и `::` (Rust); в TOML — `.` (ключи
+    /// `package.`, `dependencies.`) и открывающая `"` значения (`serde = "` —
+    /// версии пакета от crates-lsp) сами открывают дополнение.
     fn after_typing(&mut self, key: Key, ctx: &mut Ctx) {
         let Key::Char(ch) = key else { return };
         let wanted = match self.lang {
             Lang::Rust => ch == '.' || ch == ':',
-            Lang::Toml => ch == '.',
+            Lang::Toml => ch == '.' || ch == '"',
             _ => false,
         };
         if !wanted {
@@ -332,6 +333,17 @@ impl CodeEditor {
             // «..» (диапазон) и число «1.» — не поле.
             '.' if before(2) == Some('.') || before(2).map(|c| c.is_ascii_digit()).unwrap_or(false) => return,
             '.' => ".",
+            // Кавычка сразу после «=» (через пробелы) — начало значения.
+            '"' => {
+                let mut k = 2;
+                while before(k) == Some(' ') {
+                    k += 1;
+                }
+                if before(k) != Some('=') {
+                    return;
+                }
+                "\""
+            }
             _ if before(2) == Some(':') => "::",
             _ => return,
         };
