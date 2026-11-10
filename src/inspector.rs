@@ -1,5 +1,8 @@
-//! Инспектор свойств: таблица «свойство — значение» для выделенного
-//! элемента формы (или самой формы, если ничего не выделено).
+//! Окно «Инспектор» справа от рабочего стола: сверху — компоненты
+//! (Enter или двойной щелчок добавляет элемент на форму в верхнем окне
+//! дизайнера), под ними — таблица «свойство — значение» для выделенного
+//! элемента формы (или самой формы, если ничего не выделено). Tab
+//! переходит между компонентами и свойствами.
 //!
 //! Правка: Enter или F2 (или просто набор текста) — изменить значение,
 //! Enter — применить, Esc — отменить; пробел на логическом свойстве —
@@ -14,7 +17,9 @@ use tvision::*;
 
 use crate::cmds::*;
 use crate::designer::DocRef;
+use crate::model::Kind;
 use crate::props::{self, Prop};
+use crate::toolwins::{enter_to_command, icon, Relay};
 
 /// Модель таблицы: смотрит в документ формы, который сейчас «под инспектором».
 pub struct PropModel {
@@ -90,9 +95,11 @@ impl TableModel for PropModel {
     }
 }
 
-/// Окно инспектора.
+/// Окно инспектора: компоненты и свойства.
 pub struct InspectorWindow {
     pub win: Window,
+    /// Список компонентов (верхняя часть).
+    pub list_id: ViewId,
     pub table_id: ViewId,
     head_id: ViewId,
     hint_id: ViewId,
@@ -112,14 +119,28 @@ impl InspectorWindow {
         let mut win = Window::new(bounds, "Инспектор", 0);
         win.palette = tool_palette();
         let s = win.group.vs.size;
-        let mut head = StaticText::new(Rect::new(1, 1, s.x - 1, 2), "Нет формы");
+        // Компоненты: заголовок и список фиксированной высоты (все виды, если
+        // помещаются, но не больше ~40% окна — остальное свойствам).
+        let lh = Self::palette_rows(s.y);
+        let mut ph = StaticText::new(Rect::new(1, 1, s.x - 1, 2), "Компоненты");
+        ph.vs.grow_mode = gf::GROW_HI_X;
+        win.add(ph);
+        let mut list = ListBox::new(Rect::new(1, 2, s.x - 1, 2 + lh), 1, None);
+        list.vs.grow_mode = gf::GROW_HI_X;
+        list.vs.help_ctx = HC_PALETTE;
+        list.set_items(Kind::ALL.iter().map(|k| format!("{} {}", icon(*k), k.title())).collect());
+        let list_id = win.add(list);
+        win.add(Relay::new(list_id, CM_PAL_INSERT));
+        // Свойства: строка «что выделено», таблица, подсказка свойства.
+        let top = 2 + lh;
+        let mut head = StaticText::new(Rect::new(1, top, s.x - 1, top + 1), "Нет формы");
         head.vs.grow_mode = gf::GROW_HI_X;
         let head_id = win.add(head);
-        let vsb = win.standard_scroll_bar(true);
+        let vsb = win.add(ScrollBar::new(Rect::new(s.x - 1, top + 1, s.x, s.y - 1)));
         let target: Rc<RefCell<Option<DocRef>>> = Rc::new(RefCell::new(None));
         let model = PropModel { target: target.clone() };
         let w = (s.x - 2).max(10);
-        let mut table = Table::new(Rect::new(1, 2, s.x - 1, s.y - 2), Box::new(model), Some(vsb), None)
+        let mut table = Table::new(Rect::new(1, top + 1, s.x - 1, s.y - 2), Box::new(model), Some(vsb), None)
             .with_columns(vec![TableColumn::new(12).title("Свойство"), TableColumn::new((w - 13).max(8)).title("Значение")])
             .header(true)
             .editable(true)
@@ -131,7 +152,30 @@ impl InspectorWindow {
         hint.vs.grow_mode = gf::GROW_LO_Y | gf::GROW_HI_Y | gf::GROW_HI_X;
         let hint_id = win.add(hint);
         win.group.vs.help_ctx = HC_INSPECTOR;
-        InspectorWindow { win, table_id, head_id, hint_id, target, shown: (0, 0, None) }
+        win.select(table_id);
+        InspectorWindow { win, list_id, table_id, head_id, hint_id, target, shown: (0, 0, None) }
+    }
+
+    /// Высота списка компонентов для окна высотой `h`.
+    fn palette_rows(h: i32) -> i32 {
+        let all = Kind::ALL.len() as i32;
+        ((h - 2) * 2 / 5).clamp(3, all)
+    }
+
+    /// Выбранный в списке компонентов вид элемента.
+    pub fn selected_kind(&self) -> Kind {
+        let i = self.win.group.find::<ListBox>(self.list_id).map(|l| l.focused).unwrap_or(0);
+        Kind::ALL[i.min(Kind::ALL.len() - 1)]
+    }
+
+    /// Перевести фокус на компоненты (`true`) или на свойства.
+    pub fn focus_part(&mut self, components: bool) {
+        self.win.select(if components { self.list_id } else { self.table_id });
+    }
+
+    /// В фокусе список компонентов.
+    pub fn components_focused(&self) -> bool {
+        self.win.group.current_view().map(|v| v.vs().id) == Some(self.list_id)
     }
 
     /// Показать свойства документа `doc` (вызывается средой в простое).
@@ -243,6 +287,8 @@ impl View for InspectorWindow {
     }
 
     fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
+        // Enter в списке компонентов — добавить элемент на форму.
+        enter_to_command(&self.win, self.list_id, ev, ctx, CM_PAL_INSERT);
         if let Event::KeyDown(k) = ev {
             let editing = self.win.group.find::<Table>(self.table_id).map(|t| t.is_editing()).unwrap_or(false);
             let table_focused = self.win.group.current_view().map(|v| v.vs().id) == Some(self.table_id);

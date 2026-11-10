@@ -79,7 +79,7 @@ macro_rules! tool_window_view {
 }
 
 /// Если в окне `win` в фокусе представление `id` и нажат Enter — послать команду.
-fn enter_to_command(win: &Window, id: ViewId, ev: &mut Event, ctx: &mut Ctx, command: u16) {
+pub fn enter_to_command(win: &Window, id: ViewId, ev: &mut Event, ctx: &mut Ctx, command: u16) {
     if let Event::KeyDown(k) = ev {
         if k.key == Key::Enter && k.mods == Mods::NONE && win.group.current_view().map(|v| v.vs().id) == Some(id) {
             ctx.post_command(command, Info::Id(id));
@@ -89,37 +89,8 @@ fn enter_to_command(win: &Window, id: ViewId, ev: &mut Event, ctx: &mut Ctx, com
 }
 
 // ======================================================================
-// Палитра компонентов
+// Компоненты (список — в окне инспектора, см. `inspector`)
 // ======================================================================
-
-/// Палитра компонентов: Enter или двойной щелчок добавляет элемент
-/// на форму в верхнем окне дизайнера.
-pub struct PaletteWindow {
-    pub win: Window,
-    pub list_id: ViewId,
-}
-
-impl PaletteWindow {
-    pub fn new(bounds: Rect) -> Self {
-        let mut win = Window::new(bounds, "Компоненты", 0);
-        win.palette = tool_palette();
-        win.group.vs.help_ctx = HC_PALETTE;
-        let vsb = win.standard_scroll_bar(true);
-        let mut list = ListBox::new(win.interior(), 1, Some(vsb));
-        list.vs.grow_mode = gf::GROW_HI_X | gf::GROW_HI_Y;
-        list.vs.help_ctx = HC_PALETTE;
-        list.set_items(Kind::ALL.iter().map(|k| format!("{} {}", icon(*k), k.title())).collect());
-        let list_id = win.add(list);
-        win.add(Relay::new(list_id, CM_PAL_INSERT));
-        PaletteWindow { win, list_id }
-    }
-
-    /// Выбранный в палитре вид элемента.
-    pub fn selected_kind(&self) -> Kind {
-        let i = self.win.group.find::<ListBox>(self.list_id).map(|l| l.focused).unwrap_or(0);
-        Kind::ALL[i.min(Kind::ALL.len() - 1)]
-    }
-}
 
 /// Значок вида элемента в палитре.
 pub fn icon(k: Kind) -> &'static str {
@@ -137,15 +108,6 @@ pub fn icon(k: Kind) -> &'static str {
         Kind::ProgressBar => "█░ ",
         Kind::Table => "▦  ",
         Kind::TreeView => "├─ ",
-    }
-}
-
-impl View for PaletteWindow {
-    tool_window_view!();
-
-    fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
-        enter_to_command(&self.win, self.list_id, ev, ctx, CM_PAL_INSERT);
-        self.win.handle_window_event(ev, ctx);
     }
 }
 

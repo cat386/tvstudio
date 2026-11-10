@@ -24,7 +24,7 @@ use crate::inspector::InspectorWindow;
 use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
-use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, PaletteWindow, ProjectWindow};
+use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, ProjectWindow};
 
 mod lsp_glue;
 pub use lsp_glue::{LspState, Srv};
@@ -149,7 +149,7 @@ pub fn menu_bar() -> Menu {
         .submenu(
             "~О~кно",
             Menu::new()
-                .item("~П~алитра компонентов", CM_SHOW_PALETTE)
+                .item("Компо~н~енты", CM_SHOW_PALETTE)
                 .item_key("~И~нспектор", CM_SHOW_INSPECTOR, kb::f(11), "F11")
                 .item("П~р~оект", CM_SHOW_PROJECT)
                 .item("~С~ообщения", CM_SHOW_MESSAGES)
@@ -251,8 +251,8 @@ pub struct Ide {
     pub help: Rc<HelpFile>,
     /// Тестовый режим: не сохранять настройки, не запускать программу в терминале.
     pub headless: bool,
+    /// Окно «Инспектор»: компоненты и свойства.
     pub inspector: Option<ViewId>,
-    pub palette: Option<ViewId>,
     pub project_win: Option<ViewId>,
     pub messages: Option<ViewId>,
     /// Пометки ошибок последней сборки по файлам.
@@ -278,7 +278,6 @@ impl Ide {
             help: Rc::new(help),
             headless,
             inspector: None,
-            palette: None,
             project_win: None,
             messages: None,
             marks: HashMap::new(),
@@ -295,29 +294,31 @@ impl Ide {
     // Окна
     // ------------------------------------------------------------------
 
-    /// Нужны ли окна «Компоненты» и «Инспектор»: нет проекта или проект
-    /// tvision-rs. У программы на Rust форм нет — и этих окон тоже.
+    /// Нужно ли окно «Инспектор» (компоненты и свойства): нет проекта или
+    /// проект tvision-rs. У программы на Rust форм нет — и этого окна тоже.
     pub fn form_tools(&self) -> bool {
         self.project.as_ref().map(|p| p.has_forms()).unwrap_or(true)
     }
 
-    /// Раскладка окон-инструментов по размеру рабочего стола.
-    /// Без палитры и инспектора дерево проекта занимает весь левый столбец,
-    /// а редакторам достаётся место до правого края.
-    fn layout(&self, app: &Program) -> [Rect; 5] {
+    /// Раскладка окон-инструментов по размеру рабочего стола. Проект
+    /// tvision-rs (и пока проекта нет): слева — дерево проекта, справа —
+    /// инспектор (компоненты и свойства), посередине — редакторы. Программа
+    /// на Rust: инспектора нет, дерево проекта — справа, редакторы — от
+    /// левого края. Внизу — сообщения.
+    /// Порядок: проект, инспектор, сообщения, место для редакторов.
+    fn layout(&self, app: &Program) -> [Rect; 4] {
         let s = app.desktop().group.vs.size;
         let lw = (s.x / 5).clamp(18, 26);
-        let rw = (s.x / 4).clamp(24, 34);
+        let rw = (s.x / 4).clamp(26, 36);
         let bh = (s.y / 4).clamp(5, 9);
-        let mid = (s.y - bh) / 2;
-        let tools = self.form_tools();
-        [
-            Rect::new(0, 0, lw, if tools { mid } else { s.y - bh }),        // проект
-            Rect::new(0, mid, lw, s.y - bh),                                // палитра
-            Rect::new(s.x - rw, 0, s.x, s.y - bh),                          // инспектор
-            Rect::new(0, s.y - bh, s.x, s.y),                               // сообщения
-            Rect::new(lw, 0, if tools { s.x - rw } else { s.x }, s.y - bh), // место для редакторов
-        ]
+        let h = s.y - bh;
+        let inspector = Rect::new(s.x - rw, 0, s.x, h);
+        let messages = Rect::new(0, h, s.x, s.y);
+        if self.form_tools() {
+            [Rect::new(0, 0, lw, h), inspector, messages, Rect::new(lw, 0, s.x - rw, h)]
+        } else {
+            [Rect::new(s.x - lw, 0, s.x, h), inspector, messages, Rect::new(0, 0, s.x - lw, h)]
+        }
     }
 
     fn alive(app: &Program, id: Option<ViewId>) -> bool {
@@ -330,7 +331,7 @@ impl Ide {
     }
 
     /// Окно в фокусе на рабочем столе.
-    fn current_window(app: &Program) -> Option<ViewId> {
+    pub fn current_window(app: &Program) -> Option<ViewId> {
         app.desktop().group.current_view().map(|v| v.vs().id)
     }
 
@@ -352,24 +353,19 @@ impl Ide {
             w.set_project(self.project.as_ref());
             self.project_win = Some(app.insert_window(w));
         }
-        // Палитра и инспектор — только там, где есть формы. Окна появились
-        // или исчезли — дерево проекта встаёт на своё место по раскладке.
+        // Инспектор (компоненты и свойства) — только там, где есть формы.
+        // Он появился или исчез (сменился тип проекта) — дерево проекта
+        // переезжает на свою сторону: у программы на Rust оно справа.
         let mut changed = false;
         if self.form_tools() {
-            if !Self::alive(app, self.palette) {
-                self.palette = Some(app.insert_window(PaletteWindow::new(l[1])));
-                changed = true;
-            }
             if !Self::alive(app, self.inspector) {
-                self.inspector = Some(app.insert_window(InspectorWindow::new(l[2])));
+                self.inspector = Some(app.insert_window(InspectorWindow::new(l[1])));
                 changed = true;
             }
-        } else {
-            for id in [self.palette.take(), self.inspector.take()].into_iter().flatten() {
-                if app.desktop().group.index_of(id).is_some() {
-                    app.desktop_mut().group.remove(id);
-                    changed = true;
-                }
+        } else if let Some(id) = self.inspector.take() {
+            if app.desktop().group.index_of(id).is_some() {
+                app.desktop_mut().group.remove(id);
+                changed = true;
             }
         }
         if changed {
@@ -378,7 +374,7 @@ impl Ide {
             }
         }
         if !Self::alive(app, self.messages) {
-            self.messages = Some(app.insert_window(MessagesWindow::new(l[3])));
+            self.messages = Some(app.insert_window(MessagesWindow::new(l[2])));
         }
     }
 
@@ -394,16 +390,15 @@ impl Ide {
             }
         };
         set(app, self.project_win, l[0]);
-        set(app, self.palette, l[1]);
-        set(app, self.inspector, l[2]);
-        set(app, self.messages, l[3]);
+        set(app, self.inspector, l[1]);
+        set(app, self.messages, l[2]);
     }
 
     /// Окно сообщений (создаётся, если закрыто).
     fn msgs<'a>(&mut self, app: &'a mut Program) -> &'a mut MessagesWindow {
         if !Self::alive(app, self.messages) {
             let l = self.layout(app);
-            let id = app.insert_window(MessagesWindow::new(l[3]));
+            let id = app.insert_window(MessagesWindow::new(l[2]));
             self.messages = Some(id);
         }
         app.find_mut::<MessagesWindow>(self.messages.unwrap()).unwrap()
@@ -473,7 +468,7 @@ impl Ide {
                 id
             }
             None => {
-                let r = self.layout(app)[4];
+                let r = self.layout(app)[3];
                 let r = if r.width() < 40 || r.height() < 8 { app.desktop().group.vs.extent() } else { r };
                 self.win_no = self.win_no % 9 + 1;
                 let mut w = CodeWindow::new(r, &abs, self.win_no, self.base_dir());
@@ -1538,7 +1533,7 @@ impl Ide {
                 self.insert_kind(app, Kind::ALL[(c - CM_INS_BASE) as usize]);
             }
             CM_PAL_INSERT => {
-                let kind = self.palette.and_then(|id| app.find::<PaletteWindow>(id)).map(|w| w.selected_kind());
+                let kind = self.inspector.and_then(|id| app.find::<InspectorWindow>(id)).map(|w| w.selected_kind());
                 if let Some(k) = kind {
                     self.insert_kind(app, k);
                 }
@@ -1570,20 +1565,24 @@ impl Ide {
             CM_SHOW_PALETTE | CM_SHOW_INSPECTOR | CM_SHOW_PROJECT | CM_SHOW_MESSAGES => {
                 self.ensure_tools(app);
                 let id = match c {
-                    CM_SHOW_PALETTE => self.palette,
-                    CM_SHOW_INSPECTOR => self.inspector,
+                    CM_SHOW_PALETTE | CM_SHOW_INSPECTOR => self.inspector,
                     CM_SHOW_PROJECT => self.project_win,
                     _ => self.messages,
                 };
                 if let Some(id) = id {
-                    // F11: повторное нажатие из инспектора возвращает в дизайнер.
-                    if c == CM_SHOW_INSPECTOR && Self::current_window(app) == Some(id) {
+                    // F11: повторное нажатие из свойств инспектора возвращает в дизайнер.
+                    let in_props = app.find::<InspectorWindow>(id).map(|w| !w.components_focused()).unwrap_or(false);
+                    if c == CM_SHOW_INSPECTOR && Self::current_window(app) == Some(id) && in_props {
                         if let Some(d) = Self::top_designer(app) {
                             app.focus(d);
                             return true;
                         }
                     }
                     app.focus(id);
+                    // «Компоненты» — к списку компонентов, F11 — к свойствам.
+                    if let Some(w) = app.find_mut::<InspectorWindow>(id) {
+                        w.focus_part(c == CM_SHOW_PALETTE);
+                    }
                 }
             }
             CM_LAYOUT => self.apply_layout(app),

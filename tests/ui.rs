@@ -11,6 +11,7 @@ use tvstudio::codeedit::CodeWindow;
 use tvstudio::designer::DesignWindow;
 use tvstudio::dialogs::Config;
 use tvstudio::ide::{menu_bar, status_line, Ide};
+use tvstudio::inspector::InspectorWindow;
 use tvstudio::model::{Dependency, Kind, MenuNode, Project, ProjectKind};
 
 struct T {
@@ -105,6 +106,46 @@ fn startup_shows_tools_and_project() {
     assert!(s.contains("Формы") && s.contains("about"), "дерево проекта:\n{}", s);
     assert!(s.contains("Открыт проект demo"), "{}", s);
     assert!(s.contains("Фо") && s.contains("Сборка"), "строка меню");
+}
+
+/// Компоненты и свойства — одно окно «Инспектор» у правого края: Enter в
+/// компонентах добавляет элемент на форму, свойства тут же показывают его;
+/// «Окно → Компоненты» ведёт к списку, F11 — к свойствам.
+#[test]
+fn inspector_holds_components_on_the_right() {
+    let mut t = T::new("insp");
+    t.open_about();
+    let id = t.ide.inspector.expect("окно инспектора");
+    let desk = t.app.desktop().group.vs.size;
+    let b = t.app.group.view(id).unwrap().vs().bounds();
+    assert_eq!(b.b.x, desk.x, "инспектор у правого края: {:?}", b);
+    // Отдельного окна «Компоненты» нет: заголовок встречается в инспекторе.
+    let w = t.app.find::<InspectorWindow>(id).unwrap();
+    assert_eq!(w.win.title, "Инспектор");
+    let s = t.screen();
+    assert_eq!(s.matches("Компоненты").count(), 1, "{}", s);
+    assert!(!s.contains("═ Компоненты ") && !s.contains("─ Компоненты "), "{}", s);
+    // Дерево проекта — во весь левый столбец, над сообщениями.
+    let pb = t.app.group.view(t.ide.project_win.unwrap()).unwrap().vs().bounds();
+    let mb = t.app.group.view(t.ide.messages.unwrap()).unwrap().vs().bounds();
+    assert_eq!((pb.a.x, pb.a.y, pb.b.y), (0, 0, mb.a.y));
+
+    // «Окно → Компоненты»: фокус на списке; ↓↓ Enter — третий вид элемента.
+    t.cmd(CM_SHOW_PALETTE);
+    assert!(t.app.find::<InspectorWindow>(id).unwrap().components_focused());
+    t.key(KeyEvent::new(Key::Down, Mods::NONE));
+    t.key(KeyEvent::new(Key::Down, Mods::NONE));
+    assert_eq!(t.app.find::<InspectorWindow>(id).unwrap().selected_kind(), Kind::ALL[2]);
+    t.key(kb::ENTER);
+    let c = t.doc_controls();
+    assert_eq!(c.last().unwrap().kind, Kind::ALL[2]);
+    assert!(t.screen().contains(&format!("{}: {}", c.last().unwrap().name, Kind::ALL[2].title())), "{}", t.screen());
+    // F11 — к свойствам того же окна; ещё раз F11 — обратно в дизайнер.
+    t.cmd(CM_SHOW_INSPECTOR);
+    assert_eq!(Ide::current_window(&t.app), Some(id));
+    assert!(!t.app.find::<InspectorWindow>(id).unwrap().components_focused());
+    t.cmd(CM_SHOW_INSPECTOR);
+    assert_eq!(Ide::current_window(&t.app), Ide::top_designer(&t.app));
 }
 
 #[test]
@@ -421,10 +462,16 @@ fn new_rust_project_hides_form_tools() {
         assert!(!s.contains(gone), "«{}» на экране:\n{}", gone, s);
     }
     assert!(s.contains("Проект") && s.contains("Сообщения") && s.contains("main.rs"), "{}", s);
-    assert!(t.ide.palette.is_none() && t.ide.inspector.is_none());
+    assert!(t.ide.inspector.is_none());
+    // Дерево проекта — у правого края, редактор main.rs — слева от него.
+    let desk = t.app.desktop().group.vs.size;
+    let pb = t.app.group.view(t.ide.project_win.unwrap()).unwrap().vs().bounds();
+    assert_eq!(pb.b.x, desk.x, "проект справа: {:?}", pb);
     // main.rs открыт в редакторе и в фокусе.
     let main = p.dir.join("src").join("main.rs");
-    assert!(Ide::windows::<CodeWindow>(&t.app).iter().any(|&id| t.app.find::<CodeWindow>(id).unwrap().path() == main));
+    let ed = Ide::windows::<CodeWindow>(&t.app).into_iter().find(|&id| t.app.find::<CodeWindow>(id).unwrap().path() == main).expect("main.rs открыт");
+    let eb = t.app.group.view(ed).unwrap().vs().bounds();
+    assert_eq!((eb.a.x, eb.b.x), (0, pb.a.x), "редактор — от левого края до дерева проекта");
 
     for c in [CM_NEW_FORM, CM_OPEN_FORM, CM_EDIT_MENU, CM_GENERATE, CM_EXTRACT_FORMS] {
         assert!(!t.app.command_enabled(c), "команда {} включена", c);
@@ -436,7 +483,7 @@ fn new_rust_project_hides_form_tools() {
     t.cmd(CM_LAYOUT);
     t.ide.ensure_tools(&mut t.app);
     t.pump();
-    assert!(t.ide.palette.is_none() && t.ide.inspector.is_none());
+    assert!(t.ide.inspector.is_none());
     // Генерация (перед сборкой) ничего не пишет.
     assert!(t.ide.generate(&mut t.app, true));
     assert!(!p.dir.join("src").join("ui.rs").exists() && !p.dir.join("src").join("forms").exists());
@@ -447,6 +494,8 @@ fn new_rust_project_hides_form_tools() {
     let s = t.screen();
     assert!(s.contains("Компоненты") && s.contains("Инспектор") && s.contains("Формы"), "{}", s);
     assert!(t.app.command_enabled(CM_NEW_FORM));
+    let pb = t.app.group.view(t.ide.project_win.unwrap()).unwrap().vs().bounds();
+    assert_eq!(pb.a.x, 0, "проект tvision-rs — дерево снова слева: {:?}", pb);
 }
 
 /// `tvstudio КАТАЛОГ`: в каталоге исходники Rust (Cargo.toml), а файла
@@ -496,4 +545,12 @@ fn startup_with_cargo_dir_creates_rust_project() {
     assert!(app.screen_text().contains("это не исходники Rust"), "{}", app.screen_text());
     assert!(std::fs::read_dir(&empty).unwrap().next().is_none(), "в каталоге ничего не создано");
     let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Справка разбирается целиком (строка, начатая с «.», — команда справки;
+/// ошибка в ней подменила бы всю справку заглушкой).
+#[test]
+fn help_file_parses() {
+    let h = tvision::HelpFile::parse(tvstudio::ide::HELP_SOURCE).expect("справка разбирается");
+    let _ = h;
 }
