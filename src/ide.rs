@@ -1239,6 +1239,19 @@ impl Ide {
                 if let Some(f) = find_project_file(&p) {
                     self.open_project(app, &f);
                     opened = true;
+                } else if p.join("Cargo.toml").is_file() {
+                    // Исходники на Rust без файла проекта: создаём проект и открываем.
+                    match Project::adopt_rust(&p) {
+                        Ok(proj) => {
+                            let f = proj.file();
+                            self.open_project(app, &f);
+                            self.say(app, &format!("Создан проект на Rust для каталога {} ({}).", proj.dir.display(), f.display()));
+                            opened = true;
+                        }
+                        Err(e) => Self::error(app, &e),
+                    }
+                } else {
+                    self.say(app, &format!("Каталог {}: нет ни файла проекта .{}, ни Cargo.toml — это не исходники Rust.", p.display(), PROJECT_EXT));
                 }
             } else {
                 self.open_file(app, &p, None);

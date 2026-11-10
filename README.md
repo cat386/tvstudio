@@ -35,7 +35,14 @@ work/
 cd tvstudio
 cargo run --release                  # последний проект или приветствие
 cargo run --release -- путь/к/app.tvsp
+cargo run --release -- путь/к/каталогу   # проект в каталоге или исходники Rust
 ```
+
+Если в указанном каталоге нет файла проекта `.tvsp`, но есть `Cargo.toml`,
+среда создаёт рядом с ним проект «программа на Rust» (имя — из
+`[package] name`, иначе имя каталога; исходники не трогаются), открывает
+его и `src/main.rs` (или `src/lib.rs`). Следующий запуск с тем же
+каталогом откроет уже этот проект.
 
 Вместо пути можно взять git-зависимость — см. комментарий в `Cargo.toml`.
 Работает в Linux, macOS и Windows 10+ (как и tvision-rs). Нужен `cargo`
@@ -212,7 +219,7 @@ cargo run --bin tvs-import -- --examples ../tvision-rs examples
 ## Тесты
 
 ```
-cargo test                                      # 53 теста, в т.ч. на «невидимом» терминале
+cargo test                                      # 55 тестов, в т.ч. на «невидимом» терминале
 cargo test --test codegen_build -- --ignored    # сгенерированный проект со всеми элементами собирается без предупреждений
 cargo test --test examples -- --ignored         # все 23 примера собираются и проходят свои тесты
 ```

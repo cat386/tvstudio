@@ -448,3 +448,52 @@ fn new_rust_project_hides_form_tools() {
     assert!(s.contains("Компоненты") && s.contains("Инспектор") && s.contains("Формы"), "{}", s);
     assert!(t.app.command_enabled(CM_NEW_FORM));
 }
+
+/// `tvstudio КАТАЛОГ`: в каталоге исходники Rust (Cargo.toml), а файла
+/// проекта нет — среда создаёт проект на Rust и открывает его; второй
+/// запуск открывает уже созданный проект. Каталог без Cargo.toml — сообщение.
+#[test]
+fn startup_with_cargo_dir_creates_rust_project() {
+    let base = std::env::temp_dir().join(format!("tvs_ui_adopt_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("tool");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"tool\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+    let empty = base.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+
+    let run = |args: Vec<String>| {
+        let mut b = HeadlessBackend::new(120, 40);
+        b.esc_budget = 0;
+        let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+        let mut ide = Ide::new(Config { lsp_enabled: false, ..Config::default() }, true);
+        ide.startup(&mut app, args);
+        app.pump(&mut ide);
+        app.pump(&mut ide);
+        (app, ide)
+    };
+
+    let (mut app, mut ide) = run(vec![dir.display().to_string()]);
+    let p = ide.project.clone().expect("проект открыт");
+    assert_eq!((p.name.as_str(), p.kind), ("tool", ProjectKind::Rust));
+    assert!(dir.join("tool.tvsp").is_file());
+    let s = app.screen_text();
+    assert!(s.contains("Создан проект на Rust"), "{}", s);
+    assert!(!s.contains("Компоненты") && !s.contains("Инспектор"), "{}", s);
+    assert!(Ide::windows::<CodeWindow>(&app).iter().any(|&id| app.find::<CodeWindow>(id).unwrap().path() == dir.join("src/main.rs")));
+    ide.shutdown(&mut app);
+
+    // Второй запуск — тот же проект, новый не создаётся.
+    let (mut app, mut ide) = run(vec![dir.display().to_string()]);
+    assert_eq!(ide.project.as_ref().map(|p| p.file()), Some(dir.join("tool.tvsp")));
+    assert!(!app.screen_text().contains("Создан проект"));
+    ide.shutdown(&mut app);
+
+    // Не исходники Rust — только сообщение.
+    let (app, ide) = run(vec![empty.display().to_string()]);
+    assert!(ide.project.is_none());
+    assert!(app.screen_text().contains("это не исходники Rust"), "{}", app.screen_text());
+    assert!(std::fs::read_dir(&empty).unwrap().next().is_none(), "в каталоге ничего не создано");
+    let _ = std::fs::remove_dir_all(&base);
+}

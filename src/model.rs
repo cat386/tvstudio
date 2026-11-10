@@ -1217,6 +1217,27 @@ impl Project {
         Ok(p)
     }
 
+    /// Взять в проект готовые исходники на Rust: каталог `dir` с `Cargo.toml`.
+    /// Рядом с `Cargo.toml` создаётся файл проекта типа «программа на Rust»
+    /// (имя — из `[package] name`, иначе имя каталога); исходники не
+    /// трогаются. Открыты будут `src/main.rs` или `src/lib.rs`.
+    pub fn adopt_rust(dir: &Path) -> Result<Self, String> {
+        let dir = tvision::widgets::editor::absolute(dir);
+        let cargo = dir.join("Cargo.toml");
+        let text = std::fs::read_to_string(&cargo).map_err(|_| format!("в каталоге {} нет Cargo.toml — это не исходники Rust", dir.display()))?;
+        let name = cargo_package_name(&text)
+            .or_else(|| dir.file_name().map(|n| n.to_string_lossy().to_string()))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "project".into());
+        let open_files = ["src/main.rs", "src/lib.rs"].iter().find(|f| dir.join(f).is_file()).map(|f| vec![f.to_string()]).unwrap_or_default();
+        let p = Project { dir, name: name.clone(), kind: ProjectKind::Rust, app: AppModel::starter(&name), forms: vec![], open_files };
+        if p.file().exists() {
+            return Err(format!("файл проекта {} уже есть", p.file().display()));
+        }
+        p.save()?;
+        Ok(p)
+    }
+
     /// Создать новый проект tvision-rs: каталог, `Cargo.toml`, `src/main.rs`,
     /// файл проекта и форму «О программе».
     pub fn create(parent: &Path, name: &str, dep: &Dependency) -> Result<Self, String> {
@@ -1255,6 +1276,29 @@ impl Project {
         p.save()?;
         Ok(p)
     }
+}
+
+/// Имя пакета из текста `Cargo.toml`: `name = "…"` в разделе `[package]`.
+/// `None` — раздела нет (например, только `[workspace]`) или имя не строкой.
+pub fn cargo_package_name(toml: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in toml.lines() {
+        let l = line.split('#').next().unwrap_or("").trim();
+        if l.starts_with('[') {
+            in_package = l == "[package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        let Some((k, v)) = l.split_once('=') else { continue };
+        if k.trim() == "name" {
+            let v = v.trim();
+            let q = v.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+            return v[1..].split(q).next().map(|s| s.to_string()).filter(|s| !s.is_empty());
+        }
+    }
+    None
 }
 
 /// Убрать из пути `.` и `..` без обращения к диску (каталога проекта
@@ -1444,6 +1488,36 @@ mod tests {
         }
         std::fs::write(p.file(), j.to_pretty()).unwrap();
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Каталог с Cargo.toml берётся в проект на Rust; имя — из [package].
+    #[test]
+    fn adopt_cargo_dir() {
+        assert_eq!(cargo_package_name("[package]\nname = \"my-tool\" # имя\n[dependencies]\nname = \"x\"\n").as_deref(), Some("my-tool"));
+        assert_eq!(cargo_package_name("[dependencies]\nname = \"x\"\n[package]\nversion = \"1\"\nname='q'\n").as_deref(), Some("q"));
+        assert_eq!(cargo_package_name("[workspace]\nmembers = [\"a\"]\n"), None);
+        assert_eq!(cargo_package_name("[package]\nname.workspace = true\n"), None);
+
+        let base = std::env::temp_dir().join(format!("tvs_adopt_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("tool dir");
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        assert!(Project::adopt_rust(&dir).unwrap_err().contains("нет Cargo.toml"));
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"my-tool\"\nversion = \"0.1.0\"\n").unwrap();
+        std::fs::write(dir.join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+        let p = Project::adopt_rust(&dir).unwrap();
+        assert_eq!((p.name.as_str(), p.kind), ("my-tool", ProjectKind::Rust));
+        assert_eq!(p.file(), dir.join("my-tool.tvsp"));
+        assert_eq!(p.open_files, vec!["src/lib.rs".to_string()]);
+        assert_eq!(std::fs::read_to_string(dir.join("src/lib.rs")).unwrap(), "pub fn f() {}\n", "исходники не тронуты");
+        assert!(Project::adopt_rust(&dir).is_err(), "файл проекта уже есть");
+        // Workspace без [package] — имя каталога.
+        let ws = base.join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        let p = Project::adopt_rust(&ws).unwrap();
+        assert_eq!((p.name.as_str(), p.open_files.len()), ("ws", 0));
         let _ = std::fs::remove_dir_all(&base);
     }
 
