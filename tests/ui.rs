@@ -125,10 +125,11 @@ fn inspector_holds_components_on_the_right() {
     let s = t.screen();
     assert_eq!(s.matches("Компоненты").count(), 1, "{}", s);
     assert!(!s.contains("═ Компоненты ") && !s.contains("─ Компоненты "), "{}", s);
-    // Дерево проекта — во весь левый столбец, над сообщениями.
+    // Правый столбец: сверху дерево проекта, под ним инспектор до сообщений.
     let pb = t.app.group.view(t.ide.project_win.unwrap()).unwrap().vs().bounds();
     let mb = t.app.group.view(t.ide.messages.unwrap()).unwrap().vs().bounds();
-    assert_eq!((pb.a.x, pb.a.y, pb.b.y), (0, 0, mb.a.y));
+    assert_eq!((pb.a.x, pb.b.x, pb.a.y), (b.a.x, desk.x, 0), "проект над инспектором: {:?}", pb);
+    assert_eq!((b.a.y, b.b.y), (pb.b.y, mb.a.y), "инспектор — от проекта до сообщений: {:?}", b);
 
     // «Окно → Компоненты»: фокус на списке; ↓↓ Enter — третий вид элемента.
     t.cmd(CM_SHOW_PALETTE);
@@ -495,7 +496,8 @@ fn new_rust_project_hides_form_tools() {
     assert!(s.contains("Компоненты") && s.contains("Инспектор") && s.contains("Формы"), "{}", s);
     assert!(t.app.command_enabled(CM_NEW_FORM));
     let pb = t.app.group.view(t.ide.project_win.unwrap()).unwrap().vs().bounds();
-    assert_eq!(pb.a.x, 0, "проект tvision-rs — дерево снова слева: {:?}", pb);
+    let ib = t.app.group.view(t.ide.inspector.unwrap()).unwrap().vs().bounds();
+    assert_eq!((pb.b.x, pb.b.y), (desk.x, ib.a.y), "проект tvision-rs — дерево над инспектором: {:?}", pb);
 }
 
 /// `tvstudio КАТАЛОГ`: в каталоге исходники Rust (Cargo.toml), а файла

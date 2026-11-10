@@ -1,6 +1,6 @@
 //! Связь среды с серверами LSP: rust-analyzer для файлов `.rs` и
-//! crates-lsp для `.toml` (Cargo.toml: версии и features зависимостей;
-//! вместо него можно указать другой сервер TOML, например taplo).
+//! crates-lsp (cargo LSP) для `.toml` — версии и features зависимостей
+//! в Cargo.toml.
 //!
 //! Серверов два, каждый со своей кодировкой столбцов и своими номерами
 //! запросов ([`Srv`]); какой из них отвечает за файл — решает расширение.
@@ -49,7 +49,7 @@ pub struct DocSync {
 pub enum Srv {
     /// rust-analyzer: файлы `.rs`.
     Rust,
-    /// Сервер TOML (по умолчанию crates-lsp): файлы `.toml`.
+    /// crates-lsp (cargo LSP): файлы `.toml`, прежде всего Cargo.toml.
     Toml,
 }
 
@@ -73,11 +73,11 @@ impl Srv {
         }
     }
 
-    /// Название в сообщениях: «Сервер LSP …», «Сервер TOML …».
+    /// Название в сообщениях: «Сервер LSP …», «Сервер Cargo.toml …».
     pub fn title(self) -> &'static str {
         match self {
             Srv::Rust => "LSP",
-            Srv::Toml => "TOML",
+            Srv::Toml => "Cargo.toml",
         }
     }
 }
@@ -187,15 +187,11 @@ impl Ide {
                     if srv == Srv::Rust && cmd.starts_with("rust-analyzer") {
                         self.say(app, "  Установите его: rustup component add rust-analyzer (или укажите путь в Настройки → Параметры среды).");
                     }
-                    if srv == Srv::Toml {
-                        let how = if cmd.starts_with("taplo") {
-                            "cargo install taplo-cli --locked --features lsp"
-                        } else {
-                            "cargo install --locked crates-lsp"
-                        };
-                        if cmd.starts_with("taplo") || cmd.starts_with("crates-lsp") {
-                            self.say(app, &format!("  Установите его: {} (или очистите поле «Сервер TOML» в Настройки → Параметры среды).", how));
-                        }
+                    if srv == Srv::Toml && cmd.starts_with("crates-lsp") {
+                        self.say(
+                            app,
+                            "  Установите его: cargo install --locked crates-lsp (или очистите поле «Сервер Cargo.toml» в Настройки → Параметры среды).",
+                        );
                     }
                     false
                 }
@@ -243,7 +239,9 @@ impl Ide {
             Some(_) => Some(format!("LSP: {}", self.lsp_state.status)),
         };
         let toml =
-            self.lsp_toml.as_ref().map(|_| if self.lsp_state.toml_name.is_empty() { "TOML".to_string() } else { self.lsp_state.toml_name.clone() });
+            self.lsp_toml
+                .as_ref()
+                .map(|_| if self.lsp_state.toml_name.is_empty() { "crates-lsp".to_string() } else { self.lsp_state.toml_name.clone() });
         let parts: Vec<String> = rust.into_iter().chain(toml).collect();
         let title = if parts.is_empty() { "Сообщения".to_string() } else { format!("Сообщения — {}", parts.join(" · ")) };
         if Self::alive(app, self.messages) {

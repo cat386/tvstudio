@@ -423,11 +423,11 @@ impl Config {
         c.fmt_on_save = j.bool("fmt_on_save", true);
         c.rustfmt = Some(j.str("rustfmt")).filter(|s| !s.trim().is_empty()).unwrap_or(c.rustfmt);
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
-        // Пустая строка — сервер TOML выключен; нет ключа — по умолчанию.
-        // Прежнее значение по умолчанию (taplo) — заменяется новым.
+        // Пустая строка — сервер Cargo.toml выключен; нет ключа — по умолчанию.
+        // taplo (прежний сервер) больше не поддерживается — заменяется на crates-lsp.
         if let Some(Json::Str(t)) = j.get("toml_lsp_command") {
             let t = t.trim();
-            c.toml_lsp_command = if t == "taplo lsp stdio" { TOML_LSP_DEFAULT.into() } else { t.to_string() };
+            c.toml_lsp_command = if t.starts_with("taplo") { TOML_LSP_DEFAULT.into() } else { t.to_string() };
         }
         c
     }
@@ -514,7 +514,7 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     d.add(StaticText::new(Rect::new(18, 12, 64, 13), "ссылка git или путь для новых проектов"));
     field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
-    field(&mut d, 18, 16, "Сервер TO~M~L", &cfg.toml_lsp_command, 44, None);
+    field(&mut d, 18, 16, "Сервер Cargo.to~m~l", &cfg.toml_lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install --locked crates-lsp"));
     let mut hl = CheckBoxes::check_boxes(
         Rect::new(18, 19, 62, 22),
@@ -547,7 +547,7 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     if !lsp.trim().is_empty() {
         cfg.lsp_command = lsp.trim().to_string();
     }
-    // Сервер TOML: пустое поле — выключен.
+    // Сервер Cargo.toml (crates-lsp): пустое поле — выключен.
     cfg.toml_lsp_command = s_at(&v, 5).trim().to_string();
     let hl = v.get(6).and_then(|x| x.as_u32()).unwrap_or(7);
     cfg.hl_line = hl & 1 != 0;
@@ -635,8 +635,8 @@ mod tests {
         assert!(crate::props::set(&mut g, None, Prop::FormClass, "кнопка").is_err());
     }
 
-    /// Сервер для Cargo.toml: по умолчанию crates-lsp; прежнее значение по
-    /// умолчанию (taplo) заменяется, своё значение и «выключен» — остаются.
+    /// Сервер для Cargo.toml: по умолчанию crates-lsp; taplo (прежний
+    /// сервер) заменяется на crates-lsp, своё значение и «выключен» — остаются.
     #[test]
     fn toml_server_setting_migrates() {
         let load = |v: Option<&str>| {
@@ -647,16 +647,17 @@ mod tests {
             Config::from_json(&Json::obj(pairs)).toml_lsp_command
         };
         assert_eq!(load(None), "crates-lsp");
-        assert_eq!(load(Some("taplo lsp stdio")), "crates-lsp", "прежнее значение по умолчанию");
-        assert_eq!(load(Some("taplo lsp stdio --colors never")), "taplo lsp stdio --colors never", "своё — как есть");
+        assert_eq!(load(Some("taplo lsp stdio")), "crates-lsp", "taplo заменён");
+        assert_eq!(load(Some("taplo lsp stdio --colors never")), "crates-lsp", "taplo заменён");
+        assert_eq!(load(Some("/opt/bin/crates-lsp")), "/opt/bin/crates-lsp", "своё — как есть");
         assert_eq!(load(Some("")), "", "выключен");
     }
 
     /// Параметры среды: что показал диалог, то и прочиталось (в том числе
-    /// сервер TOML; пустое поле — выключен).
+    /// сервер Cargo.toml; пустое поле — выключен).
     #[test]
     fn options_dialog_round_trip() {
-        for toml in [TOML_LSP_DEFAULT, "taplo lsp stdio", ""] {
+        for toml in [TOML_LSP_DEFAULT, "/opt/bin/crates-lsp", ""] {
             let cfg = Config { toml_lsp_command: toml.into(), lsp_command: "ra".into(), hl_col: false, theme: 1, ..Config::default() };
             let d = options_dialog(&cfg);
             let mut back = Config::default();

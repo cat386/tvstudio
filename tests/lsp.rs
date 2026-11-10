@@ -262,7 +262,7 @@ fn missing_server_is_reported() {
     assert!(m.entries.iter().any(|e| e.text.contains("Сервер LSP недоступен")), "{:?}", m.entries);
     assert!(m.entries.iter().any(|e| e.text.contains("rustup component add rust-analyzer")));
     assert!(ide.lsp_toml.is_none());
-    assert!(m.entries.iter().any(|e| e.text.contains("Сервер TOML недоступен")), "{:?}", m.entries);
+    assert!(m.entries.iter().any(|e| e.text.contains("Сервер Cargo.toml недоступен")), "{:?}", m.entries);
     assert!(m.entries.iter().any(|e| e.text.contains("cargo install --locked crates-lsp")));
 }
 

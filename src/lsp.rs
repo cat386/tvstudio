@@ -627,8 +627,8 @@ impl LspClient {
             let id = id.clone();
             let result = match method.as_str() {
                 // Настройки: по одной «по умолчанию» на каждый запрошенный раздел.
-                // rust-analyzer ждёт null; серверы TOML (crates-lsp, taplo)
-                // разбирают раздел как объект настроек — пустой значит «по умолчанию».
+                // rust-analyzer ждёт null; crates-lsp разбирает раздел как
+                // объект настроек — пустой значит «по умолчанию».
                 "workspace/configuration" => {
                     let dflt = if self.language == "rust" { Json::Null } else { Json::obj(vec![]) };
                     Json::Arr(m.get("params").map(|p| p.arr("items")).unwrap_or(&[]).iter().map(|_| dflt.clone()).collect())
