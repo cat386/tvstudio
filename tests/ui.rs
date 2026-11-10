@@ -11,7 +11,7 @@ use tvstudio::codeedit::CodeWindow;
 use tvstudio::designer::DesignWindow;
 use tvstudio::dialogs::Config;
 use tvstudio::ide::{menu_bar, status_line, Ide};
-use tvstudio::model::{Dependency, Kind, MenuNode, Project};
+use tvstudio::model::{Dependency, Kind, MenuNode, Project, ProjectKind};
 
 struct T {
     app: Program,
@@ -391,4 +391,60 @@ fn rustfmt_on_save() {
     let m = t.app.find::<tvstudio::toolwins::MessagesWindow>(t.ide.messages.unwrap()).unwrap();
     assert!(m.entries.iter().any(|e| e.text.contains("rustfmt: src/messy.rs не отформатирован")), "{:?}", m.entries);
     assert!(m.entries.iter().any(|e| e.loc.as_ref().map(|l| l.0.ends_with("messy.rs")).unwrap_or(false)));
+}
+
+/// «Новый проект» → «Программа на Rust»: только код — окон «Компоненты» и
+/// «Инспектор» нет, в дереве нет форм и модели, команды форм выключены,
+/// генерации кода нет. Вернулись к проекту tvision-rs — окна снова на месте.
+#[test]
+fn new_rust_project_hides_form_tools() {
+    let mut t = T::new("rustproj");
+    let demo = t.ide.project.as_ref().unwrap().file();
+    t.app.put_event(Event::command_event(CM_NEW_PROJECT));
+    // Первым выбран «Тип»: ↓ — «Программа на Rust»; Tab — к имени (выделено, набор заменяет).
+    t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Down, Mods::NONE)));
+    t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Tab, Mods::NONE)));
+    for c in "plain".chars() {
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Char(c), Mods::NONE)));
+    }
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    t.pump();
+
+    let p = t.ide.project.clone().expect("проект создан");
+    assert_eq!((p.name.as_str(), p.kind), ("plain", ProjectKind::Rust));
+    assert_eq!(p.dir, t.dir.parent().unwrap().join("plain"));
+    let cargo = std::fs::read_to_string(p.dir.join("Cargo.toml")).unwrap();
+    assert!(!cargo.contains("tvision"), "{}", cargo);
+
+    let s = t.screen();
+    for gone in ["Компоненты", "Инспектор", "Формы", "Модель приложения"] {
+        assert!(!s.contains(gone), "«{}» на экране:\n{}", gone, s);
+    }
+    assert!(s.contains("Проект") && s.contains("Сообщения") && s.contains("main.rs"), "{}", s);
+    assert!(t.ide.palette.is_none() && t.ide.inspector.is_none());
+    // main.rs открыт в редакторе и в фокусе.
+    let main = p.dir.join("src").join("main.rs");
+    assert!(Ide::windows::<CodeWindow>(&t.app).iter().any(|&id| t.app.find::<CodeWindow>(id).unwrap().path() == main));
+
+    for c in [CM_NEW_FORM, CM_OPEN_FORM, CM_EDIT_MENU, CM_GENERATE, CM_EXTRACT_FORMS] {
+        assert!(!t.app.command_enabled(c), "команда {} включена", c);
+    }
+    assert!(t.app.command_enabled(CM_BUILD) && t.app.command_enabled(CM_RUN));
+    // F11, «Палитра компонентов» и «Раскладка по умолчанию» окна не возвращают.
+    t.cmd(CM_SHOW_INSPECTOR);
+    t.cmd(CM_SHOW_PALETTE);
+    t.cmd(CM_LAYOUT);
+    t.ide.ensure_tools(&mut t.app);
+    t.pump();
+    assert!(t.ide.palette.is_none() && t.ide.inspector.is_none());
+    // Генерация (перед сборкой) ничего не пишет.
+    assert!(t.ide.generate(&mut t.app, true));
+    assert!(!p.dir.join("src").join("ui.rs").exists() && !p.dir.join("src").join("forms").exists());
+
+    // Снова проект tvision-rs — палитра и инспектор вернулись.
+    t.ide.open_project(&mut t.app, &demo);
+    t.pump();
+    let s = t.screen();
+    assert!(s.contains("Компоненты") && s.contains("Инспектор") && s.contains("Формы"), "{}", s);
+    assert!(t.app.command_enabled(CM_NEW_FORM));
 }

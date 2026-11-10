@@ -1060,6 +1060,45 @@ impl Dependency {
     }
 }
 
+/// Тип проекта.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ProjectKind {
+    /// Приложение на tvision-rs: формы, модель меню и команд, генерация кода.
+    #[default]
+    Tvision,
+    /// Обычная программа на Rust: только код, без форм и модели.
+    Rust,
+}
+
+impl ProjectKind {
+    pub const ALL: [ProjectKind; 2] = [ProjectKind::Tvision, ProjectKind::Rust];
+
+    /// Надпись в диалоге «Новый проект».
+    pub fn title(self) -> &'static str {
+        match self {
+            ProjectKind::Tvision => "Приложение на tvision-rs (формы, модель, код)",
+            ProjectKind::Rust => "Программа на Rust (только код)",
+        }
+    }
+
+    /// Значение поля `kind` в файле проекта.
+    pub fn tag(self) -> &'static str {
+        match self {
+            ProjectKind::Tvision => "tvision",
+            ProjectKind::Rust => "rust",
+        }
+    }
+
+    /// Разбор поля `kind`; нет поля (старые проекты) — tvision-rs.
+    pub fn from_tag(s: &str) -> ProjectKind {
+        if s == "rust" {
+            ProjectKind::Rust
+        } else {
+            ProjectKind::Tvision
+        }
+    }
+}
+
 /// Проект TV Studio.
 #[derive(Clone, Debug)]
 pub struct Project {
@@ -1067,6 +1106,8 @@ pub struct Project {
     pub dir: PathBuf,
     /// Имя проекта = имя пакета Cargo.
     pub name: String,
+    /// Тип: приложение tvision-rs или обычная программа на Rust.
+    pub kind: ProjectKind,
     pub app: AppModel,
     /// Имена форм (файлы `forms/<имя>.tvf`).
     pub forms: Vec<String>,
@@ -1083,6 +1124,11 @@ impl Project {
     /// Путь к файлу проекта.
     pub fn file(&self) -> PathBuf {
         self.dir.join(format!("{}.{}", self.name, PROJECT_EXT))
+    }
+
+    /// Есть ли у проекта формы и модель приложения (проект tvision-rs).
+    pub fn has_forms(&self) -> bool {
+        self.kind == ProjectKind::Tvision
     }
 
     /// Путь к файлу формы.
@@ -1105,6 +1151,7 @@ impl Project {
             ("format", Json::s("tvstudio-project")),
             ("version", Json::i(1)),
             ("name", Json::s(&self.name)),
+            ("kind", Json::s(self.kind.tag())),
             ("forms", Json::from_strings(&self.forms)),
             ("open_files", Json::from_strings(&self.open_files)),
             ("app", self.app.to_json()),
@@ -1124,6 +1171,7 @@ impl Project {
         Ok(Project {
             dir,
             name: j.str("name"),
+            kind: ProjectKind::from_tag(&j.str("kind")),
             app: AppModel::from_json(j.get("app").unwrap_or(&Json::Null)),
             forms: j.strings("forms"),
             open_files: j.strings("open_files"),
@@ -1135,9 +1183,8 @@ impl Project {
         std::fs::write(&p, self.to_json().to_pretty()).map_err(|e| format!("{}: {}", p.display(), e))
     }
 
-    /// Создать новый проект: каталог, `Cargo.toml`, `src/main.rs`,
-    /// файл проекта и форму «О программе».
-    pub fn create(parent: &Path, name: &str, dep: &Dependency) -> Result<Self, String> {
+    /// Каталог нового проекта `parent/name` (имя и отсутствие проекта проверены).
+    fn new_dir(parent: &Path, name: &str) -> Result<PathBuf, String> {
         if !is_crate_name(name) {
             return Err(format!("«{}» не годится как имя пакета (латинские буквы, цифры, _ и -)", name));
         }
@@ -1145,6 +1192,35 @@ impl Project {
         if dir.join("Cargo.toml").exists() {
             return Err(format!("в каталоге {} уже есть проект Cargo", dir.display()));
         }
+        Ok(dir)
+    }
+
+    /// Создать проект — обычную программу на Rust: каталог, `Cargo.toml`
+    /// без зависимостей, `src/main.rs` и файл проекта. Ни форм, ни модели.
+    pub fn create_rust(parent: &Path, name: &str) -> Result<Self, String> {
+        let dir = Self::new_dir(parent, name)?;
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).map_err(|e| format!("{}: {}", src.display(), e))?;
+        let write = |p: PathBuf, s: String| std::fs::write(&p, s).map_err(|e| format!("{}: {}", p.display(), e));
+        write(dir.join("Cargo.toml"), format!("[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n", name))?;
+        write(dir.join(".gitignore"), "/target\n".into())?;
+        write(src.join("main.rs"), "fn main() {\n    println!(\"Hello, world!\");\n}\n".into())?;
+        let p = Project {
+            dir,
+            name: name.into(),
+            kind: ProjectKind::Rust,
+            app: AppModel::starter(name),
+            forms: vec![],
+            open_files: vec!["src/main.rs".into()],
+        };
+        p.save()?;
+        Ok(p)
+    }
+
+    /// Создать новый проект tvision-rs: каталог, `Cargo.toml`, `src/main.rs`,
+    /// файл проекта и форму «О программе».
+    pub fn create(parent: &Path, name: &str, dep: &Dependency) -> Result<Self, String> {
+        let dir = Self::new_dir(parent, name)?;
         if let Dependency::Path(p) = dep {
             // Относительный путь считается от каталога проекта (как в Cargo).
             let lib = normalize(&if Path::new(p).is_absolute() { PathBuf::from(p) } else { dir.join(p) });
@@ -1166,7 +1242,14 @@ impl Project {
         )?;
         write(dir.join(".gitignore"), "/target\n".into())?;
         let title = name.to_string();
-        let p = Project { dir: dir.clone(), name: name.into(), app: AppModel::starter(&title), forms: vec!["about".into()], open_files: vec![] };
+        let p = Project {
+            dir: dir.clone(),
+            name: name.into(),
+            kind: ProjectKind::Tvision,
+            app: AppModel::starter(&title),
+            forms: vec!["about".into()],
+            open_files: vec![],
+        };
         write(dir.join("src").join("main.rs"), crate::codegen::main_rs(&p))?;
         about_form(&title).save(&p.form_path("about"))?;
         p.save()?;
@@ -1337,6 +1420,31 @@ mod tests {
         assert_eq!(parse_key("Shift+Del"), Some(KeyEvent::new(Key::Del, Mods::SHIFT)));
         assert_eq!(parse_key("Hyper+Q"), None);
         assert_eq!(key_expr(&parse_key("alt+x").unwrap()), "KeyEvent::new(Key::Char('X'), Mods::ALT)");
+    }
+
+    /// Проект на Rust: только Cargo.toml, main.rs и файл проекта; тип
+    /// сохраняется, а старые файлы проекта без поля `kind` — tvision-rs.
+    #[test]
+    fn rust_project() {
+        let base = std::env::temp_dir().join(format!("tvs_rustproj_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let p = Project::create_rust(&base, "plain").unwrap();
+        assert!(!p.has_forms());
+        let cargo = std::fs::read_to_string(p.dir.join("Cargo.toml")).unwrap();
+        assert!(cargo.contains("name = \"plain\"") && !cargo.contains("tvision"), "{}", cargo);
+        assert!(std::fs::read_to_string(p.dir.join("src/main.rs")).unwrap().contains("Hello, world!"));
+        assert!(!p.dir.join("forms").exists() && !p.dir.join("src/forms").exists());
+        let q = Project::load(&p.file()).unwrap();
+        assert_eq!((q.kind, q.forms.len()), (ProjectKind::Rust, 0));
+        assert!(Project::create_rust(&base, "plain").is_err(), "второй раз в тот же каталог");
+        // Старый файл проекта (без kind) — проект tvision-rs.
+        let mut j = json::parse(&std::fs::read_to_string(p.file()).unwrap()).unwrap();
+        if let Json::Obj(v) = &mut j {
+            v.retain(|(k, _)| k != "kind");
+        }
+        std::fs::write(p.file(), j.to_pretty()).unwrap();
+        assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

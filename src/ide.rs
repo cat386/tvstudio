@@ -295,19 +295,28 @@ impl Ide {
     // Окна
     // ------------------------------------------------------------------
 
+    /// Нужны ли окна «Компоненты» и «Инспектор»: нет проекта или проект
+    /// tvision-rs. У программы на Rust форм нет — и этих окон тоже.
+    pub fn form_tools(&self) -> bool {
+        self.project.as_ref().map(|p| p.has_forms()).unwrap_or(true)
+    }
+
     /// Раскладка окон-инструментов по размеру рабочего стола.
-    fn layout(app: &Program) -> [Rect; 5] {
+    /// Без палитры и инспектора дерево проекта занимает весь левый столбец,
+    /// а редакторам достаётся место до правого края.
+    fn layout(&self, app: &Program) -> [Rect; 5] {
         let s = app.desktop().group.vs.size;
         let lw = (s.x / 5).clamp(18, 26);
         let rw = (s.x / 4).clamp(24, 34);
         let bh = (s.y / 4).clamp(5, 9);
         let mid = (s.y - bh) / 2;
+        let tools = self.form_tools();
         [
-            Rect::new(0, 0, lw, mid),              // проект
-            Rect::new(0, mid, lw, s.y - bh),       // палитра
-            Rect::new(s.x - rw, 0, s.x, s.y - bh), // инспектор
-            Rect::new(0, s.y - bh, s.x, s.y),      // сообщения
-            Rect::new(lw, 0, s.x - rw, s.y - bh),  // место для редакторов
+            Rect::new(0, 0, lw, if tools { mid } else { s.y - bh }),        // проект
+            Rect::new(0, mid, lw, s.y - bh),                                // палитра
+            Rect::new(s.x - rw, 0, s.x, s.y - bh),                          // инспектор
+            Rect::new(0, s.y - bh, s.x, s.y),                               // сообщения
+            Rect::new(lw, 0, if tools { s.x - rw } else { s.x }, s.y - bh), // место для редакторов
         ]
     }
 
@@ -337,17 +346,36 @@ impl Ide {
 
     /// Показать (создать при необходимости) окна-инструменты.
     pub fn ensure_tools(&mut self, app: &mut Program) {
-        let l = Self::layout(app);
+        let l = self.layout(app);
         if !Self::alive(app, self.project_win) {
             let mut w = ProjectWindow::new(l[0]);
             w.set_project(self.project.as_ref());
             self.project_win = Some(app.insert_window(w));
         }
-        if !Self::alive(app, self.palette) {
-            self.palette = Some(app.insert_window(PaletteWindow::new(l[1])));
+        // Палитра и инспектор — только там, где есть формы. Окна появились
+        // или исчезли — дерево проекта встаёт на своё место по раскладке.
+        let mut changed = false;
+        if self.form_tools() {
+            if !Self::alive(app, self.palette) {
+                self.palette = Some(app.insert_window(PaletteWindow::new(l[1])));
+                changed = true;
+            }
+            if !Self::alive(app, self.inspector) {
+                self.inspector = Some(app.insert_window(InspectorWindow::new(l[2])));
+                changed = true;
+            }
+        } else {
+            for id in [self.palette.take(), self.inspector.take()].into_iter().flatten() {
+                if app.desktop().group.index_of(id).is_some() {
+                    app.desktop_mut().group.remove(id);
+                    changed = true;
+                }
+            }
         }
-        if !Self::alive(app, self.inspector) {
-            self.inspector = Some(app.insert_window(InspectorWindow::new(l[2])));
+        if changed {
+            if let Some(v) = self.project_win.and_then(|id| app.group.view_mut(id)) {
+                v.change_bounds(l[0]);
+            }
         }
         if !Self::alive(app, self.messages) {
             self.messages = Some(app.insert_window(MessagesWindow::new(l[3])));
@@ -357,7 +385,7 @@ impl Ide {
     /// Вернуть окна-инструменты на места по умолчанию.
     fn apply_layout(&mut self, app: &mut Program) {
         self.ensure_tools(app);
-        let l = Self::layout(app);
+        let l = self.layout(app);
         let set = |app: &mut Program, id: Option<ViewId>, r: Rect| {
             if let Some(id) = id {
                 if let Some(v) = app.group.view_mut(id) {
@@ -374,7 +402,7 @@ impl Ide {
     /// Окно сообщений (создаётся, если закрыто).
     fn msgs<'a>(&mut self, app: &'a mut Program) -> &'a mut MessagesWindow {
         if !Self::alive(app, self.messages) {
-            let l = Self::layout(app);
+            let l = self.layout(app);
             let id = app.insert_window(MessagesWindow::new(l[3]));
             self.messages = Some(id);
         }
@@ -445,7 +473,7 @@ impl Ide {
                 id
             }
             None => {
-                let r = Self::layout(app)[4];
+                let r = self.layout(app)[4];
                 let r = if r.width() < 40 || r.height() < 8 { app.desktop().group.vs.extent() } else { r };
                 self.win_no = self.win_no % 9 + 1;
                 let mut w = CodeWindow::new(r, &abs, self.win_no, self.base_dir());
@@ -577,18 +605,34 @@ impl Ide {
     }
 
     fn new_project(&mut self, app: &mut Program) {
-        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, "my_app", "Новый проект"));
+        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, "my_app", "Новый проект", true));
         if cmd != cm::OK {
             return;
         }
-        let np = match dialogs::read_new_project(&d.get_data()) {
+        let np = match dialogs::read_new_project(&d.get_data(), true) {
             Ok(n) => n,
             Err(e) => return Self::error(app, &e),
         };
         if self.project.is_some() && !self.close_project(app) {
             return;
         }
-        match Project::create(&np.parent, &np.name, &np.dep) {
+        let Some(dep) = np.dep else {
+            // Обычная программа на Rust: без форм, модели и генерации кода.
+            match Project::create_rust(&np.parent, &np.name) {
+                Ok(p) => {
+                    let file = p.file();
+                    let main = p.dir.join("src").join("main.rs");
+                    self.open_project(app, &file);
+                    if let Some(id) = self.open_file(app, &main, None) {
+                        app.focus(id);
+                    }
+                    self.say(app, "Новый проект на Rust создан. F9 — собрать, Ctrl+F9 — запустить.");
+                }
+                Err(e) => Self::error(app, &e),
+            }
+            return;
+        };
+        match Project::create(&np.parent, &np.name, &dep) {
             Ok(p) => {
                 // Сразу генерируем код — проект собирается «из коробки».
                 let forms = self.load_forms(app, &p);
@@ -619,18 +663,19 @@ impl Ide {
         } else {
             main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
         };
-        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, &stem, "Импорт: новый проект"));
+        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, &stem, "Импорт: новый проект", false));
         if cmd != cm::OK {
             return;
         }
-        let np = match dialogs::read_new_project(&d.get_data()) {
+        let np = match dialogs::read_new_project(&d.get_data(), false) {
             Ok(n) => n,
             Err(e) => return Self::error(app, &e),
         };
         if self.project.is_some() && !self.close_project(app) {
             return;
         }
-        match crate::importer::import_program(&main, &np.parent, &np.name, &np.dep) {
+        let Some(dep) = np.dep else { return };
+        match crate::importer::import_program(&main, &np.parent, &np.name, &dep) {
             Ok((p, report)) => {
                 let file = p.file();
                 self.open_project(app, &file);
@@ -684,6 +729,13 @@ impl Ide {
     /// Сгенерировать код. `false` — генерация не удалась.
     pub fn generate(&mut self, app: &mut Program, quiet: bool) -> bool {
         let Some(p) = self.project.clone() else { return false };
+        // Программе на Rust генерировать нечего: весь код — её.
+        if !p.has_forms() {
+            if !quiet {
+                self.say(app, "Проект на Rust: генерировать нечего — весь код ваш.");
+            }
+            return true;
+        }
         let forms = self.load_forms(app, &p);
         let warnings = codegen::check_project(&p, &forms);
         for w in &warnings {
@@ -1241,23 +1293,21 @@ impl Ide {
                 app.disable_command(c)
             }
         };
-        for c in [CM_CHECK, CM_BUILD, CM_RUN, CM_TEST, CM_CLEAN, CM_GENERATE] {
+        // Формы и модель — только у проекта tvision-rs.
+        let has_forms = self.project.as_ref().map(|p| p.has_forms()).unwrap_or(false);
+        for c in [CM_CHECK, CM_BUILD, CM_RUN, CM_TEST, CM_CLEAN] {
             set(app, c, has_p && !running);
         }
+        set(app, CM_GENERATE, has_forms && !running);
         set(app, CM_STOP, running);
-        for c in [
-            CM_EXTRACT_FORMS,
-            CM_NEW_FORM,
-            CM_OPEN_FORM,
-            CM_EDIT_MENU,
-            CM_EDIT_STATUS,
-            CM_EDIT_COMMANDS,
-            CM_APP_OPTIONS,
-            CM_CLOSE_PROJECT,
-            CM_FIND_FILES,
-        ] {
+        for c in [CM_EXTRACT_FORMS, CM_NEW_FORM, CM_OPEN_FORM, CM_EDIT_MENU, CM_EDIT_STATUS, CM_EDIT_COMMANDS, CM_APP_OPTIONS] {
+            set(app, c, has_forms);
+        }
+        for c in [CM_CLOSE_PROJECT, CM_FIND_FILES] {
             set(app, c, has_p);
         }
+        // CM_SHOW_PALETTE / CM_SHOW_INSPECTOR (номера > 255) выключить нельзя;
+        // в проекте на Rust они просто ничего не показывают (см. ensure_tools).
         for c in [CM_DS_PROPS, CM_FORM_TEST, CM_DS_DUP, CM_GRID, CM_TABNUM, CM_DS_FRONT, CM_DS_BACK, CM_DS_FORWARD, CM_DS_BACKWARD] {
             set(app, c, has_d);
         }

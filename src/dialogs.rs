@@ -7,7 +7,7 @@ use tvision::*;
 
 use crate::cmds::*;
 use crate::json::{self, Json};
-use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, FormClass, Kind};
+use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, FormClass, Kind, ProjectKind};
 use crate::props::{self, Prop};
 
 /// Строка «метка + поле ввода» (+ кнопка списка). Возвращает id поля.
@@ -119,34 +119,61 @@ pub fn apply_props(form: &mut Form, sel: Option<usize>, list: &[Prop], data: &Va
 // ======================================================================
 
 /// Параметры нового проекта.
+#[derive(Debug)]
 pub struct NewProject {
+    pub kind: ProjectKind,
     pub name: String,
     pub parent: PathBuf,
-    pub dep: Dependency,
+    /// Откуда брать tvision-rs; у программы на Rust — `None`.
+    pub dep: Option<Dependency>,
 }
 
-pub fn new_project_dialog(cfg: &Config, name: &str, title: &str) -> Dialog {
-    let mut d = Dialog::centered(72, 15, title);
-    let first = field(&mut d, 16, 2, "~И~мя", name, 30, None);
-    field(&mut d, 16, 4, "~К~аталог", &cfg.default_parent().display().to_string(), 54, None);
-    field(&mut d, 16, 6, "~t~vision-rs", &cfg.dep_value, 54, None);
-    d.add(StaticText::new(Rect::new(2, 7, 70, 8), "  ссылка git (https://…) или путь к каталогу tvision-rs на диске"));
-    d.add(StaticText::new(Rect::new(2, 9, 70, 10), "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,"));
-    d.add(StaticText::new(Rect::new(2, 10, 70, 11), "файлом проекта .tvsp и формой «О программе»."));
-    ok_cancel(&mut d, 12);
-    d.select(first);
+/// Диалог «Новый проект». `ask_kind` — спросить тип проекта (tvision-rs или
+/// просто Rust); без него (импорт) проект всегда на tvision-rs.
+pub fn new_project_dialog(cfg: &Config, name: &str, title: &str, ask_kind: bool) -> Dialog {
+    let dy = if ask_kind { 3 } else { 0 };
+    let mut d = Dialog::centered(72, 16 + dy, title);
+    let kind = ask_kind.then(|| {
+        let titles: Vec<&str> = ProjectKind::ALL.iter().map(|k| k.title()).collect();
+        let k = d.add(RadioButtons::radio_buttons(Rect::new(16, 2, 70, 4), &titles));
+        d.add(Label::new(Rect::new(2, 2, 16, 3), "~Т~ип", Some(k)));
+        k
+    });
+    let first = field(&mut d, 16, 2 + dy, "~И~мя", name, 30, None);
+    field(&mut d, 16, 4 + dy, "~К~аталог", &cfg.default_parent().display().to_string(), 54, None);
+    field(&mut d, 16, 6 + dy, "~t~vision-rs", &cfg.dep_value, 54, None);
+    d.add(StaticText::new(Rect::new(2, 7 + dy, 70, 8 + dy), "  ссылка git (https://…) или путь к каталогу tvision-rs на диске"));
+    let about = if ask_kind {
+        "Будет создан каталог «Каталог/Имя»: Cargo.toml, src/main.rs, файл\nпроекта .tvsp, а у приложения tvision-rs — и форма «О программе».\nПрограмме на Rust строка tvision-rs не нужна."
+    } else {
+        "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,\nфайлом проекта .tvsp и формой «О программе»."
+    };
+    d.add(StaticText::new(Rect::new(2, 9 + dy, 70, 12 + dy), about));
+    ok_cancel(&mut d, 13 + dy);
+    d.select(kind.unwrap_or(first));
     d
 }
 
-pub fn read_new_project(v: &Value) -> Result<NewProject, String> {
-    let v = strs(v);
+/// Прочитать диалог «Новый проект» (`ask_kind` — как при его создании).
+pub fn read_new_project(v: &Value, ask_kind: bool) -> Result<NewProject, String> {
+    let mut v = strs(v);
+    let kind = if ask_kind {
+        let k = v.first().and_then(|x| x.as_u32()).unwrap_or(0) as usize;
+        v.remove(0);
+        ProjectKind::ALL.get(k).copied().unwrap_or_default()
+    } else {
+        ProjectKind::Tvision
+    };
     let name = s_at(&v, 0).trim().to_string();
     if !is_crate_name(&name) {
         return Err(format!("«{}» не годится как имя пакета: латинские буквы, цифры, _ и -.", name));
     }
     let parent = PathBuf::from(s_at(&v, 1).trim());
-    let dep = Dependency::detect(&s_at(&v, 2)).ok_or_else(|| "Укажите, откуда брать tvision-rs.".to_string())?;
-    Ok(NewProject { name, parent, dep })
+    let dep = match kind {
+        ProjectKind::Rust => None,
+        ProjectKind::Tvision => Some(Dependency::detect(&s_at(&v, 2)).ok_or_else(|| "Укажите, откуда брать tvision-rs.".to_string())?),
+    };
+    Ok(NewProject { kind, name, parent, dep })
 }
 
 // ======================================================================
@@ -544,5 +571,25 @@ mod tests {
             read_options(&mut back, &d.get_data());
             assert_eq!(back, cfg);
         }
+    }
+
+    /// «Новый проект»: тип читается первым; программе на Rust tvision-rs
+    /// не нужен. Импорт (без вопроса о типе) — всегда tvision-rs.
+    #[test]
+    fn new_project_dialog_kinds() {
+        let cfg = Config { dep_value: String::new(), ..Config::default() };
+        let mut d = new_project_dialog(&cfg, "plain", "Новый проект", true);
+        let mut v = strs(&d.get_data());
+        v[0] = Value::U32(1);
+        d.set_data(&Value::List(v));
+        let np = read_new_project(&d.get_data(), true).unwrap();
+        assert_eq!((np.kind, np.name.as_str(), np.dep.is_none()), (ProjectKind::Rust, "plain", true));
+        // Тип по умолчанию — tvision-rs; без строки tvision-rs — ошибка.
+        let d = new_project_dialog(&cfg, "app", "Новый проект", true);
+        assert!(read_new_project(&d.get_data(), true).unwrap_err().contains("tvision-rs"));
+        let d = new_project_dialog(&Config::default(), "app", "Импорт", false);
+        let np = read_new_project(&d.get_data(), false).unwrap();
+        assert_eq!(np.kind, ProjectKind::Tvision);
+        assert!(np.dep.is_some());
     }
 }

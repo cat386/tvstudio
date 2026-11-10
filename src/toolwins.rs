@@ -193,7 +193,10 @@ impl ProjectWindow {
                     .child(TreeNode::new("Параметры").data("model:options"));
                 let src = dir_node("src", &p.dir.join("src"));
                 let cargo = TreeNode::new("Cargo.toml").data(&format!("file:{}", p.dir.join("Cargo.toml").display()));
-                vec![TreeNode::new(&p.name).icon('◘').expanded(true).data("project").child(forms).child(model).child(src).child(cargo)]
+                let root = TreeNode::new(&p.name).icon('◘').expanded(true).data("project");
+                // У программы на Rust нет ни форм, ни модели — только файлы.
+                let root = if p.has_forms() { root.child(forms).child(model) } else { root };
+                vec![root.child(src).child(cargo)]
             }
         };
         if let Some(t) = self.win.group.find_mut::<TreeView>(self.tree_id) {
