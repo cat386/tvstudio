@@ -1,4 +1,8 @@
-//! Связь среды с сервером LSP (rust-analyzer).
+//! Связь среды с серверами LSP: rust-analyzer для файлов `.rs` и taplo
+//! для `.toml` (Cargo.toml, rustfmt.toml).
+//!
+//! Серверов два, каждый со своей кодировкой столбцов и своими номерами
+//! запросов ([`Srv`]); какой из них отвечает за файл — решает расширение.
 //!
 //! Здесь — всё, что знает и о редакторах кода, и о сервере:
 //! * синхронизация открытых файлов (`didOpen`, `didChange` с задержкой
@@ -39,6 +43,44 @@ pub struct DocSync {
     modified: bool,
 }
 
+/// Какой сервер отвечает за файл.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Srv {
+    /// rust-analyzer: файлы `.rs`.
+    Rust,
+    /// taplo: файлы `.toml`.
+    Toml,
+}
+
+impl Srv {
+    pub const ALL: [Srv; 2] = [Srv::Rust, Srv::Toml];
+
+    /// Сервер для файла (по расширению); `None` — файл серверам не показывается.
+    pub fn for_path(p: &Path) -> Option<Srv> {
+        match p.extension().and_then(|x| x.to_str()) {
+            Some("rs") => Some(Srv::Rust),
+            Some("toml") => Some(Srv::Toml),
+            _ => None,
+        }
+    }
+
+    /// `languageId` документов.
+    pub fn language(self) -> &'static str {
+        match self {
+            Srv::Rust => "rust",
+            Srv::Toml => "toml",
+        }
+    }
+
+    /// Название в сообщениях: «Сервер LSP …», «Сервер TOML …».
+    pub fn title(self) -> &'static str {
+        match self {
+            Srv::Rust => "LSP",
+            Srv::Toml => "TOML",
+        }
+    }
+}
+
 /// Чего ждём от сервера по номеру запроса.
 #[derive(Clone, Debug)]
 pub enum Wait {
@@ -62,17 +104,21 @@ pub struct LspState {
     /// Последние диагностики по файлам (как прислал сервер).
     pub diags: HashMap<PathBuf, Vec<Diagnostic>>,
     pub diags_dirty: bool,
-    pub wait: HashMap<i64, Wait>,
+    /// Ожидаемые ответы: (сервер, номер запроса).
+    pub wait: HashMap<(Srv, i64), Wait>,
     /// Откуда уходили переходом к определению (для Alt+←).
     pub nav: Vec<(PathBuf, usize, usize)>,
     /// Ход индексации («Indexing 40%»), пусто — сервер свободен.
     pub status: String,
     /// Имя сервера из ответа initialize.
     pub name: String,
+    /// Имя сервера TOML (taplo) из ответа initialize.
+    pub toml_name: String,
     /// Сообщение диагностики текущей строки — для строки состояния.
     pub hint: Rc<RefCell<String>>,
     /// Запуск не удался — не пытаться снова до перезапуска вручную.
     pub failed: bool,
+    pub toml_failed: bool,
 }
 
 impl Ide {
@@ -80,34 +126,86 @@ impl Ide {
     // Запуск и остановка
     // ------------------------------------------------------------------
 
-    /// Запустить сервер для открытого проекта (если включён в настройках).
+    /// Клиент сервера `srv` (если запущен).
+    pub fn client(&self, srv: Srv) -> Option<&LspClient> {
+        match srv {
+            Srv::Rust => self.lsp.as_ref(),
+            Srv::Toml => self.lsp_toml.as_ref(),
+        }
+    }
+
+    pub fn client_mut(&mut self, srv: Srv) -> Option<&mut LspClient> {
+        match srv {
+            Srv::Rust => self.lsp.as_mut(),
+            Srv::Toml => self.lsp_toml.as_mut(),
+        }
+    }
+
+    fn slot(&mut self, srv: Srv) -> &mut Option<LspClient> {
+        match srv {
+            Srv::Rust => &mut self.lsp,
+            Srv::Toml => &mut self.lsp_toml,
+        }
+    }
+
+    /// Запущен ли хотя бы один сервер.
+    pub fn any_lsp(&self) -> bool {
+        self.lsp.is_some() || self.lsp_toml.is_some()
+    }
+
+    /// Команда запуска сервера (пусто — не запускать).
+    fn server_command(&self, srv: Srv) -> String {
+        match srv {
+            Srv::Rust => self.cfg.lsp_command.clone(),
+            Srv::Toml => self.cfg.toml_lsp_command.trim().to_string(),
+        }
+    }
+
+    /// Запустить серверы для открытого проекта (если включены в настройках).
     pub fn lsp_start(&mut self, app: &mut Program) {
-        if self.lsp.is_some() || !self.cfg.lsp_enabled {
+        if !self.cfg.lsp_enabled {
             return;
         }
         let Some(dir) = self.base_dir() else { return };
-        let cmd = self.cfg.lsp_command.clone();
-        match LspClient::start(&cmd, &dir) {
-            Ok(c) => {
-                self.lsp = Some(c);
-                self.lsp_state.failed = false;
-                self.lsp_state.status = "запуск…".into();
-                self.say(app, &format!("— Сервер LSP: {} запускается", cmd));
+        for srv in Srv::ALL {
+            let cmd = self.server_command(srv);
+            if self.client(srv).is_some() || cmd.is_empty() {
+                continue;
             }
-            Err(e) => {
-                self.lsp_state.failed = true;
-                self.say(app, &format!("Сервер LSP недоступен: {}", e));
-                if cmd.starts_with("rust-analyzer") {
-                    self.say(app, "  Установите его: rustup component add rust-analyzer (или укажите путь в Настройки → Параметры среды).");
+            let ok = match LspClient::start(&cmd, &dir, srv.language()) {
+                Ok(c) => {
+                    *self.slot(srv) = Some(c);
+                    if srv == Srv::Rust {
+                        self.lsp_state.status = "запуск…".into();
+                    }
+                    self.say(app, &format!("— Сервер {}: {} запускается", srv.title(), cmd));
+                    true
                 }
+                Err(e) => {
+                    self.say(app, &format!("Сервер {} недоступен: {}", srv.title(), e));
+                    if srv == Srv::Rust && cmd.starts_with("rust-analyzer") {
+                        self.say(app, "  Установите его: rustup component add rust-analyzer (или укажите путь в Настройки → Параметры среды).");
+                    }
+                    if srv == Srv::Toml && cmd.starts_with("taplo") {
+                        self.say(
+                            app,
+                            "  Установите его: cargo install taplo-cli --locked --features lsp (или очистите поле «Сервер TOML» в Настройки → Параметры среды).",
+                        );
+                    }
+                    false
+                }
+            };
+            match srv {
+                Srv::Rust => self.lsp_state.failed = !ok,
+                Srv::Toml => self.lsp_state.toml_failed = !ok,
             }
         }
         self.show_lsp_status(app);
     }
 
-    /// Остановить сервер и забыть его состояние.
+    /// Остановить серверы и забыть их состояние.
     pub fn lsp_stop(&mut self, app: &mut Program) {
-        if let Some(c) = self.lsp.take() {
+        for c in [self.lsp.take(), self.lsp_toml.take()].into_iter().flatten() {
             c.stop();
         }
         let hint = self.lsp_state.hint.clone();
@@ -130,16 +228,19 @@ impl Ide {
         self.lsp_start(app);
     }
 
-    /// Состояние сервера — в заголовке окна сообщений.
+    /// Состояние серверов — в заголовке окна сообщений.
     fn show_lsp_status(&mut self, app: &mut Program) {
-        let title = match &self.lsp {
-            None => "Сообщения".to_string(),
+        let rust = match &self.lsp {
+            None => None,
             Some(_) if self.lsp_state.status.is_empty() => {
-                let n = if self.lsp_state.name.is_empty() { "LSP".to_string() } else { self.lsp_state.name.clone() };
-                format!("Сообщения — {}", n)
+                Some(if self.lsp_state.name.is_empty() { "LSP".to_string() } else { self.lsp_state.name.clone() })
             }
-            Some(_) => format!("Сообщения — LSP: {}", self.lsp_state.status),
+            Some(_) => Some(format!("LSP: {}", self.lsp_state.status)),
         };
+        let toml =
+            self.lsp_toml.as_ref().map(|_| if self.lsp_state.toml_name.is_empty() { "TOML".to_string() } else { self.lsp_state.toml_name.clone() });
+        let parts: Vec<String> = rust.into_iter().chain(toml).collect();
+        let title = if parts.is_empty() { "Сообщения".to_string() } else { format!("Сообщения — {}", parts.join(" · ")) };
         if Self::alive(app, self.messages) {
             if let Some(m) = app.find_mut::<MessagesWindow>(self.messages.unwrap()) {
                 if m.win.title != title {
@@ -155,17 +256,20 @@ impl Ide {
 
     /// Работа в простое: разобрать ответы, отправить изменения.
     pub fn lsp_idle(&mut self, app: &mut Program) {
-        if self.lsp.is_none() {
+        if !self.any_lsp() {
             if self.lsp_state.diags_dirty {
                 self.apply_diags(app);
             }
             return;
         }
-        let events = self.lsp.as_mut().unwrap().poll();
-        for e in events {
-            self.lsp_event(app, e);
-            if self.lsp.is_none() {
-                return;
+        for srv in Srv::ALL {
+            let Some(c) = self.client_mut(srv) else { continue };
+            let events = c.poll();
+            for e in events {
+                self.lsp_event(app, srv, e);
+                if self.client(srv).is_none() {
+                    break;
+                }
             }
         }
         self.sync_docs(app, false);
@@ -175,19 +279,26 @@ impl Ide {
         self.update_diag_hint(app);
     }
 
-    fn lsp_event(&mut self, app: &mut Program, e: LspEvent) {
+    fn lsp_event(&mut self, app: &mut Program, srv: Srv, e: LspEvent) {
         match e {
             LspEvent::Ready { name } => {
-                self.lsp_state.name = if name.is_empty() { self.cfg.lsp_command.clone() } else { name };
-                self.lsp_state.status.clear();
-                let n = self.lsp_state.name.clone();
-                self.say(app, &format!("— Сервер LSP готов: {}", n));
+                let name = if name.is_empty() { self.server_command(srv) } else { name };
+                match srv {
+                    Srv::Rust => {
+                        self.lsp_state.name = name.clone();
+                        self.lsp_state.status.clear();
+                    }
+                    Srv::Toml => self.lsp_state.toml_name = name.clone(),
+                }
+                self.say(app, &format!("— Сервер {} готов: {}", srv.title(), name));
                 self.show_lsp_status(app);
             }
             LspEvent::Diagnostics { path, items } => {
                 self.lsp_state.diags.insert(path, items);
                 self.lsp_state.diags_dirty = true;
             }
+            // Ход индексации — только у rust-analyzer.
+            LspEvent::Progress { .. } if srv == Srv::Toml => {}
             LspEvent::Progress { title, percent, done } => {
                 self.lsp_state.status = if done {
                     String::new()
@@ -199,56 +310,78 @@ impl Ide {
                 };
                 self.show_lsp_status(app);
             }
-            LspEvent::Message(m) => self.say(app, &format!("LSP: {}", m)),
+            LspEvent::Message(m) => self.say(app, &format!("{}: {}", srv.title(), m)),
             LspEvent::Error { id, message } => {
                 // Отменённые сервером запросы (текст изменился) — не ошибка для пользователя.
-                if let Some(w) = self.lsp_state.wait.remove(&id) {
+                if let Some(w) = self.lsp_state.wait.remove(&(srv, id)) {
                     if !matches!(w, Wait::Completion { .. }) && !message.contains("content modified") {
-                        self.say(app, &format!("LSP: {}", message));
+                        self.say(app, &format!("{}: {}", srv.title(), message));
                     }
                 }
             }
             LspEvent::Completion { id, items } => {
-                if let Some(Wait::Completion { win, at }) = self.lsp_state.wait.remove(&id) {
-                    self.show_completion(app, win, at, items);
+                if let Some(Wait::Completion { win, at }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    self.show_completion(app, srv, win, at, items);
                 }
             }
-            LspEvent::Locations { id, items } => match self.lsp_state.wait.remove(&id) {
-                Some(Wait::Definition { from }) => self.show_definition(app, from, items),
-                Some(Wait::References { word }) => self.show_references(app, &word, items),
+            LspEvent::Locations { id, items } => match self.lsp_state.wait.remove(&(srv, id)) {
+                Some(Wait::Definition { from }) => self.show_definition(app, srv, from, items),
+                Some(Wait::References { word }) => self.show_references(app, srv, &word, items),
                 _ => {}
             },
             LspEvent::Exited => {
-                let tail = self.lsp.as_ref().map(|c| c.stderr_tail.lock().map(|t| t.clone()).unwrap_or_default()).unwrap_or_default();
-                self.say(app, "Сервер LSP завершил работу. Поиск → Перезапустить сервер LSP — запустить снова.");
+                let tail = self.client(srv).map(|c| c.stderr_tail.lock().map(|t| t.clone()).unwrap_or_default()).unwrap_or_default();
+                self.say(app, &format!("Сервер {} завершил работу. Поиск → Перезапустить сервер LSP — запустить снова.", srv.title()));
                 for l in tail.iter().rev().take(3).rev() {
                     self.say(app, &format!("  {}", l));
                 }
-                if let Some(c) = self.lsp.take() {
+                if let Some(c) = self.slot(srv).take() {
                     c.stop();
                 }
-                let hint = self.lsp_state.hint.clone();
-                self.lsp_state = LspState { hint, failed: true, diags_dirty: true, ..LspState::default() };
+                // Забыть всё, что относилось к этому серверу; второй работает дальше.
+                let st = &mut self.lsp_state;
+                st.diags.retain(|p, _| Srv::for_path(p) != Some(srv));
+                st.docs.retain(|p, _| Srv::for_path(p) != Some(srv));
+                st.wait.retain(|(s, _), _| *s != srv);
+                st.diags_dirty = true;
+                match srv {
+                    Srv::Rust => {
+                        st.status.clear();
+                        st.name.clear();
+                        st.failed = true;
+                    }
+                    Srv::Toml => {
+                        st.toml_name.clear();
+                        st.toml_failed = true;
+                    }
+                }
                 self.show_lsp_status(app);
             }
         }
     }
 
-    /// Окна кода, текст которых показывается серверу (Rust-файлы с именем).
-    fn lsp_windows(app: &Program) -> Vec<(ViewId, PathBuf)> {
+    /// Окна кода, текст которых показывается серверам (файлы `.rs` и `.toml`).
+    fn lsp_windows(app: &Program) -> Vec<(ViewId, PathBuf, Srv)> {
         Self::windows::<CodeWindow>(app)
             .into_iter()
             .filter_map(|id| app.find::<CodeWindow>(id).map(|w| (id, w.path())))
-            .filter(|(_, p)| p.extension().map(|x| x == "rs").unwrap_or(false))
+            .filter_map(|(id, p)| Srv::for_path(&p).map(|s| (id, p, s)))
             .collect()
     }
 
-    /// Открыть, обновить и закрыть документы на сервере.
+    /// Открыть, обновить и закрыть документы на серверах.
     /// `now` — отправить изменения без задержки (перед запросом).
     pub fn sync_docs(&mut self, app: &mut Program, now: bool) {
-        let Some(lsp) = self.lsp.as_mut() else { return };
+        if !self.any_lsp() {
+            return;
+        }
         let wins = Self::lsp_windows(app);
-        for (id, path) in &wins {
+        for (id, path, srv) in &wins {
+            let lsp = match srv {
+                Srv::Rust => self.lsp.as_mut(),
+                Srv::Toml => self.lsp_toml.as_mut(),
+            };
+            let Some(lsp) = lsp else { continue };
             let Some(w) = app.find::<CodeWindow>(*id) else { continue };
             let ed = &w.editor().fe.editor;
             let modified = ed.modified;
@@ -277,10 +410,12 @@ impl Ide {
             doc.modified = modified;
         }
         // Закрытые окна.
-        for p in lsp.open_docs() {
-            if !wins.iter().any(|(_, w)| *w == p) {
-                lsp.did_close(&p);
-                self.lsp_state.docs.remove(&p);
+        for lsp in [self.lsp.as_mut(), self.lsp_toml.as_mut()].into_iter().flatten() {
+            for p in lsp.open_docs() {
+                if !wins.iter().any(|(_, w, _)| *w == p) {
+                    lsp.did_close(&p);
+                    self.lsp_state.docs.remove(&p);
+                }
             }
         }
     }
@@ -294,8 +429,14 @@ impl Ide {
         self.lsp_state.diags.get(p).or_else(|| self.lsp_state.diags.iter().find(|(k, _)| same_file(k, p)).map(|(_, v)| v))
     }
 
-    fn encoding(&self) -> Encoding {
-        self.lsp.as_ref().map(|c| c.encoding).unwrap_or(Encoding::Utf16)
+    /// Кодировка столбцов сервера `srv`.
+    fn encoding(&self, srv: Srv) -> Encoding {
+        self.client(srv).map(|c| c.encoding).unwrap_or(Encoding::Utf16)
+    }
+
+    /// Кодировка столбцов сервера, отвечающего за файл.
+    fn encoding_for(&self, p: &Path) -> Encoding {
+        Srv::for_path(p).map(|s| self.encoding(s)).unwrap_or(Encoding::Utf16)
     }
 
     /// Разнести диагностики по окнам: полоса номеров и подсветка в тексте.
@@ -303,9 +444,9 @@ impl Ide {
     /// пометки последней сборки (она свежее).
     pub fn apply_diags(&mut self, app: &mut Program) {
         self.lsp_state.diags_dirty = false;
-        let enc = self.encoding();
         for id in Self::windows::<CodeWindow>(app) {
             let Some(path) = app.find::<CodeWindow>(id).map(|w| w.path()) else { continue };
+            let enc = self.encoding_for(&path);
             let lsp = self.diags_for(&path).cloned();
             let build = self.marks.iter().find(|(k, _)| same_file(k, &path)).map(|(_, v)| v.clone()).unwrap_or_default();
             let Some(w) = app.find_mut::<CodeWindow>(id) else { continue };
@@ -366,13 +507,12 @@ impl Ide {
 
     /// Все диагностики сервера — в окно сообщений (Enter — к месту).
     pub fn list_diagnostics(&mut self, app: &mut Program) {
-        if self.lsp.is_none() {
+        if !self.any_lsp() {
             return self.say(app, "Сервер LSP не запущен.");
         }
         let mut all: Vec<(PathBuf, Diagnostic)> =
             self.lsp_state.diags.iter().flat_map(|(p, v)| v.iter().map(move |d| (p.clone(), d.clone()))).collect();
         all.sort_by(|a, b| (a.1.severity, &a.0, a.1.range.start).cmp(&(b.1.severity, &b.0, b.1.range.start)));
-        let enc = self.encoding();
         let base = self.base_dir();
         self.msgs(app).clear();
         self.say(
@@ -381,7 +521,7 @@ impl Ide {
         );
         for (p, d) in all {
             let line_text = self.line_text(app, &p, d.range.start.line);
-            let col = col_from_lsp(&line_text, d.range.start.col, enc) + 1;
+            let col = col_from_lsp(&line_text, d.range.start.col, self.encoding_for(&p)) + 1;
             let shown =
                 base.as_ref().and_then(|b| p.strip_prefix(b).ok()).map(|r| r.display().to_string()).unwrap_or_else(|| p.display().to_string());
             let sev = match d.severity {
@@ -425,50 +565,52 @@ impl Ide {
     // Запросы
     // ------------------------------------------------------------------
 
-    /// Текущее окно кода с Rust-файлом: id, путь, курсор.
-    fn lsp_target(&mut self, app: &mut Program) -> Option<(ViewId, PathBuf, Pos)> {
+    /// Текущее окно кода с файлом `.rs` или `.toml`: id, путь, курсор, сервер.
+    fn lsp_target(&mut self, app: &mut Program) -> Option<(ViewId, PathBuf, Pos, Srv)> {
         let id = Self::current_window(app)?;
         let w = app.find::<CodeWindow>(id)?;
         let path = w.path();
         let pos = w.editor().fe.editor.cursor();
-        if path.extension().map(|x| x != "rs").unwrap_or(true) {
-            self.say(app, "Сервер LSP работает с файлами .rs (сохраните файл с именем).");
+        let Some(srv) = Srv::for_path(&path) else {
+            self.say(app, "Сервер LSP работает с файлами .rs и .toml (сохраните файл с именем).");
             return None;
-        }
-        if self.lsp.is_none() {
+        };
+        if self.client(srv).is_none() {
             let why = if !self.cfg.lsp_enabled {
-                "Сервер LSP выключен (Настройки → Параметры среды)."
+                "Сервер LSP выключен (Настройки → Параметры среды).".to_string()
             } else if self.project.is_none() {
-                "Сервер LSP работает с открытым проектом."
+                "Сервер LSP работает с открытым проектом.".to_string()
+            } else if self.server_command(srv).is_empty() {
+                format!("Сервер {} не задан (Настройки → Параметры среды).", srv.title())
             } else {
-                "Сервер LSP не запущен (Поиск → Перезапустить сервер LSP)."
+                format!("Сервер {} не запущен (Поиск → Перезапустить сервер LSP).", srv.title())
             };
-            self.say(app, why);
+            self.say(app, &why);
             return None;
         }
         // Сервер должен видеть текущий текст.
         self.sync_docs(app, true);
-        Some((id, path, pos))
+        Some((id, path, pos, srv))
     }
 
     /// Позиция для сервера.
-    fn lsp_pos(&self, app: &Program, id: ViewId, pos: Pos) -> LPos {
+    fn lsp_pos(&self, app: &Program, srv: Srv, id: ViewId, pos: Pos) -> LPos {
         let line = app.find::<CodeWindow>(id).map(|w| w.editor().fe.editor.line(pos.line)).unwrap_or_default();
-        LPos { line: pos.line, col: col_to_lsp(&line, pos.col, self.encoding()) }
+        LPos { line: pos.line, col: col_to_lsp(&line, pos.col, self.encoding(srv)) }
     }
 
     /// Запросить дополнение в позиции курсора.
     pub fn lsp_complete(&mut self, app: &mut Program, trigger: Option<char>) {
-        let Some((id, path, pos)) = self.lsp_target(app) else { return };
-        let lp = self.lsp_pos(app, id, pos);
-        let rid = self.lsp.as_mut().unwrap().completion(&path, lp, trigger);
+        let Some((id, path, pos, srv)) = self.lsp_target(app) else { return };
+        let lp = self.lsp_pos(app, srv, id, pos);
+        let Some(rid) = self.client_mut(srv).map(|c| c.completion(&path, lp, trigger)) else { return };
         // Старые запросы дополнения больше не нужны.
         self.lsp_state.wait.retain(|_, w| !matches!(w, Wait::Completion { .. }));
-        self.lsp_state.wait.insert(rid, Wait::Completion { win: id, at: pos });
+        self.lsp_state.wait.insert((srv, rid), Wait::Completion { win: id, at: pos });
     }
 
-    fn show_completion(&mut self, app: &mut Program, win: ViewId, at: Pos, items: Vec<crate::lsp::CompletionItem>) {
-        let enc = self.encoding();
+    fn show_completion(&mut self, app: &mut Program, srv: Srv, win: ViewId, at: Pos, items: Vec<crate::lsp::CompletionItem>) {
+        let enc = self.encoding(srv);
         let Some(w) = app.find_mut::<CodeWindow>(win) else { return };
         let ed = w.editor_mut();
         let cur = ed.fe.editor.cursor();
@@ -494,15 +636,15 @@ impl Ide {
 
     /// Перейти к определению символа под курсором.
     pub fn lsp_goto_def(&mut self, app: &mut Program) {
-        let Some((id, path, pos)) = self.lsp_target(app) else { return };
-        let lp = self.lsp_pos(app, id, pos);
-        let rid = self.lsp.as_mut().unwrap().definition(&path, lp);
-        self.lsp_state.wait.insert(rid, Wait::Definition { from: (path, pos.line + 1, pos.col + 1) });
+        let Some((id, path, pos, srv)) = self.lsp_target(app) else { return };
+        let lp = self.lsp_pos(app, srv, id, pos);
+        let Some(rid) = self.client_mut(srv).map(|c| c.definition(&path, lp)) else { return };
+        self.lsp_state.wait.insert((srv, rid), Wait::Definition { from: (path, pos.line + 1, pos.col + 1) });
     }
 
-    /// Открыть файл места и поставить курсор (столбец сервера → символы).
-    fn open_location(&mut self, app: &mut Program, loc: &Location) {
-        let enc = self.encoding();
+    /// Открыть файл места и поставить курсор (столбец сервера `srv` → символы).
+    fn open_location(&mut self, app: &mut Program, srv: Srv, loc: &Location) {
+        let enc = self.encoding(srv);
         if let Some(id) = self.open_file(app, &loc.path, None) {
             if let Some(w) = app.find_mut::<CodeWindow>(id) {
                 let line = loc.range.start.line;
@@ -514,7 +656,7 @@ impl Ide {
         }
     }
 
-    fn show_definition(&mut self, app: &mut Program, from: (PathBuf, usize, usize), items: Vec<Location>) {
+    fn show_definition(&mut self, app: &mut Program, srv: Srv, from: (PathBuf, usize, usize), items: Vec<Location>) {
         match items.len() {
             0 => self.say(app, "Определение не найдено."),
             n => {
@@ -524,9 +666,9 @@ impl Ide {
                 }
                 if n > 1 {
                     // Несколько определений (например, макрос, типаж) — список и переход к первому.
-                    self.show_locations(app, &format!("— Определения: {}", n), &items);
+                    self.show_locations(app, srv, &format!("— Определения: {}", n), &items);
                 }
-                self.open_location(app, &items[0]);
+                self.open_location(app, srv, &items[0]);
             }
         }
     }
@@ -543,19 +685,19 @@ impl Ide {
 
     /// Найти все ссылки на символ под курсором.
     pub fn lsp_find_refs(&mut self, app: &mut Program) {
-        let Some((id, path, pos)) = self.lsp_target(app) else { return };
+        let Some((id, path, pos, srv)) = self.lsp_target(app) else { return };
         let word = app.find::<CodeWindow>(id).map(|w| w.editor().word_at_cursor().0).unwrap_or_default();
-        let lp = self.lsp_pos(app, id, pos);
-        let rid = self.lsp.as_mut().unwrap().references(&path, lp);
-        self.lsp_state.wait.insert(rid, Wait::References { word });
+        let lp = self.lsp_pos(app, srv, id, pos);
+        let Some(rid) = self.client_mut(srv).map(|c| c.references(&path, lp)) else { return };
+        self.lsp_state.wait.insert((srv, rid), Wait::References { word });
     }
 
-    fn show_references(&mut self, app: &mut Program, word: &str, items: Vec<Location>) {
+    fn show_references(&mut self, app: &mut Program, srv: Srv, word: &str, items: Vec<Location>) {
         if items.is_empty() {
             return self.say(app, &format!("Ссылок на «{}» не найдено.", word));
         }
         self.msgs(app).clear();
-        self.show_locations(app, &format!("— Ссылки на «{}»: {}", word, items.len()), &items);
+        self.show_locations(app, srv, &format!("— Ссылки на «{}»: {}", word, items.len()), &items);
         if let Some(id) = self.messages {
             if let Some(m) = app.find_mut::<MessagesWindow>(id) {
                 m.focus(1);
@@ -565,8 +707,8 @@ impl Ide {
     }
 
     /// Места — строками в окне сообщений: «файл:строка:столбец: текст строки».
-    fn show_locations(&mut self, app: &mut Program, title: &str, items: &[Location]) {
-        let enc = self.encoding();
+    fn show_locations(&mut self, app: &mut Program, srv: Srv, title: &str, items: &[Location]) {
+        let enc = self.encoding(srv);
         let base = self.base_dir();
         self.say(app, title);
         let mut sorted = items.to_vec();

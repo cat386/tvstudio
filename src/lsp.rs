@@ -1,4 +1,4 @@
-//! Клиент Language Server Protocol (rust-analyzer).
+//! Клиент Language Server Protocol (rust-analyzer для `.rs`, taplo для `.toml`).
 //!
 //! Сервер — отдельный процесс; обмен — JSON-RPC 2.0 через stdin/stdout,
 //! каждое сообщение предваряется заголовком `Content-Length: N\r\n\r\n`.
@@ -376,6 +376,8 @@ pub struct LspClient {
     pub encoding: Encoding,
     pub ready: bool,
     pub root: PathBuf,
+    /// Язык документов (`languageId` в `didOpen`): `rust`, `toml`.
+    pub language: String,
     /// Сообщения, отправленные до ответа на initialize (сервер их ждёт после).
     queued: Vec<Json>,
     /// Заголовки работ `$/progress` по токенам.
@@ -406,8 +408,10 @@ fn read_message<R: BufRead>(r: &mut R) -> Option<Json> {
 }
 
 impl LspClient {
-    /// Запустить сервер `command` (например, `rust-analyzer`) для проекта `root`.
-    pub fn start(command: &str, root: &Path) -> Result<LspClient, String> {
+    /// Запустить сервер `command` (например, `rust-analyzer` или
+    /// `taplo lsp stdio`) для проекта `root`; `language` — `languageId`
+    /// документов, которые ему показываются.
+    pub fn start(command: &str, root: &Path, language: &str) -> Result<LspClient, String> {
         let mut parts = command.split_whitespace();
         let prog = parts.next().ok_or("не задана программа сервера")?;
         let mut child = Command::new(prog)
@@ -454,6 +458,7 @@ impl LspClient {
             encoding: Encoding::Utf16,
             ready: false,
             root: root.to_path_buf(),
+            language: language.to_string(),
             queued: Vec::new(),
             progress: HashMap::new(),
             stderr_tail: tail,
@@ -540,8 +545,12 @@ impl LspClient {
 
     pub fn did_open(&mut self, p: &Path, text: &str) {
         self.docs.insert(p.to_path_buf(), 1);
-        let item =
-            Json::obj(vec![("uri", Json::s(&path_to_uri(p))), ("languageId", Json::s("rust")), ("version", Json::i(1)), ("text", Json::s(text))]);
+        let item = Json::obj(vec![
+            ("uri", Json::s(&path_to_uri(p))),
+            ("languageId", Json::s(&self.language)),
+            ("version", Json::i(1)),
+            ("text", Json::s(text)),
+        ]);
         self.notify("textDocument/didOpen", Json::obj(vec![("textDocument", item)]));
     }
 
@@ -617,8 +626,13 @@ impl LspClient {
         if let (false, Some(id)) = (method.is_empty(), &id) {
             let id = id.clone();
             let result = match method.as_str() {
-                // Настройки: по одной «по умолчанию» (null) на каждый запрошенный раздел.
-                "workspace/configuration" => Json::Arr(m.get("params").map(|p| p.arr("items")).unwrap_or(&[]).iter().map(|_| Json::Null).collect()),
+                // Настройки: по одной «по умолчанию» на каждый запрошенный раздел.
+                // rust-analyzer ждёт null; taplo разбирает раздел как объект
+                // настроек, и пустой объект для него — «всё по умолчанию».
+                "workspace/configuration" => {
+                    let dflt = if self.language == "rust" { Json::Null } else { Json::obj(vec![]) };
+                    Json::Arr(m.get("params").map(|p| p.arr("items")).unwrap_or(&[]).iter().map(|_| dflt.clone()).collect())
+                }
                 _ => Json::Null,
             };
             self.reply(&id, result);

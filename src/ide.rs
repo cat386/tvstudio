@@ -27,7 +27,7 @@ use crate::runner::{After, Job, JobMsg};
 use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, PaletteWindow, ProjectWindow};
 
 mod lsp_glue;
-pub use lsp_glue::LspState;
+pub use lsp_glue::{LspState, Srv};
 
 /// Текст справки (формат tvhc), встроен в программу.
 pub const HELP_SOURCE: &str = include_str!("help.txt");
@@ -263,6 +263,8 @@ pub struct Ide {
     pub last_error: Option<String>,
     /// Сервер LSP (rust-analyzer) открытого проекта.
     pub lsp: Option<LspClient>,
+    /// Сервер LSP для `.toml` (taplo).
+    pub lsp_toml: Option<LspClient>,
     pub lsp_state: LspState,
 }
 
@@ -284,6 +286,7 @@ impl Ide {
             tree_dirty: false,
             last_error: None,
             lsp: None,
+            lsp_toml: None,
             lsp_state: LspState::default(),
         }
     }
@@ -1208,7 +1211,7 @@ impl Ide {
         if let Some(job) = &self.job {
             job.kill();
         }
-        if let Some(c) = self.lsp.take() {
+        for c in [self.lsp.take(), self.lsp_toml.take()].into_iter().flatten() {
             c.stop();
         }
         if let Some(p) = &mut self.project {
@@ -1269,10 +1272,10 @@ impl Ide {
         let code = Self::current_window(app).map(|id| app.find::<CodeWindow>(id).is_some()).unwrap_or(false);
         set(app, CM_GOTO, code);
         for c in [CM_COMPLETE, CM_GOTO_DEF, CM_FIND_REFS] {
-            set(app, c, code && self.lsp.is_some());
+            set(app, c, code && self.any_lsp());
         }
         set(app, CM_NAV_BACK, !self.lsp_state.nav.is_empty());
-        set(app, CM_DIAGNOSTICS, self.lsp.is_some());
+        set(app, CM_DIAGNOSTICS, self.any_lsp());
         let locs = self.messages.and_then(|id| app.find::<MessagesWindow>(id)).map(|m| m.entries.iter().any(|e| e.loc.is_some())).unwrap_or(false);
         set(app, CM_NEXT_ERR, locs);
         set(app, CM_PREV_ERR, locs);
@@ -1339,7 +1342,7 @@ impl Ide {
         if cmd != cm::OK {
             return;
         }
-        let before = (self.cfg.lsp_enabled, self.cfg.lsp_command.clone());
+        let before = (self.cfg.lsp_enabled, self.cfg.lsp_command.clone(), self.cfg.toml_lsp_command.clone());
         dialogs::read_options(&mut self.cfg, &d.get_data());
         for id in Self::windows::<CodeWindow>(app) {
             if let Some(w) = app.find_mut::<CodeWindow>(id) {
@@ -1347,7 +1350,7 @@ impl Ide {
             }
         }
         // Сервер LSP включили, выключили или сменили — перезапуск.
-        if before != (self.cfg.lsp_enabled, self.cfg.lsp_command.clone()) {
+        if before != (self.cfg.lsp_enabled, self.cfg.lsp_command.clone(), self.cfg.toml_lsp_command.clone()) {
             if self.cfg.lsp_enabled && self.project.is_some() {
                 self.lsp_restart(app);
             } else {

@@ -310,10 +310,16 @@ impl CodeEditor {
         self.fe.handle_event(&mut nothing, ctx);
     }
 
-    /// После набранного символа: `.` и `::` сами открывают дополнение.
+    /// После набранного символа: `.` и `::` (Rust), `.` (TOML: ключи
+    /// `package.`, `dependencies.`) сами открывают дополнение.
     fn after_typing(&mut self, key: Key, ctx: &mut Ctx) {
         let Key::Char(ch) = key else { return };
-        if self.lang != Lang::Rust || (ch != '.' && ch != ':') {
+        let wanted = match self.lang {
+            Lang::Rust => ch == '.' || ch == ':',
+            Lang::Toml => ch == '.',
+            _ => false,
+        };
+        if !wanted {
             return;
         }
         let cur = self.fe.editor.cursor();
