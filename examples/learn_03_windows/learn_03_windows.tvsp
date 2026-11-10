@@ -1,112 +1,100 @@
-{
-  "format": "tvstudio-project",
-  "version": 1,
-  "name": "learn_03_windows",
-  "forms": [],
-  "open_files": ["src/main.rs"],
-  "app": {
-    "title": "learn_03_windows",
-    "russian": false,
-    "startup_form": "",
-    "menu": [
-      {
-        "title": "~Ф~айл",
-        "items": [
-          {
-            "title": "~Н~овое окно",
-            "command": "CM_NEW_WINDOW",
-            "key": "F3",
-            "help": 0
-          },
-          {
-            "separator": true
-          },
-          {
-            "title": "~В~ыход",
-            "command": "cm::QUIT",
-            "key": "Alt-X",
-            "help": 0
-          }
-        ]
-      },
-      {
-        "title": "~О~кна",
-        "items": [
-          {
-            "title": "~М~озаика",
-            "command": "cm::TILE",
-            "key": "",
-            "help": 0
-          },
-          {
-            "title": "~К~аскад",
-            "command": "cm::CASCADE",
-            "key": "",
-            "help": 0
-          },
-          {
-            "separator": true
-          },
-          {
-            "title": "~С~ледующее",
-            "command": "cm::NEXT",
-            "key": "F6",
-            "help": 0
-          },
-          {
-            "title": "~Р~аспахнуть",
-            "command": "cm::ZOOM",
-            "key": "F5",
-            "help": 0
-          },
-          {
-            "title": "~З~акрыть",
-            "command": "cm::CLOSE",
-            "key": "Alt-F3",
-            "help": 0
-          }
-        ]
-      }
-    ],
-    "status": [
-      {
-        "text": "~F3~ Новое",
-        "key": "F3",
-        "command": "CM_NEW_WINDOW"
-      },
-      {
-        "text": "~F6~ Следующее",
-        "key": "F6",
-        "command": "cm::NEXT"
-      },
-      {
-        "text": "~F5~ Распахнуть",
-        "key": "F5",
-        "command": "cm::ZOOM"
-      },
-      {
-        "text": "~Alt-F3~ Закрыть",
-        "key": "Alt+F3",
-        "command": "cm::CLOSE"
-      },
-      {
-        "text": "~Alt-X~ Выход",
-        "key": "Alt+X",
-        "command": "cm::QUIT"
-      },
-      {
-        "text": "",
-        "key": "F10",
-        "command": "cm::MENU"
-      }
-    ],
-    "commands": [
-      {
-        "name": "CM_NEW_WINDOW",
-        "value": 100,
-        "action": "",
-        "comment": ""
-      }
-    ]
-  }
-}
+format = "tvstudio-project"
+version = 1
+name = "learn_03_windows"
+forms = []
+open_files = ["src/main.rs"]
+
+[app]
+title = "learn_03_windows"
+russian = false
+startup_form = ""
+
+[[app.menu]]
+title = "~Ф~айл"
+
+[[app.menu.items]]
+title = "~Н~овое окно"
+command = "CM_NEW_WINDOW"
+key = "F3"
+help = 0
+
+[[app.menu.items]]
+separator = true
+
+[[app.menu.items]]
+title = "~В~ыход"
+command = "cm::QUIT"
+key = "Alt-X"
+help = 0
+
+[[app.menu]]
+title = "~О~кна"
+
+[[app.menu.items]]
+title = "~М~озаика"
+command = "cm::TILE"
+key = ""
+help = 0
+
+[[app.menu.items]]
+title = "~К~аскад"
+command = "cm::CASCADE"
+key = ""
+help = 0
+
+[[app.menu.items]]
+separator = true
+
+[[app.menu.items]]
+title = "~С~ледующее"
+command = "cm::NEXT"
+key = "F6"
+help = 0
+
+[[app.menu.items]]
+title = "~Р~аспахнуть"
+command = "cm::ZOOM"
+key = "F5"
+help = 0
+
+[[app.menu.items]]
+title = "~З~акрыть"
+command = "cm::CLOSE"
+key = "Alt-F3"
+help = 0
+
+[[app.status]]
+text = "~F3~ Новое"
+key = "F3"
+command = "CM_NEW_WINDOW"
+
+[[app.status]]
+text = "~F6~ Следующее"
+key = "F6"
+command = "cm::NEXT"
+
+[[app.status]]
+text = "~F5~ Распахнуть"
+key = "F5"
+command = "cm::ZOOM"
+
+[[app.status]]
+text = "~Alt-F3~ Закрыть"
+key = "Alt+F3"
+command = "cm::CLOSE"
+
+[[app.status]]
+text = "~Alt-X~ Выход"
+key = "Alt+X"
+command = "cm::QUIT"
+
+[[app.status]]
+text = ""
+key = "F10"
+command = "cm::MENU"
+
+[[app.commands]]
+name = "CM_NEW_WINDOW"
+value = 100
+action = ""
+comment = ""

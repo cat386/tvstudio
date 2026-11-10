@@ -1,76 +1,66 @@
-{
-  "format": "tvstudio-project",
-  "version": 1,
-  "name": "json_load",
-  "forms": ["load_with_progress", "summary_dialog"],
-  "open_files": ["src/main.rs"],
-  "app": {
-    "title": "json_load",
-    "russian": false,
-    "startup_form": "",
-    "menu": [
-      {
-        "title": "~Ф~айл",
-        "items": [
-          {
-            "title": "~С~оздать тестовый файл...",
-            "command": "CM_GENERATE",
-            "key": "F2",
-            "help": 0
-          },
-          {
-            "title": "~О~ткрыть JSON...",
-            "command": "CM_OPEN_JSON",
-            "key": "F3",
-            "help": 0
-          },
-          {
-            "separator": true
-          },
-          {
-            "title": "~В~ыход",
-            "command": "cm::QUIT",
-            "key": "Alt-X",
-            "help": 0
-          }
-        ]
-      }
-    ],
-    "status": [
-      {
-        "text": "~F2~ Тестовый файл",
-        "key": "F2",
-        "command": "CM_GENERATE"
-      },
-      {
-        "text": "~F3~ Открыть",
-        "key": "F3",
-        "command": "CM_OPEN_JSON"
-      },
-      {
-        "text": "~Alt-X~ Выход",
-        "key": "Alt+X",
-        "command": "cm::QUIT"
-      },
-      {
-        "text": "",
-        "key": "F10",
-        "command": "cm::MENU"
-      }
-    ],
-    "commands": [
-      {
-        "name": "CM_OPEN_JSON",
-        "value": 100,
-        "action": "",
-        "comment": ""
-      },
-      {
-        "name": "CM_GENERATE",
-        "value": 102,
-        "action": "",
-        "comment": "Создать большой тестовый файл и загрузить его."
-      }
-    ]
-  }
-}
+format = "tvstudio-project"
+version = 1
+name = "json_load"
+forms = ["load_with_progress", "summary_dialog"]
+open_files = ["src/main.rs"]
+
+[app]
+title = "json_load"
+russian = false
+startup_form = ""
+
+[[app.menu]]
+title = "~Ф~айл"
+
+[[app.menu.items]]
+title = "~С~оздать тестовый файл..."
+command = "CM_GENERATE"
+key = "F2"
+help = 0
+
+[[app.menu.items]]
+title = "~О~ткрыть JSON..."
+command = "CM_OPEN_JSON"
+key = "F3"
+help = 0
+
+[[app.menu.items]]
+separator = true
+
+[[app.menu.items]]
+title = "~В~ыход"
+command = "cm::QUIT"
+key = "Alt-X"
+help = 0
+
+[[app.status]]
+text = "~F2~ Тестовый файл"
+key = "F2"
+command = "CM_GENERATE"
+
+[[app.status]]
+text = "~F3~ Открыть"
+key = "F3"
+command = "CM_OPEN_JSON"
+
+[[app.status]]
+text = "~Alt-X~ Выход"
+key = "Alt+X"
+command = "cm::QUIT"
+
+[[app.status]]
+text = ""
+key = "F10"
+command = "cm::MENU"
+
+[[app.commands]]
+name = "CM_OPEN_JSON"
+value = 100
+action = ""
+comment = ""
+
+[[app.commands]]
+name = "CM_GENERATE"
+value = 102
+action = ""
+comment = "Создать большой тестовый файл и загрузить его."

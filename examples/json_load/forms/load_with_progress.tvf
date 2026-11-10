@@ -1,57 +1,53 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "load_with_progress",
-  "title": "Загрузка файла",
-  "x": 10,
-  "y": 3,
-  "w": 58,
-  "h": 11,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 0,
-  "controls": [
-    {
-      "kind": "static_text",
-      "name": "text1",
-      "x": 3,
-      "y": 2,
-      "w": 52,
-      "h": 1,
-      "text": "{name}",
-      "scrollbar": false
-    },
-    {
-      "kind": "static_text",
-      "name": "stage",
-      "x": 3,
-      "y": 3,
-      "w": 52,
-      "h": 1,
-      "text": "Открытие…",
-      "scrollbar": false
-    },
-    {
-      "kind": "progress_bar",
-      "name": "bar",
-      "x": 3,
-      "y": 5,
-      "w": 52,
-      "h": 1,
-      "max": 1000,
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "cancel",
-      "x": 23,
-      "y": 7,
-      "w": 12,
-      "h": 2,
-      "text": "Отмена",
-      "command": "cm::CANCEL",
-      "default": true,
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "load_with_progress"
+title = "Загрузка файла"
+x = 10
+y = 3
+w = 58
+h = 11
+centered = true
+palette = "gray"
+help_ctx = 0
+
+[[controls]]
+kind = "static_text"
+name = "text1"
+x = 3
+y = 2
+w = 52
+h = 1
+text = "{name}"
+scrollbar = false
+
+[[controls]]
+kind = "static_text"
+name = "stage"
+x = 3
+y = 3
+w = 52
+h = 1
+text = "Открытие…"
+scrollbar = false
+
+[[controls]]
+kind = "progress_bar"
+name = "bar"
+x = 3
+y = 5
+w = 52
+h = 1
+max = 1000
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "cancel"
+x = 23
+y = 7
+w = 12
+h = 2
+text = "Отмена"
+command = "cm::CANCEL"
+default = true
+scrollbar = false

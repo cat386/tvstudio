@@ -1,38 +1,32 @@
-{
-  "format": "tvstudio-project",
-  "version": 1,
-  "name": "learn_04_coords",
-  "forms": ["layout_dialog"],
-  "open_files": ["src/main.rs"],
-  "app": {
-    "title": "learn_04_coords",
-    "russian": false,
-    "startup_form": "",
-    "menu": [],
-    "status": [
-      {
-        "text": "~F2~ Диалог",
-        "key": "F2",
-        "command": "CM_LAYOUT"
-      },
-      {
-        "text": "~F5~ Распахнуть",
-        "key": "F5",
-        "command": "cm::ZOOM"
-      },
-      {
-        "text": "~Alt-X~ Выход",
-        "key": "Alt+X",
-        "command": "cm::QUIT"
-      }
-    ],
-    "commands": [
-      {
-        "name": "CM_LAYOUT",
-        "value": 100,
-        "action": "",
-        "comment": ""
-      }
-    ]
-  }
-}
+format = "tvstudio-project"
+version = 1
+name = "learn_04_coords"
+forms = ["layout_dialog"]
+open_files = ["src/main.rs"]
+
+[app]
+title = "learn_04_coords"
+russian = false
+startup_form = ""
+menu = []
+
+[[app.status]]
+text = "~F2~ Диалог"
+key = "F2"
+command = "CM_LAYOUT"
+
+[[app.status]]
+text = "~F5~ Распахнуть"
+key = "F5"
+command = "cm::ZOOM"
+
+[[app.status]]
+text = "~Alt-X~ Выход"
+key = "Alt+X"
+command = "cm::QUIT"
+
+[[app.commands]]
+name = "CM_LAYOUT"
+value = 100
+action = ""
+comment = ""

@@ -29,8 +29,8 @@ impl Lang {
     pub fn from_path(p: &std::path::Path) -> Lang {
         match p.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
             Some("rs") => Lang::Rust,
-            Some("toml") => Lang::Toml,
-            Some("json") | Some("tvf") | Some("tvsp") => Lang::Json,
+            Some("toml") | Some("tvf") | Some("tvsp") => Lang::Toml,
+            Some("json") => Lang::Json,
             _ => Lang::Plain,
         }
     }

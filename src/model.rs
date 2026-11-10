@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use tvision::{Key, KeyEvent, Mods, Rect};
 
-use crate::json::{self, Json};
+use crate::json::Json;
 
 // ======================================================================
 // Элементы формы
@@ -692,16 +692,19 @@ impl Form {
         Ok(f)
     }
 
+    /// Загрузить форму из файла `*.tvf` (TOML; файлы старых версий — JSON).
     pub fn load(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        Form::from_json(&json::parse(&s)?)
+        Form::from_json(&crate::toml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?)
     }
 
+    /// Сохранить форму в TOML.
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(d) = path.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        std::fs::write(path, self.to_json().to_pretty()).map_err(|e| format!("{}: {}", path.display(), e))
+        let text = crate::toml::to_string(&self.to_json())?;
+        std::fs::write(path, text).map_err(|e| format!("{}: {}", path.display(), e))
     }
 }
 
@@ -1158,10 +1161,10 @@ impl Project {
         ])
     }
 
-    /// Загрузить проект из файла `*.tvsp`.
+    /// Загрузить проект из файла `*.tvsp` (TOML; файлы старых версий — JSON).
     pub fn load(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        let j = json::parse(&s)?;
+        let j = crate::toml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?;
         if j.str("format") != "tvstudio-project" {
             return Err(format!("{}: это не файл проекта TV Studio", path.display()));
         }
@@ -1178,9 +1181,11 @@ impl Project {
         })
     }
 
+    /// Сохранить файл проекта в TOML.
     pub fn save(&self) -> Result<(), String> {
         let p = self.file();
-        std::fs::write(&p, self.to_json().to_pretty()).map_err(|e| format!("{}: {}", p.display(), e))
+        let text = crate::toml::to_string(&self.to_json())?;
+        std::fs::write(&p, text).map_err(|e| format!("{}: {}", p.display(), e))
     }
 
     /// Каталог нового проекта `parent/name` (имя и отсутствие проекта проверены).
@@ -1482,10 +1487,13 @@ mod tests {
         assert_eq!((q.kind, q.forms.len()), (ProjectKind::Rust, 0));
         assert!(Project::create_rust(&base, "plain").is_err(), "второй раз в тот же каталог");
         // Старый файл проекта (без kind) — проект tvision-rs.
-        let mut j = json::parse(&std::fs::read_to_string(p.file()).unwrap()).unwrap();
+        let text = std::fs::read_to_string(p.file()).unwrap();
+        assert!(text.starts_with("format = \"tvstudio-project\"\n"), "файл проекта — TOML:\n{}", text);
+        let mut j = crate::toml::parse_document(&text).unwrap();
         if let Json::Obj(v) = &mut j {
             v.retain(|(k, _)| k != "kind");
         }
+        // …и записан в старом формате JSON — тоже читается.
         std::fs::write(p.file(), j.to_pretty()).unwrap();
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
         let _ = std::fs::remove_dir_all(&base);
@@ -1527,8 +1535,8 @@ mod tests {
         let mut l = f.new_control(Kind::Label, 2, 2);
         l.link = "info".into();
         f.controls.push(l);
-        let j = f.to_json().to_pretty();
-        let g = Form::from_json(&json::parse(&j).unwrap()).unwrap();
+        let j = crate::toml::to_string(&f.to_json()).unwrap();
+        let g = Form::from_json(&crate::toml::parse(&j).unwrap()).unwrap();
         assert_eq!(f, g);
         assert_eq!(f.unique_name("label"), "label2");
     }
@@ -1536,7 +1544,8 @@ mod tests {
     #[test]
     fn app_roundtrip() {
         let a = AppModel::starter("x");
-        let b = AppModel::from_json(&json::parse(&a.to_json().to_pretty()).unwrap());
+        let doc = Json::obj(vec![("app", a.to_json())]);
+        let b = AppModel::from_json(crate::toml::parse(&crate::toml::to_string(&doc).unwrap()).unwrap().get("app").unwrap());
         assert_eq!(a, b);
         assert_eq!(a.command_value("ABOUT"), Some(100));
         assert_eq!(a.command_value("cm::QUIT"), Some(1));

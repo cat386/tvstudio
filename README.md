@@ -214,7 +214,27 @@ cargo run --bin tvs-import -- --examples ../tvision-rs examples
 | `lsp` | клиент Language Server Protocol (rust-analyzer, taplo) |
 | `ide` | меню, строка состояния, обработчик команд среды; `ide/lsp_glue` — LSP в редакторах (`.rs` → rust-analyzer, `.toml` → taplo) |
 
-Форматы файлов (`.tvsp`, `.tvf`) — JSON, удобно хранить в git.
+Файлы проекта (`.tvsp`) и форм (`.tvf`) — TOML: меню, строка состояния и
+команды — массивы таблиц `[[app.menu]]`, `[[app.status]]`, `[[app.commands]]`,
+элементы формы — `[[controls]]`; удобно читать, править руками и хранить в
+git. Чтение и запись — свой модуль `toml` без внешних зависимостей. Файлы
+прежних версий (JSON) открываются как раньше и при первом сохранении
+переписываются в TOML.
+
+```toml
+format = "tvstudio-form"
+version = 1
+name = "greeting"
+title = "Hello, World!"
+w = 30
+h = 11
+
+[[controls]]
+kind = "button"
+name = "ok"
+text = "Ok"
+command = "cm::CANCEL"
+```
 
 ## Тесты
 

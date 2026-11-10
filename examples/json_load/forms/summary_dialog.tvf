@@ -1,37 +1,33 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "summary_dialog",
-  "title": "Файл загружен",
-  "x": 10,
-  "y": 3,
-  "w": 60,
-  "h": 14,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 0,
-  "controls": [
-    {
-      "kind": "static_text",
-      "name": "text1",
-      "x": 3,
-      "y": 2,
-      "w": 54,
-      "h": 8,
-      "text": "{text}",
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "ok",
-      "x": 24,
-      "y": 11,
-      "w": 12,
-      "h": 2,
-      "text": "O~K~",
-      "command": "cm::OK",
-      "default": true,
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "summary_dialog"
+title = "Файл загружен"
+x = 10
+y = 3
+w = 60
+h = 14
+centered = true
+palette = "gray"
+help_ctx = 0
+
+[[controls]]
+kind = "static_text"
+name = "text1"
+x = 3
+y = 2
+w = 54
+h = 8
+text = "{text}"
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "ok"
+x = 24
+y = 11
+w = 12
+h = 2
+text = "O~K~"
+command = "cm::OK"
+default = true
+scrollbar = false

@@ -1,115 +1,103 @@
-{
-  "format": "tvstudio-project",
-  "version": 1,
-  "name": "progress",
-  "forms": ["copy_dialog", "run_primes", "gallery"],
-  "open_files": ["src/main.rs"],
-  "app": {
-    "title": "progress",
-    "russian": false,
-    "startup_form": "",
-    "menu": [
-      {
-        "title": "~П~римеры",
-        "items": [
-          {
-            "title": "~К~опирование файлов",
-            "command": "CM_COPY",
-            "key": "F2",
-            "help": 0
-          },
-          {
-            "title": "~П~ростые числа (поток)",
-            "command": "CM_PRIMES",
-            "key": "F3",
-            "help": 0
-          },
-          {
-            "title": "~В~иды полос",
-            "command": "CM_GALLERY",
-            "key": "F4",
-            "help": 0
-          },
-          {
-            "separator": true
-          },
-          {
-            "title": "~В~ыход",
-            "command": "cm::QUIT",
-            "key": "Alt-X",
-            "help": 0
-          }
-        ]
-      },
-      {
-        "title": "~О~кна",
-        "items": [
-          {
-            "title": "~З~акрыть",
-            "command": "cm::CLOSE",
-            "key": "Alt-F3",
-            "help": 0
-          },
-          {
-            "title": "~С~ледующее",
-            "command": "cm::NEXT",
-            "key": "F6",
-            "help": 0
-          }
-        ]
-      }
-    ],
-    "status": [
-      {
-        "text": "~F2~ Копирование",
-        "key": "F2",
-        "command": "CM_COPY"
-      },
-      {
-        "text": "~F3~ Поток",
-        "key": "F3",
-        "command": "CM_PRIMES"
-      },
-      {
-        "text": "~F4~ Виды полос",
-        "key": "F4",
-        "command": "CM_GALLERY"
-      },
-      {
-        "text": "~Alt-X~ Выход",
-        "key": "Alt+X",
-        "command": "cm::QUIT"
-      },
-      {
-        "text": "",
-        "key": "F10",
-        "command": "cm::MENU"
-      },
-      {
-        "text": "",
-        "key": "Alt+F3",
-        "command": "cm::CLOSE"
-      }
-    ],
-    "commands": [
-      {
-        "name": "CM_COPY",
-        "value": 100,
-        "action": "",
-        "comment": ""
-      },
-      {
-        "name": "CM_PRIMES",
-        "value": 101,
-        "action": "",
-        "comment": ""
-      },
-      {
-        "name": "CM_GALLERY",
-        "value": 102,
-        "action": "",
-        "comment": ""
-      }
-    ]
-  }
-}
+format = "tvstudio-project"
+version = 1
+name = "progress"
+forms = ["copy_dialog", "run_primes", "gallery"]
+open_files = ["src/main.rs"]
+
+[app]
+title = "progress"
+russian = false
+startup_form = ""
+
+[[app.menu]]
+title = "~П~римеры"
+
+[[app.menu.items]]
+title = "~К~опирование файлов"
+command = "CM_COPY"
+key = "F2"
+help = 0
+
+[[app.menu.items]]
+title = "~П~ростые числа (поток)"
+command = "CM_PRIMES"
+key = "F3"
+help = 0
+
+[[app.menu.items]]
+title = "~В~иды полос"
+command = "CM_GALLERY"
+key = "F4"
+help = 0
+
+[[app.menu.items]]
+separator = true
+
+[[app.menu.items]]
+title = "~В~ыход"
+command = "cm::QUIT"
+key = "Alt-X"
+help = 0
+
+[[app.menu]]
+title = "~О~кна"
+
+[[app.menu.items]]
+title = "~З~акрыть"
+command = "cm::CLOSE"
+key = "Alt-F3"
+help = 0
+
+[[app.menu.items]]
+title = "~С~ледующее"
+command = "cm::NEXT"
+key = "F6"
+help = 0
+
+[[app.status]]
+text = "~F2~ Копирование"
+key = "F2"
+command = "CM_COPY"
+
+[[app.status]]
+text = "~F3~ Поток"
+key = "F3"
+command = "CM_PRIMES"
+
+[[app.status]]
+text = "~F4~ Виды полос"
+key = "F4"
+command = "CM_GALLERY"
+
+[[app.status]]
+text = "~Alt-X~ Выход"
+key = "Alt+X"
+command = "cm::QUIT"
+
+[[app.status]]
+text = ""
+key = "F10"
+command = "cm::MENU"
+
+[[app.status]]
+text = ""
+key = "Alt+F3"
+command = "cm::CLOSE"
+
+[[app.commands]]
+name = "CM_COPY"
+value = 100
+action = ""
+comment = ""
+
+[[app.commands]]
+name = "CM_PRIMES"
+value = 101
+action = ""
+comment = ""
+
+[[app.commands]]
+name = "CM_GALLERY"
+value = 102
+action = ""
+comment = ""

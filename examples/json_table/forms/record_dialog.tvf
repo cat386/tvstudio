@@ -1,37 +1,33 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "record_dialog",
-  "title": "Запись {}",
-  "x": 10,
-  "y": 3,
-  "w": 60,
-  "h": 16,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 0,
-  "controls": [
-    {
-      "kind": "table",
-      "name": "tid",
-      "x": 2,
-      "y": 2,
-      "w": 56,
-      "h": 10,
-      "items": ["Поле:16", "Значение:36"],
-      "scrollbar": true
-    },
-    {
-      "kind": "button",
-      "name": "button1",
-      "x": 24,
-      "y": 13,
-      "w": 12,
-      "h": 2,
-      "text": "O~K~",
-      "command": "cm::OK",
-      "default": true,
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "record_dialog"
+title = "Запись {}"
+x = 10
+y = 3
+w = 60
+h = 16
+centered = true
+palette = "gray"
+help_ctx = 0
+
+[[controls]]
+kind = "table"
+name = "tid"
+x = 2
+y = 2
+w = 56
+h = 10
+items = ["Поле:16", "Значение:36"]
+scrollbar = true
+
+[[controls]]
+kind = "button"
+name = "button1"
+x = 24
+y = 13
+w = 12
+h = 2
+text = "O~K~"
+command = "cm::OK"
+default = true
+scrollbar = false

@@ -1,122 +1,118 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "dialog",
-  "title": "Настройки",
-  "x": 10,
-  "y": 3,
-  "w": 56,
-  "h": 18,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 20,
-  "controls": [
-    {
-      "kind": "input_line",
-      "name": "name",
-      "x": 14,
-      "y": 2,
-      "w": 38,
-      "h": 1,
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label1",
-      "x": 2,
-      "y": 2,
-      "w": 11,
-      "h": 1,
-      "text": "~И~мя:",
-      "link": "name",
-      "scrollbar": false
-    },
-    {
-      "kind": "check_boxes",
-      "name": "opts",
-      "x": 3,
-      "y": 5,
-      "w": 23,
-      "h": 3,
-      "items": ["~Ж~ирный", "~К~урсив", "~П~одчёркнутый"],
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label2",
-      "x": 2,
-      "y": 4,
-      "w": 10,
-      "h": 1,
-      "text": "Стиль",
-      "link": "opts",
-      "scrollbar": false
-    },
-    {
-      "kind": "radio_buttons",
-      "name": "color",
-      "x": 29,
-      "y": 5,
-      "w": 23,
-      "h": 3,
-      "items": ["~С~иний", "~З~елёный", "К~р~асный"],
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label3",
-      "x": 28,
-      "y": 4,
-      "w": 10,
-      "h": 1,
-      "text": "Цвет",
-      "link": "color",
-      "scrollbar": false
-    },
-    {
-      "kind": "list_box",
-      "name": "list",
-      "x": 3,
-      "y": 10,
-      "w": 50,
-      "h": 4,
-      "items": ["Rust", "C++", "Pascal", "C", "Go", "Zig", "Ada", "Modula-2", "Oberon", "Fortran"],
-      "scrollbar": true,
-      "columns": 2
-    },
-    {
-      "kind": "label",
-      "name": "label4",
-      "x": 2,
-      "y": 9,
-      "w": 10,
-      "h": 1,
-      "text": "~Я~зык",
-      "link": "list",
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button1",
-      "x": 14,
-      "y": 15,
-      "w": 12,
-      "h": 2,
-      "text": "~O~K",
-      "command": "cm::OK",
-      "default": true,
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button2",
-      "x": 30,
-      "y": 15,
-      "w": 12,
-      "h": 2,
-      "text": "Отмена",
-      "command": "cm::CANCEL",
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "dialog"
+title = "Настройки"
+x = 10
+y = 3
+w = 56
+h = 18
+centered = true
+palette = "gray"
+help_ctx = 20
+
+[[controls]]
+kind = "input_line"
+name = "name"
+x = 14
+y = 2
+w = 38
+h = 1
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label1"
+x = 2
+y = 2
+w = 11
+h = 1
+text = "~И~мя:"
+link = "name"
+scrollbar = false
+
+[[controls]]
+kind = "check_boxes"
+name = "opts"
+x = 3
+y = 5
+w = 23
+h = 3
+items = ["~Ж~ирный", "~К~урсив", "~П~одчёркнутый"]
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label2"
+x = 2
+y = 4
+w = 10
+h = 1
+text = "Стиль"
+link = "opts"
+scrollbar = false
+
+[[controls]]
+kind = "radio_buttons"
+name = "color"
+x = 29
+y = 5
+w = 23
+h = 3
+items = ["~С~иний", "~З~елёный", "К~р~асный"]
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label3"
+x = 28
+y = 4
+w = 10
+h = 1
+text = "Цвет"
+link = "color"
+scrollbar = false
+
+[[controls]]
+kind = "list_box"
+name = "list"
+x = 3
+y = 10
+w = 50
+h = 4
+items = ["Rust", "C++", "Pascal", "C", "Go", "Zig", "Ada", "Modula-2", "Oberon", "Fortran"]
+scrollbar = true
+columns = 2
+
+[[controls]]
+kind = "label"
+name = "label4"
+x = 2
+y = 9
+w = 10
+h = 1
+text = "~Я~зык"
+link = "list"
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button1"
+x = 14
+y = 15
+w = 12
+h = 2
+text = "~O~K"
+command = "cm::OK"
+default = true
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button2"
+x = 30
+y = 15
+w = 12
+h = 2
+text = "Отмена"
+command = "cm::CANCEL"
+scrollbar = false

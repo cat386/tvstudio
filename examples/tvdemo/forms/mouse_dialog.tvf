@@ -1,68 +1,64 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "mouse_dialog",
-  "title": "Mouse options",
-  "x": 10,
-  "y": 3,
-  "w": 34,
-  "h": 12,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 0,
-  "controls": [
-    {
-      "kind": "scroll_bar",
-      "name": "scroll",
-      "x": 3,
-      "y": 4,
-      "w": 27,
-      "h": 1,
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label1",
-      "x": 2,
-      "y": 2,
-      "w": 19,
-      "h": 1,
-      "text": "~M~ouse double click",
-      "link": "scroll",
-      "scrollbar": false
-    },
-    {
-      "kind": "check_boxes",
-      "name": "checks1",
-      "x": 3,
-      "y": 6,
-      "w": 27,
-      "h": 1,
-      "items": ["~R~everse mouse buttons"],
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button1",
-      "x": 9,
-      "y": 9,
-      "w": 10,
-      "h": 2,
-      "text": "O~K~",
-      "command": "cm::OK",
-      "default": true,
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button2",
-      "x": 21,
-      "y": 9,
-      "w": 10,
-      "h": 2,
-      "text": "Cancel",
-      "command": "cm::CANCEL",
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "mouse_dialog"
+title = "Mouse options"
+x = 10
+y = 3
+w = 34
+h = 12
+centered = true
+palette = "gray"
+help_ctx = 0
+
+[[controls]]
+kind = "scroll_bar"
+name = "scroll"
+x = 3
+y = 4
+w = 27
+h = 1
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label1"
+x = 2
+y = 2
+w = 19
+h = 1
+text = "~M~ouse double click"
+link = "scroll"
+scrollbar = false
+
+[[controls]]
+kind = "check_boxes"
+name = "checks1"
+x = 3
+y = 6
+w = 27
+h = 1
+items = ["~R~everse mouse buttons"]
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button1"
+x = 9
+y = 9
+w = 10
+h = 2
+text = "O~K~"
+command = "cm::OK"
+default = true
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button2"
+x = 21
+y = 9
+w = 10
+h = 2
+text = "Cancel"
+command = "cm::CANCEL"
+scrollbar = false

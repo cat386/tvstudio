@@ -1,63 +1,55 @@
-{
-  "format": "tvstudio-project",
-  "version": 1,
-  "name": "three_panes",
-  "forms": [],
-  "open_files": ["src/main.rs"],
-  "app": {
-    "title": "three_panes",
-    "russian": false,
-    "startup_form": "",
-    "menu": [
-      {
-        "title": "~О~кно",
-        "items": [
-          {
-            "title": "Р~а~спахнуть",
-            "command": "cm::ZOOM",
-            "key": "F5",
-            "help": 0
-          },
-          {
-            "title": "~Р~азмер/перемещение",
-            "command": "cm::RESIZE",
-            "key": "Ctrl-F5",
-            "help": 0
-          },
-          {
-            "separator": true
-          },
-          {
-            "title": "~В~ыход",
-            "command": "cm::QUIT",
-            "key": "Alt-X",
-            "help": 0
-          }
-        ]
-      }
-    ],
-    "status": [
-      {
-        "text": "~Alt-X~ Выход",
-        "key": "Alt+X",
-        "command": "cm::QUIT"
-      },
-      {
-        "text": "~F5~ Распахнуть",
-        "key": "F5",
-        "command": "cm::ZOOM"
-      },
-      {
-        "text": "",
-        "key": "Ctrl+F5",
-        "command": "cm::RESIZE"
-      },
-      {
-        "text": "",
-        "key": "F10",
-        "command": "cm::MENU"
-      }
-    ],
-    "commands": []
-  }
-}
+format = "tvstudio-project"
+version = 1
+name = "three_panes"
+forms = []
+open_files = ["src/main.rs"]
+
+[app]
+title = "three_panes"
+russian = false
+startup_form = ""
+commands = []
+
+[[app.menu]]
+title = "~О~кно"
+
+[[app.menu.items]]
+title = "Р~а~спахнуть"
+command = "cm::ZOOM"
+key = "F5"
+help = 0
+
+[[app.menu.items]]
+title = "~Р~азмер/перемещение"
+command = "cm::RESIZE"
+key = "Ctrl-F5"
+help = 0
+
+[[app.menu.items]]
+separator = true
+
+[[app.menu.items]]
+title = "~В~ыход"
+command = "cm::QUIT"
+key = "Alt-X"
+help = 0
+
+[[app.status]]
+text = "~Alt-X~ Выход"
+key = "Alt+X"
+command = "cm::QUIT"
+
+[[app.status]]
+text = "~F5~ Распахнуть"
+key = "F5"
+command = "cm::ZOOM"
+
+[[app.status]]
+text = ""
+key = "Ctrl+F5"
+command = "cm::RESIZE"
+
+[[app.status]]
+text = ""
+key = "F10"
+command = "cm::MENU"

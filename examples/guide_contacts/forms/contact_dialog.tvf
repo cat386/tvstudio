@@ -1,133 +1,129 @@
-{
-  "format": "tvstudio-form",
-  "version": 1,
-  "name": "contact_dialog",
-  "title": "{title}",
-  "x": 10,
-  "y": 3,
-  "w": 52,
-  "h": 17,
-  "centered": true,
-  "palette": "gray",
-  "help_ctx": 0,
-  "controls": [
-    {
-      "kind": "input_line",
-      "name": "name",
-      "x": 13,
-      "y": 2,
-      "w": 36,
-      "h": 1,
-      "max_len": 60,
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label1",
-      "x": 2,
-      "y": 2,
-      "w": 10,
-      "h": 1,
-      "text": "~И~мя:",
-      "link": "name",
-      "scrollbar": false
-    },
-    {
-      "kind": "input_line",
-      "name": "phone",
-      "x": 13,
-      "y": 4,
-      "w": 36,
-      "h": 1,
-      "max_len": 30,
-      "validator": "filter:0123456789+-() ",
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label2",
-      "x": 2,
-      "y": 4,
-      "w": 10,
-      "h": 1,
-      "text": "~Т~елефон:",
-      "link": "phone",
-      "scrollbar": false
-    },
-    {
-      "kind": "input_line",
-      "name": "email",
-      "x": 13,
-      "y": 6,
-      "w": 36,
-      "h": 1,
-      "max_len": 60,
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label3",
-      "x": 2,
-      "y": 6,
-      "w": 10,
-      "h": 1,
-      "text": "~П~очта:",
-      "link": "email",
-      "scrollbar": false
-    },
-    {
-      "kind": "radio_buttons",
-      "name": "group",
-      "x": 3,
-      "y": 9,
-      "w": 19,
-      "h": 3,
-      "items": ["~С~емья", "~Р~абота", "~Д~рузья"],
-      "scrollbar": false
-    },
-    {
-      "kind": "label",
-      "name": "label4",
-      "x": 2,
-      "y": 8,
-      "w": 10,
-      "h": 1,
-      "text": "~Г~руппа",
-      "link": "group",
-      "scrollbar": false
-    },
-    {
-      "kind": "check_boxes",
-      "name": "checks1",
-      "x": 26,
-      "y": 9,
-      "w": 23,
-      "h": 1,
-      "items": ["Из~б~ранный"],
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button1",
-      "x": 12,
-      "y": 13,
-      "w": 12,
-      "h": 2,
-      "text": "O~K~",
-      "command": "cm::OK",
-      "default": true,
-      "scrollbar": false
-    },
-    {
-      "kind": "button",
-      "name": "button2",
-      "x": 27,
-      "y": 13,
-      "w": 12,
-      "h": 2,
-      "text": "Отмена",
-      "command": "cm::CANCEL",
-      "scrollbar": false
-    }
-  ]
-}
+format = "tvstudio-form"
+version = 1
+name = "contact_dialog"
+title = "{title}"
+x = 10
+y = 3
+w = 52
+h = 17
+centered = true
+palette = "gray"
+help_ctx = 0
+
+[[controls]]
+kind = "input_line"
+name = "name"
+x = 13
+y = 2
+w = 36
+h = 1
+max_len = 60
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label1"
+x = 2
+y = 2
+w = 10
+h = 1
+text = "~И~мя:"
+link = "name"
+scrollbar = false
+
+[[controls]]
+kind = "input_line"
+name = "phone"
+x = 13
+y = 4
+w = 36
+h = 1
+max_len = 30
+validator = "filter:0123456789+-() "
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label2"
+x = 2
+y = 4
+w = 10
+h = 1
+text = "~Т~елефон:"
+link = "phone"
+scrollbar = false
+
+[[controls]]
+kind = "input_line"
+name = "email"
+x = 13
+y = 6
+w = 36
+h = 1
+max_len = 60
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label3"
+x = 2
+y = 6
+w = 10
+h = 1
+text = "~П~очта:"
+link = "email"
+scrollbar = false
+
+[[controls]]
+kind = "radio_buttons"
+name = "group"
+x = 3
+y = 9
+w = 19
+h = 3
+items = ["~С~емья", "~Р~абота", "~Д~рузья"]
+scrollbar = false
+
+[[controls]]
+kind = "label"
+name = "label4"
+x = 2
+y = 8
+w = 10
+h = 1
+text = "~Г~руппа"
+link = "group"
+scrollbar = false
+
+[[controls]]
+kind = "check_boxes"
+name = "checks1"
+x = 26
+y = 9
+w = 23
+h = 1
+items = ["Из~б~ранный"]
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button1"
+x = 12
+y = 13
+w = 12
+h = 2
+text = "O~K~"
+command = "cm::OK"
+default = true
+scrollbar = false
+
+[[controls]]
+kind = "button"
+name = "button2"
+x = 27
+y = 13
+w = 12
+h = 2
+text = "Отмена"
+command = "cm::CANCEL"
+scrollbar = false
