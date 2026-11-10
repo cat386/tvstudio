@@ -8,6 +8,7 @@
 use tvision::*;
 
 use crate::cmds::*;
+use crate::dialogs::{build_message_box, flat};
 use crate::model::{is_ident, parse_key, Action, AppModel, CommandDef, MenuNode, StatusEntry, BUILTIN_COMMANDS};
 use crate::toolwins::Relay;
 
@@ -482,7 +483,7 @@ impl ListEditor {
         }
         let d = self.edit_dialog(p);
         self.pending = Some(p);
-        ctx.exec(Box::new(d), Some(self.dlg.id()), TAG_EDIT);
+        ctx.exec(Box::new(flat(d)), Some(self.dlg.id()), TAG_EDIT);
     }
 
     fn command(&mut self, c: u16, ctx: &mut Ctx) -> bool {

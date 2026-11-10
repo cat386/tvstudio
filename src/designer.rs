@@ -31,6 +31,7 @@ use tvision::*;
 
 use crate::builder::build_dialog;
 use crate::cmds::*;
+use crate::dialogs::build_message_box;
 use crate::json::{self, Json};
 use crate::model::{build_order, Control, Form, Kind};
 

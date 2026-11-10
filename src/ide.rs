@@ -19,7 +19,7 @@ use crate::cmds::*;
 use crate::codeedit::CodeWindow;
 use crate::codegen;
 use crate::designer::{Align, DesignWindow, DocRef, FormDoc, Reorder};
-use crate::dialogs::{self, Config};
+use crate::dialogs::{self, input_box, message_box, message_box_rect, Config};
 use crate::inspector::InspectorWindow;
 use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
@@ -351,7 +351,7 @@ impl Ide {
         if !Self::alive(app, self.project_win) {
             let mut w = ProjectWindow::new(l[0]);
             w.set_project(self.project.as_ref());
-            self.project_win = Some(app.insert_window(w));
+            self.project_win = Some(dialogs::insert(app, w));
         }
         // Инспектор (компоненты и свойства) — только там, где есть формы.
         // Он появился или исчез (сменился тип проекта) — дерево проекта
@@ -359,7 +359,7 @@ impl Ide {
         let mut changed = false;
         if self.form_tools() {
             if !Self::alive(app, self.inspector) {
-                self.inspector = Some(app.insert_window(InspectorWindow::new(l[1])));
+                self.inspector = Some(dialogs::insert(app, InspectorWindow::new(l[1])));
                 changed = true;
             }
         } else if let Some(id) = self.inspector.take() {
@@ -374,7 +374,7 @@ impl Ide {
             }
         }
         if !Self::alive(app, self.messages) {
-            self.messages = Some(app.insert_window(MessagesWindow::new(l[2])));
+            self.messages = Some(dialogs::insert(app, MessagesWindow::new(l[2])));
         }
     }
 
@@ -398,7 +398,7 @@ impl Ide {
     fn msgs<'a>(&mut self, app: &'a mut Program) -> &'a mut MessagesWindow {
         if !Self::alive(app, self.messages) {
             let l = self.layout(app);
-            let id = app.insert_window(MessagesWindow::new(l[2]));
+            let id = dialogs::insert(app, MessagesWindow::new(l[2]));
             self.messages = Some(id);
         }
         app.find_mut::<MessagesWindow>(self.messages.unwrap()).unwrap()
@@ -477,7 +477,7 @@ impl Ide {
                 }
                 self.editor_cfg(w.editor_mut());
                 self.lsp_state.diags_dirty = true;
-                app.insert_window(w)
+                dialogs::insert(app, w)
             }
         };
         if let Some((l, c)) = at {
@@ -600,7 +600,7 @@ impl Ide {
     }
 
     fn new_project(&mut self, app: &mut Program) {
-        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, "my_app", "Новый проект", true));
+        let (cmd, d) = dialogs::exec(app, dialogs::new_project_dialog(&self.cfg, "my_app", "Новый проект", true));
         if cmd != cm::OK {
             return;
         }
@@ -647,7 +647,7 @@ impl Ide {
     /// проект, меню, строка состояния и команды переходят в модель.
     fn import(&mut self, app: &mut Program) {
         let d = FileDialog::new("*.rs", "Импорт программы tvision-rs — главный файл", "~И~мя", fd::OPEN_BUTTON, 112);
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         if cmd == cm::CANCEL {
             return;
         }
@@ -658,7 +658,7 @@ impl Ide {
         } else {
             main.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
         };
-        let (cmd, d) = app.exec_dialog(dialogs::new_project_dialog(&self.cfg, &stem, "Импорт: новый проект", false));
+        let (cmd, d) = dialogs::exec(app, dialogs::new_project_dialog(&self.cfg, &stem, "Импорт: новый проект", false));
         if cmd != cm::OK {
             return;
         }
@@ -684,7 +684,7 @@ impl Ide {
 
     fn choose_project_file(&mut self, app: &mut Program) {
         let d = FileDialog::new(&format!("*.{}", PROJECT_EXT), "Открыть проект", "~И~мя", fd::OPEN_BUTTON, 110);
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         if cmd != cm::CANCEL {
             let f = d.file_name();
             self.open_project(app, &f);
@@ -696,7 +696,7 @@ impl Ide {
             return Self::info_box(app, "\x03Недавних проектов пока нет.");
         }
         let (d, list) = dialogs::recent_dialog(&self.cfg.recent);
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         if cmd == cm::OK {
             let i = d.win.group.find::<ListBox>(list).map(|l| l.focused).unwrap_or(0);
             if let Some(f) = self.cfg.recent.get(i).cloned() {
@@ -963,7 +963,7 @@ impl Ide {
                 f.x = f.x.clamp(0, (s.x - f.w).max(0));
                 f.y = f.y.clamp(0, (s.y - f.h).max(0));
                 let doc = FormDoc::new(f, path);
-                app.insert_window(DesignWindow::new(doc));
+                dialogs::insert(app, DesignWindow::new(doc));
             }
             Err(e) => Self::error(app, &e),
         }
@@ -972,7 +972,7 @@ impl Ide {
     fn new_form(&mut self, app: &mut Program) {
         let Some(p) = &self.project else { return };
         let existing = p.forms.clone();
-        let (cmd, d) = app.exec_dialog(dialogs::new_form_dialog(&existing));
+        let (cmd, d) = dialogs::exec(app, dialogs::new_form_dialog(&existing));
         if cmd != cm::OK {
             return;
         }
@@ -999,7 +999,7 @@ impl Ide {
         }
         let (mut d, list) = dialogs::recent_dialog(&p.forms);
         d.win.title = "Открыть форму".into();
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         if cmd == cm::OK {
             let i = d.win.group.find::<ListBox>(list).map(|l| l.focused).unwrap_or(0);
             if let Some(n) = self.project.as_ref().and_then(|p| p.forms.get(i).cloned()) {
@@ -1079,7 +1079,7 @@ impl Ide {
         let model = self.project.as_ref().map(|p| p.app.clone());
         let resolve = move |name: &str| model.as_ref().and_then(|a| a.command_value(name)).unwrap_or(cm::OK);
         let (d, _) = build_dialog(&form, &resolve);
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         let name = BUILTIN_NAME.iter().find(|(c, _)| *c == cmd).map(|(_, n)| n.to_string()).unwrap_or_else(|| cmd.to_string());
         let text = format!("Диалог закрыт командой {}.\n\n{}", name, describe_data(&form, &d.get_data()));
         message_box_rect(app, Rect::new(0, 0, 60, 16), &text, mf::INFORMATION | mf::OK_BUTTON, true);
@@ -1114,7 +1114,7 @@ impl Ide {
             let b = doc.borrow();
             dialogs::props_dialog(&b.form, b.primary())
         };
-        let (cmd, d) = app.exec_dialog(d);
+        let (cmd, d) = dialogs::exec(app, d);
         if cmd != cm::OK {
             return;
         }
@@ -1145,7 +1145,7 @@ impl Ide {
     fn edit_model(&mut self, app: &mut Program, kind: LeKind) {
         let Some(p) = &self.project else { return };
         let ed = ListEditor::new(kind, &p.app, &p.forms);
-        let (cmd, ed) = app.exec_dialog(ed);
+        let (cmd, ed) = dialogs::exec(app, ed);
         if cmd != cm::OK {
             return;
         }
@@ -1192,7 +1192,7 @@ impl Ide {
 
     fn app_options(&mut self, app: &mut Program) {
         let Some(p) = &self.project else { return };
-        let (cmd, d) = app.exec_dialog(dialogs::app_options_dialog(&p.app, &p.forms));
+        let (cmd, d) = dialogs::exec(app, dialogs::app_options_dialog(&p.app, &p.forms));
         if cmd != cm::OK {
             return;
         }
@@ -1392,11 +1392,11 @@ impl Ide {
         let s = app.desktop().group.vs.size;
         let r = Rect::new(0, 0, (s.x - 4).min(76), (s.y - 2).min(22));
         w.win.group.change_bounds(r);
-        app.insert_window(w);
+        dialogs::insert(app, w);
     }
 
     fn options(&mut self, app: &mut Program) {
-        let (cmd, d) = app.exec_dialog(dialogs::options_dialog(&self.cfg));
+        let (cmd, d) = dialogs::exec(app, dialogs::options_dialog(&self.cfg));
         if cmd != cm::OK {
             return;
         }
@@ -1436,7 +1436,7 @@ impl Ide {
             }
             cm::OPEN => {
                 let d = FileDialog::new("*.rs", "Открыть файл", "~И~мя", fd::OPEN_BUTTON, 111);
-                let (cmd, d) = app.exec_dialog(d);
+                let (cmd, d) = dialogs::exec(app, d);
                 if cmd != cm::CANCEL {
                     let f = d.file_name();
                     if f.extension().map(|x| x == PROJECT_EXT).unwrap_or(false) {

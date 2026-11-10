@@ -554,3 +554,24 @@ fn help_file_parses() {
     let h = tvision::HelpFile::parse(tvstudio::ide::HELP_SOURCE).expect("справка разбирается");
     let _ = h;
 }
+
+/// Ни у одного окна среды нет тени: инструменты, дизайнер формы, редактор
+/// кода, справка; диалоги и сообщения строятся без тени.
+#[test]
+fn windows_have_no_shadow() {
+    let mut t = T::new("shadow");
+    t.open_about();
+    let main = t.dir.join("src").join("main.rs");
+    t.ide.open_file(&mut t.app, &main, None).unwrap();
+    t.app.put_event(Event::KeyDown(kb::F1));
+    t.pump();
+    let ids: Vec<ViewId> = t.app.desktop().group.children.iter().map(|c| c.vs().id).collect();
+    assert!(ids.len() >= 6, "окна: {}", ids.len());
+    for id in ids {
+        let v = t.app.group.view(id).unwrap();
+        assert_eq!(v.vs().state & sf::SHADOW, 0, "у окна {} тень", v.as_window().map(|w| w.title.clone()).unwrap_or_default());
+    }
+    let d = tvstudio::dialogs::build_message_box(Rect::new(0, 0, 40, 9), "x", mf::OK_BUTTON);
+    assert_eq!(d.win.group.vs.state & sf::SHADOW, 0);
+    assert_eq!(tvstudio::dialogs::flat(Dialog::centered(30, 8, "x")).win.group.vs.state & sf::SHADOW, 0);
+}

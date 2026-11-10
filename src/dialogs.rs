@@ -10,6 +10,70 @@ use crate::json::{self, Json};
 use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, FormClass, Kind, ProjectKind};
 use crate::props::{self, Prop};
 
+// ======================================================================
+// Окна без тени
+// ======================================================================
+//
+// Окна tvision-rs рождаются с тенью (`sf::SHADOW`); в среде теней нет ни
+// у одного окна. Всё, что среда показывает, идёт через эти функции:
+// `exec` (модальные диалоги), `insert` (окна на рабочем столе) и свои
+// `message_box` / `input_box` вместо библиотечных (те создают диалог внутри).
+
+/// Окно без тени.
+pub fn flat<T: View>(mut v: T) -> T {
+    v.vs_mut().state &= !sf::SHADOW;
+    v
+}
+
+/// Модальный диалог без тени (вместо `app.exec_dialog`).
+pub fn exec<T: View>(app: &mut Program, v: T) -> (u16, T) {
+    app.exec_dialog(flat(v))
+}
+
+/// Окно на рабочий стол без тени (вместо `app.insert_window`).
+pub fn insert<T: View>(app: &mut Program, v: T) -> ViewId {
+    app.insert_window(flat(v))
+}
+
+/// Диалог сообщения без тени (для `ctx.exec` из представлений).
+pub fn build_message_box(r: Rect, msg: &str, options: u16) -> Dialog {
+    flat(tvision::build_message_box(r, msg, options))
+}
+
+/// Окно сообщения 40×9 в центре экрана, без тени.
+pub fn message_box(app: &mut Program, msg: &str, options: u16) -> u16 {
+    message_box_rect(app, Rect::new(0, 0, 40, 9), msg, options, true)
+}
+
+/// Окно сообщения заданного размера, без тени.
+pub fn message_box_rect(app: &mut Program, r: Rect, msg: &str, options: u16, centered: bool) -> u16 {
+    let mut d = build_message_box(r, msg, options);
+    if !centered {
+        d.win.group.vs.options &= !of::CENTERED;
+    }
+    exec(app, d).0
+}
+
+/// Окно ввода строки без тени (как `tvision::input_box`). `Some(текст)` — при OK.
+pub fn input_box(app: &mut Program, title: &str, label: &str, initial: &str, limit: usize) -> Option<String> {
+    let label_w = tvision::text::cstr_width(label) as i32;
+    let w = (label_w + 30).clamp(30, 70);
+    let mut d = Dialog::centered(w, 8, title);
+    let il = d.add(InputLine::new(Rect::new(4 + label_w, 2, w - 3, 3), limit));
+    d.add(Label::new(Rect::new(2, 2, 3 + label_w, 3), label, Some(il)));
+    d.add(Button::new(Rect::new(w - 24, 5, w - 14, 7), "O~K~", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(w - 12, 5, w - 2, 7), "Отмена", cm::CANCEL, bf::NORMAL));
+    d.select(il);
+    if let Some(v) = d.win.group.find_mut::<InputLine>(il) {
+        v.set_text(initial);
+    }
+    let (cmd, d) = exec(app, d);
+    if cmd != cm::OK {
+        return None;
+    }
+    d.win.group.find::<InputLine>(il).map(|v| v.text())
+}
+
 /// Строка «метка + поле ввода» (+ кнопка списка). Возвращает id поля.
 pub fn field(d: &mut Dialog, x: i32, y: i32, label: &str, text: &str, w: i32, combo: Option<&[&str]>) -> ViewId {
     let iw = if combo.is_some() { w - 3 } else { w };
