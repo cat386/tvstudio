@@ -21,6 +21,12 @@ fn projects() -> Vec<Project> {
         .collect()
 }
 
+/// Файл с переводами строк «\n»: копия, выложенная git на Windows со
+/// старыми настройками (до `.gitattributes`), может быть с «\r\n».
+fn read_lf(p: &std::path::Path) -> String {
+    std::fs::read_to_string(p).unwrap().replace("\r\n", "\n")
+}
+
 #[test]
 fn examples_are_consistent() {
     let ps = projects();
@@ -29,9 +35,9 @@ fn examples_are_consistent() {
         let forms: Vec<Form> = p.forms.iter().map(|n| Form::load(&p.form_path(n)).unwrap()).collect();
         let w = codegen::check_project(p, &forms);
         assert!(w.is_empty(), "{}: {:?}", p.name, w);
-        assert_eq!(std::fs::read_to_string(p.dir.join("src/ui.rs")).unwrap(), codegen::ui_rs(p, &forms), "{}: ui.rs устарел", p.name);
+        assert_eq!(read_lf(&p.dir.join("src/ui.rs")), codegen::ui_rs(p, &forms), "{}: ui.rs устарел", p.name);
         for f in &forms {
-            assert_eq!(std::fs::read_to_string(p.form_code_path(&f.name)).unwrap(), codegen::form_rs(p, f), "{}: форма {}", p.name, f.name);
+            assert_eq!(read_lf(&p.form_code_path(&f.name)), codegen::form_rs(p, f), "{}: форма {}", p.name, f.name);
         }
     }
     // Формы — у всех примеров с диалогами (25 форм в 13 проектах).
