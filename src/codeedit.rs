@@ -113,6 +113,9 @@ pub struct CodeEditor {
     pub lang: Lang,
     /// Диагностики сервера LSP для этого файла.
     pub diags: Vec<Underline>,
+    /// Подсказки в тексте (crates-lsp): (номер строки с 0, надпись) — серым
+    /// в конце строки.
+    pub hints: Vec<(usize, String)>,
     /// Список дополнения (если открыт).
     pub completion: Option<Completion>,
     /// Подсвечивать строку курсора.
@@ -134,6 +137,7 @@ impl CodeEditor {
             fe,
             lang: Lang::from_path(path),
             diags: Vec::new(),
+            hints: Vec::new(),
             completion: None,
             hl_line: true,
             hl_col: true,
@@ -512,6 +516,20 @@ impl View for CodeEditor {
                         b.move_char(x - dx, ' ', selected, 1);
                     }
                 }
+                // Подсказка в тексте — серым через два пробела после конца строки.
+                if let Some((_, h)) = self.hints.iter().find(|(l, _)| *l == li) {
+                    let hx = x + 2;
+                    let dim = if wide { with_fg256(normal, 244) } else { with_fore(normal, 8) };
+                    let dim = if on_line { with_bg_of(dim, cur_bg) } else { dim };
+                    let chars: Vec<char> = h.chars().collect();
+                    // Видимая часть: подсказка может начинаться левее края при прокрутке.
+                    let skip = dx.saturating_sub(hx);
+                    let at = hx.max(dx) - dx;
+                    if at < w && skip < chars.len() {
+                        let vis: String = chars[skip..].iter().collect();
+                        b.move_str_limited(at, &vis, dim, w - at);
+                    }
+                }
                 // Диагностика «в конце строки» (например, нет `;`) — пробел с фоном.
                 if x >= dx && x - dx < w {
                     match diag_at(line.len()) {
@@ -571,6 +589,12 @@ impl View for CodeEditor {
             // Ctrl+Space — дополнение (в терминалах приходит и как Ctrl+@ / NUL).
             if focused && ((k.key == Key::Char(' ') && k.mods.ctrl) || k.key == Key::Char('\0')) {
                 ctx.post_command(CM_COMPLETE, Info::None);
+                ev.clear();
+                return;
+            }
+            // Alt+Enter, Ctrl+. — быстрые исправления (раньше, чем Enter дойдёт до редактора).
+            if focused && ((k.key == Key::Enter && k.mods.alt) || (k.key == Key::Char('.') && k.mods.ctrl)) {
+                ctx.post_command(CM_CODE_ACTIONS, Info::None);
                 ev.clear();
                 return;
             }

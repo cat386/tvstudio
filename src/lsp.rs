@@ -168,6 +168,31 @@ pub struct CompletionItem {
     pub sort: String,
 }
 
+/// Подсказка в тексте (inlay hint): позиция и надпись.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InlayHint {
+    pub pos: LPos,
+    pub label: String,
+}
+
+/// Замена текста: диапазон и новый текст.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextEdit {
+    pub range: LRange,
+    pub text: String,
+}
+
+/// Быстрое исправление (code action) с готовыми правками по файлам.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CodeAction {
+    pub title: String,
+    /// Вид: `quickfix`, `refactor.rewrite`…
+    pub kind: String,
+    /// Предпочтительное исправление (`isPreferred`).
+    pub preferred: bool,
+    pub edits: Vec<(PathBuf, Vec<TextEdit>)>,
+}
+
 /// Событие от сервера для среды.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LspEvent {
@@ -187,6 +212,18 @@ pub enum LspEvent {
         id: i64,
         items: Vec<Location>,
     },
+    InlayHints {
+        id: i64,
+        items: Vec<InlayHint>,
+    },
+    /// Быстрые исправления; действия без правок (только команды) отброшены.
+    CodeActions {
+        id: i64,
+        items: Vec<CodeAction>,
+    },
+    /// Сервер просит заново запросить подсказки в тексте
+    /// (`workspace/inlayHint/refresh`).
+    RefreshHints,
     /// Ход длительной работы: заголовок, процент; `None` — закончено.
     Progress {
         title: String,
@@ -218,6 +255,10 @@ fn parse_range(j: &Json) -> LRange {
 
 fn pos_json(p: LPos) -> Json {
     Json::obj(vec![("line", Json::i(p.line as i64)), ("character", Json::i(p.col as i64))])
+}
+
+fn range_json(r: LRange) -> Json {
+    Json::obj(vec![("start", pos_json(r.start)), ("end", pos_json(r.end))])
 }
 
 /// Развернуть сниппет LSP в обычный текст: `foo(${1:x}, $2)$0` → `foo(x, )`.
@@ -324,6 +365,61 @@ fn parse_locations(result: &Json) -> Vec<Location> {
     }
 }
 
+/// Подсказки в тексте: надпись — строка или части `{value}`.
+fn parse_inlay_hints(result: &Json) -> Vec<InlayHint> {
+    let Json::Arr(a) = result else { return Vec::new() };
+    a.iter()
+        .map(|h| {
+            let label = match h.get("label") {
+                Some(Json::Str(s)) => s.clone(),
+                Some(Json::Arr(parts)) => parts.iter().map(|p| p.str("value")).collect(),
+                _ => String::new(),
+            };
+            InlayHint { pos: parse_pos(h.get("position").unwrap_or(&Json::Null)), label: label.trim().to_string() }
+        })
+        .filter(|h| !h.label.is_empty())
+        .collect()
+}
+
+/// Правки `WorkspaceEdit`: `changes` {uri: [TextEdit]} или `documentChanges`
+/// (TextDocumentEdit; создание, переименование и удаление файлов пропускаются).
+pub fn parse_workspace_edit(e: &Json) -> Vec<(PathBuf, Vec<TextEdit>)> {
+    let edits = |list: &[Json]| -> Vec<TextEdit> {
+        list.iter().map(|t| TextEdit { range: parse_range(t.get("range").unwrap_or(&Json::Null)), text: t.str("newText") }).collect()
+    };
+    let mut out: Vec<(PathBuf, Vec<TextEdit>)> = Vec::new();
+    if let Some(Json::Obj(ch)) = e.get("changes") {
+        for (uri, list) in ch {
+            if let Json::Arr(l) = list {
+                out.push((uri_to_path(uri), edits(l)));
+            }
+        }
+    }
+    for dc in e.arr("documentChanges") {
+        if let Some(td) = dc.get("textDocument") {
+            out.push((uri_to_path(&td.str("uri")), edits(dc.arr("edits"))));
+        }
+    }
+    out.retain(|(_, e)| !e.is_empty());
+    out
+}
+
+/// Быстрые исправления: `CodeAction` с `edit`; голые `Command` и действия
+/// только с командой отбрасываются (выполнять команды сервера среда не умеет).
+fn parse_code_actions(result: &Json) -> Vec<CodeAction> {
+    let Json::Arr(a) = result else { return Vec::new() };
+    let mut v: Vec<CodeAction> = a
+        .iter()
+        .filter_map(|c| {
+            let edits = parse_workspace_edit(c.get("edit")?);
+            (!edits.is_empty()).then(|| CodeAction { title: c.str("title"), kind: c.str("kind"), preferred: c.bool("isPreferred", false), edits })
+        })
+        .collect();
+    // Предпочтительные — первыми, затем исправления, затем остальное.
+    v.sort_by_key(|c| (!c.preferred, !c.kind.starts_with("quickfix")));
+    v
+}
+
 fn parse_diagnostics(params: &Json) -> (PathBuf, Vec<Diagnostic>) {
     let path = uri_to_path(&params.str("uri"));
     let items = params
@@ -360,6 +456,8 @@ pub enum ReqKind {
     Completion,
     Definition,
     References,
+    InlayHint,
+    CodeAction,
     Shutdown,
     Other,
 }
@@ -384,6 +482,10 @@ pub struct LspClient {
     progress: HashMap<String, String>,
     /// Последние строки stderr сервера (для сообщения об ошибке).
     pub stderr_tail: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Сервер умеет подсказки в тексте (`inlayHintProvider`).
+    pub has_inlay_hints: bool,
+    /// Сервер умеет быстрые исправления (`codeActionProvider`).
+    pub has_code_actions: bool,
 }
 
 fn read_message<R: BufRead>(r: &mut R) -> Option<Json> {
@@ -462,6 +564,8 @@ impl LspClient {
             queued: Vec::new(),
             progress: HashMap::new(),
             stderr_tail: tail,
+            has_inlay_hints: false,
+            has_code_actions: false,
         };
         let root_uri = path_to_uri(root);
         let name = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -474,9 +578,14 @@ impl LspClient {
                 "publishDiagnostics": {"relatedInformation": false},
                 "completion": {"completionItem": {"snippetSupport": true, "labelDetailsSupport": true}, "contextSupport": true},
                 "definition": {"linkSupport": true},
-                "references": {}
+                "references": {},
+                "inlayHint": {"dynamicRegistration": false},
+                "codeAction": {"codeActionLiteralSupport": {"codeActionKind": {"valueSet":
+                    ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source"]}},
+                    "isPreferredSupport": true}
             },
-            "workspace": {"configuration": true, "workspaceFolders": true}
+            "workspace": {"configuration": true, "workspaceFolders": true, "inlayHint": {"refreshSupport": true},
+                "workspaceEdit": {"documentChanges": true}}
         }"#,
         )
         .unwrap();
@@ -600,6 +709,35 @@ impl LspClient {
         self.request("textDocument/references", Json::obj(v), ReqKind::References)
     }
 
+    /// Подсказки в тексте для строк `0..lines` документа.
+    pub fn inlay_hints(&mut self, p: &Path, lines: usize) -> i64 {
+        let r = LRange { start: LPos::default(), end: LPos { line: lines, col: 0 } };
+        self.request("textDocument/inlayHint", Json::obj(vec![("textDocument", Self::doc_id(p)), ("range", range_json(r))]), ReqKind::InlayHint)
+    }
+
+    /// Быстрые исправления для диапазона `r` с диагностиками в нём.
+    pub fn code_actions(&mut self, p: &Path, r: LRange, diags: &[Diagnostic]) -> i64 {
+        let d: Vec<Json> = diags
+            .iter()
+            .map(|d| {
+                let mut v = vec![("range", range_json(d.range)), ("severity", Json::i(d.severity as i64)), ("message", Json::s(&d.message))];
+                if !d.code.is_empty() {
+                    v.push(("code", Json::s(&d.code)));
+                }
+                if !d.source.is_empty() {
+                    v.push(("source", Json::s(&d.source)));
+                }
+                Json::obj(v)
+            })
+            .collect();
+        let params = Json::obj(vec![
+            ("textDocument", Self::doc_id(p)),
+            ("range", range_json(r)),
+            ("context", Json::obj(vec![("diagnostics", Json::Arr(d)), ("triggerKind", Json::i(1))])),
+        ]);
+        self.request("textDocument/codeAction", params, ReqKind::CodeAction)
+    }
+
     /// Ответить на запрос сервера.
     fn reply(&mut self, id: &Json, result: Json) {
         let m = Json::obj(vec![("jsonrpc", Json::s("2.0")), ("id", id.clone()), ("result", result)]);
@@ -632,6 +770,11 @@ impl LspClient {
                 "workspace/configuration" => {
                     let dflt = if self.language == "rust" { Json::Null } else { Json::obj(vec![]) };
                     Json::Arr(m.get("params").map(|p| p.arr("items")).unwrap_or(&[]).iter().map(|_| dflt.clone()).collect())
+                }
+                // Подсказки устарели (crates-lsp получил версии с crates.io).
+                "workspace/inlayHint/refresh" => {
+                    out.push(LspEvent::RefreshHints);
+                    Json::Null
                 }
                 _ => Json::Null,
             };
@@ -694,6 +837,9 @@ impl LspClient {
                     "utf-8" => Encoding::Utf8,
                     _ => Encoding::Utf16,
                 };
+                let has = |k: &str| matches!(caps.get(k), Some(Json::Bool(true)) | Some(Json::Obj(_)));
+                self.has_inlay_hints = has("inlayHintProvider");
+                self.has_code_actions = has("codeActionProvider");
                 self.ready = true;
                 let init = Json::obj(vec![("jsonrpc", Json::s("2.0")), ("method", Json::s("initialized")), ("params", Json::obj(vec![]))]);
                 self.send(&init);
@@ -705,6 +851,8 @@ impl LspClient {
             }
             ReqKind::Completion => out.push(LspEvent::Completion { id, items: parse_completion(&result) }),
             ReqKind::Definition | ReqKind::References => out.push(LspEvent::Locations { id, items: parse_locations(&result) }),
+            ReqKind::InlayHint => out.push(LspEvent::InlayHints { id, items: parse_inlay_hints(&result) }),
+            ReqKind::CodeAction => out.push(LspEvent::CodeActions { id, items: parse_code_actions(&result) }),
             ReqKind::Shutdown | ReqKind::Other => {}
         }
     }
@@ -797,5 +945,48 @@ mod tests {
         let (p, v) = parse_diagnostics(&d);
         assert_eq!(p, PathBuf::from("/a/b.rs"));
         assert_eq!((v[0].severity, v[0].code.as_str()), (Severity::Error, "E0308"));
+    }
+
+    /// Подсказки в тексте: надпись — строка или части; пустые отброшены.
+    #[test]
+    fn inlay_hints_parse() {
+        let r = json::parse(
+            r#"[{"position":{"line":4,"character":11},"label":"✓","paddingLeft":true},
+                {"position":{"line":5,"character":3},"label":[{"value":"❌ "},{"value":"1.0.210"}]},
+                {"position":{"line":6,"character":0},"label":"  "}]"#,
+        )
+        .unwrap();
+        let h = parse_inlay_hints(&r);
+        assert_eq!(h.len(), 2);
+        assert_eq!((h[0].pos, h[0].label.as_str()), (LPos { line: 4, col: 11 }, "✓"));
+        assert_eq!(h[1].label, "❌ 1.0.210");
+    }
+
+    /// Быстрые исправления: обе формы WorkspaceEdit, команды без правок
+    /// отброшены, предпочтительные и quickfix — первыми.
+    #[test]
+    fn code_actions_parse() {
+        let r = json::parse(
+            r#"[{"title":"cmd","command":"x"},
+                {"title":"only command","command":{"title":"x","command":"x"}},
+                {"title":"refactor","kind":"refactor.rewrite","edit":{"documentChanges":[
+                    {"textDocument":{"uri":"file:///p/Cargo.toml","version":3},"edits":[{"range":{"start":{"line":1,"character":0},"end":{"line":2,"character":0}},"newText":""}]},
+                    {"kind":"create","uri":"file:///p/new.rs"}]}},
+                {"title":"fix","kind":"quickfix","edit":{"changes":{"file:///p/Cargo.toml":[{"range":{"start":{"line":4,"character":9},"end":{"line":4,"character":12}},"newText":"1.0.210"}]}}},
+                {"title":"best","kind":"refactor","isPreferred":true,"edit":{"changes":{"file:///p/a.rs":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"use x;\n"}]}}},
+                {"title":"empty","edit":{"changes":{}}}]"#,
+        )
+        .unwrap();
+        let a = parse_code_actions(&r);
+        let titles: Vec<&str> = a.iter().map(|x| x.title.as_str()).collect();
+        assert_eq!(titles, vec!["best", "fix", "refactor"]);
+        assert_eq!(
+            a[1].edits,
+            vec![(
+                PathBuf::from("/p/Cargo.toml"),
+                vec![TextEdit { range: LRange { start: LPos { line: 4, col: 9 }, end: LPos { line: 4, col: 12 } }, text: "1.0.210".into() }]
+            )]
+        );
+        assert_eq!(a[2].edits[0].1[0].text, "");
     }
 }

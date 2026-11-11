@@ -350,3 +350,95 @@ fn toml_server_for_cargo_toml() {
     t.cmd(CM_CLOSE_PROJECT);
     assert!(t.ide.lsp.is_none() && t.ide.lsp_toml.is_none());
 }
+
+/// Cargo.toml: подсказки сервера (crates-lsp) — серым в конце строки
+/// зависимости, обновляются после правки и по просьбе сервера (после
+/// сохранения); быстрые исправления (Alt+Enter) — список, правка в тексте.
+#[test]
+fn cargo_toml_hints_and_quick_fixes() {
+    let base = std::env::temp_dir().join(format!("tvs_lsp_hints_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let p = Project::create_rust(&base, "demo").unwrap();
+    let cargo = p.dir.join("Cargo.toml");
+    std::fs::write(&cargo, "[package]\nname = \"demo\"\n\n[dependencies]\nserde = \"1\"\nlegacy = \"0.1\" # old\nbad = \"ОШИБКА\"\n").unwrap();
+
+    let mut b = HeadlessBackend::new(120, 40);
+    b.esc_budget = 0;
+    let app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+    let fake = env!("CARGO_BIN_EXE_tvs-fake-lsp");
+    let cfg = Config { lsp_command: fake.into(), toml_lsp_command: fake.into(), ..Config::default() };
+    let mut ide = Ide::new(cfg, true);
+    let mut app = app;
+    ide.startup(&mut app, vec![p.file().display().to_string()]);
+    app.pump(&mut ide);
+    let win = ide.open_file(&mut app, &cargo, None).unwrap();
+    let mut t = T { app, ide, win, file: cargo.clone() };
+    let hint = |t: &T, line: usize| t.ed().hints.iter().find(|(l, _)| *l == line).map(|(_, h)| h.clone());
+
+    // Подсказки: строки с «= "» (name, serde, legacy, bad); у legacy — из частей.
+    assert!(t.wait(|t| hint(t, 4).is_some()), "нет подсказок: {:?}", t.ed().hints);
+    assert!(hint(&t, 4).unwrap().starts_with("✓ fake"));
+    assert_eq!(hint(&t, 5).as_deref(), Some("❌ 9.9.9"));
+    assert!(hint(&t, 3).is_none(), "[dependencies] без подсказки");
+    // На экране — после текста строки, через два пробела.
+    let s = t.app.screen_text();
+    assert!(s.lines().any(|l| l.contains("serde = \"1\"  ✓ fake")), "{}", s);
+    assert!(s.lines().any(|l| l.contains("legacy = \"0.1\" # old  ❌ 9.9.9")), "{}", s);
+
+    // Правка — подсказки запрашиваются заново (номер запроса растёт).
+    let n0 = hint(&t, 4).unwrap();
+    t.goto(3, 1);
+    t.typed("# x");
+    assert!(t.wait(|t| hint(t, 4).map(|h| h != n0).unwrap_or(false)), "после правки подсказки не обновились");
+    // Сохранение — сервер просит обновить подсказки (workspace/inlayHint/refresh).
+    let n1 = hint(&t, 4).unwrap();
+    t.cmd(cm::SAVE);
+    assert!(t.wait(|t| hint(t, 4).map(|h| h != n1).unwrap_or(false)), "после refresh подсказки не обновились");
+
+    // Быстрые исправления на строке с ОШИБКА: первое — предпочтительное
+    // («Заменить ОШИБКА на ок»), команда без правок отброшена.
+    assert!(t.wait(|t| t.ed().diags.iter().any(|d| d.line == 6)));
+    t.goto(7, 8);
+    // Запрос — напрямую, без цикла событий: список откроется, когда придёт
+    // ответ, и Enter для него должен уже ждать в очереди (в цикле событий
+    // быстрый ответ открыл бы список раньше, чем тест положит Enter).
+    t.ide.lsp_code_actions(&mut t.app);
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    let t0 = Instant::now();
+    while t.ed().fe.editor.line(6).contains("ОШИБКА") && t0.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+        t.ide.lsp_idle(&mut t.app);
+    }
+    assert_eq!(t.ed().fe.editor.line(6), "bad = \"ок\"");
+    assert!(t.msgs().entries.iter().any(|e| e.text.contains("Исправление: Заменить ОШИБКА на ок")));
+
+    // Второе действие (documentChanges): удалить строку.
+    t.pump();
+    t.goto(7, 1);
+    // Вставка мимо набора: кавычка после «=» сама открыла бы дополнение.
+    t.app.find_mut::<CodeWindow>(t.win).unwrap().editor_mut().fe.editor.insert_text("x = \"ОШИБКА\"\n", false);
+    assert!(t.wait(|t| t.ed().diags.iter().any(|d| d.line == 6)));
+    let lines = t.ed().fe.editor.line_count();
+    t.goto(7, 8);
+    t.ide.lsp_code_actions(&mut t.app);
+    t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Down, Mods::NONE)));
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    let t0 = Instant::now();
+    while t.ed().fe.editor.line_count() == lines && t0.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+        t.ide.lsp_idle(&mut t.app);
+    }
+    assert_eq!(t.ed().fe.editor.line_count(), lines - 1);
+    assert_eq!(t.ed().fe.editor.line(6), "bad = \"ок\"", "удалена строка с ОШИБКА");
+
+    // Нет исправлений — сообщение; Alt+Enter в редакторе — та же команда.
+    t.pump();
+    t.goto(1, 1);
+    let lines = t.ed().fe.editor.line_count();
+    t.key(KeyEvent::new(Key::Enter, Mods::ALT));
+    assert!(t.wait(|t| t.msgs().entries.iter().any(|e| e.text.contains("Быстрых исправлений здесь нет"))));
+    assert_eq!(t.ed().fe.editor.line_count(), lines, "Alt+Enter не вставляет строку");
+    t.ide.shutdown(&mut t.app);
+    let _ = std::fs::remove_dir_all(&base);
+}

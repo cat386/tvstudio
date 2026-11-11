@@ -54,6 +54,25 @@ pub fn message_box_rect(app: &mut Program, r: Rect, msg: &str, options: u16, cen
     exec(app, d).0
 }
 
+/// Выбор из списка (Enter или двойной щелчок — выбрать, Esc — отмена).
+/// `Some(номер)` выбранного пункта.
+pub fn choose(app: &mut Program, title: &str, items: &[String]) -> Option<usize> {
+    let w = (items.iter().map(|s| tvision::text::cstr_width(s)).max().unwrap_or(10) as i32 + 6).clamp(36, 76);
+    let h = (items.len() as i32).clamp(3, 14) + 6;
+    let mut d = Dialog::centered(w, h, title);
+    let mut list = ListBox::new(Rect::new(2, 2, w - 2, h - 4), 1, None);
+    list.set_items(items.to_vec());
+    let list_id = d.add(list);
+    d.add(Button::new(Rect::new(w - 26, h - 3, w - 14, h - 1), "O~K~", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(w - 13, h - 3, w - 2, h - 1), "Отмена", cm::CANCEL, bf::NORMAL));
+    d.select(list_id);
+    let (cmd, d) = exec(app, d);
+    if cmd != cm::OK {
+        return None;
+    }
+    d.win.group.find::<ListBox>(list_id).map(|l| l.focused).filter(|&i| i < items.len())
+}
+
 /// Окно ввода строки без тени (как `tvision::input_box`). `Some(текст)` — при OK.
 pub fn input_box(app: &mut Program, title: &str, label: &str, initial: &str, limit: usize) -> Option<String> {
     let label_w = tvision::text::cstr_width(label) as i32;

@@ -8,7 +8,15 @@
 //!   (так тесты видят, какому серверу какой файл достался);
 //! * дополнение: всегда `push_str` (сниппет с textEdit), `len`, `capacity`;
 //! * определение: строка `fn <слово>` в любом открытом документе;
-//! * ссылки: все вхождения слова целиком во всех открытых документах.
+//! * ссылки: все вхождения слова целиком во всех открытых документах;
+//! * подсказки в тексте: в конце каждой строки с `= "` — `✓ fake N`, где N —
+//!   номер запроса подсказок (строки со словом `old` — `❌` и версия
+//!   частями надписи, как у crates-lsp);
+//! * после `didSave` сервер сам просит клиента обновить подсказки
+//!   (`workspace/inlayHint/refresh`);
+//! * быстрые исправления для строки со словом `ОШИБКА`: «Заменить ОШИБКА на
+//!   ок» (`changes`, предпочтительное), «Удалить строку» (`documentChanges`)
+//!   и действие с одной лишь командой (клиент должен его отбросить).
 //!
 //! Перед ответом на initialize сервер сам спрашивает клиента
 //! (`workspace/configuration`, `window/workDoneProgress/create`) и
@@ -125,6 +133,7 @@ fn main() {
     let mut langs: HashMap<String, String> = HashMap::new();
     let mut r = BufReader::new(std::io::stdin().lock());
     let mut next = 1000;
+    let mut hint_no = 0;
     while let Some(m) = read(&mut r) {
         let method = m.str("method");
         let id = m.get("id").cloned();
@@ -146,7 +155,7 @@ fn main() {
                 let offered = p.get("capabilities").and_then(|c| c.get("general")).map(|g| g.strings("positionEncodings")).unwrap_or_default();
                 let enc = if offered.iter().any(|e| e == "utf-32") { "utf-32" } else { "utf-16" };
                 let caps = json::parse(&format!(
-                    r#"{{"positionEncoding":"{}","textDocumentSync":1,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true}}"#,
+                    r#"{{"positionEncoding":"{}","textDocumentSync":1,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"inlayHintProvider":true,"codeActionProvider":{{"codeActionKinds":["quickfix"]}}}}"#,
                     enc
                 ))
                 .unwrap();
@@ -221,6 +230,66 @@ fn main() {
                     for (l, c) in occurrences(&docs[uri], &w) {
                         v.push(Json::obj(vec![("uri", Json::s(uri)), ("range", range(l, c, c + w.chars().count()))]));
                     }
+                }
+                reply(id.as_ref().unwrap(), Json::Arr(v));
+            }
+            "textDocument/inlayHint" => {
+                hint_no += 1;
+                let text = docs.get(&doc_uri).cloned().unwrap_or_default();
+                let mut v = Vec::new();
+                for (li, line) in text.lines().enumerate() {
+                    if !line.contains("= \"") {
+                        continue;
+                    }
+                    let end = pos(li, line.chars().count());
+                    let label = if line.contains("old") {
+                        Json::Arr(vec![Json::obj(vec![("value", Json::s("❌ "))]), Json::obj(vec![("value", Json::s("9.9.9"))])])
+                    } else {
+                        Json::s(&format!("✓ fake {}", hint_no))
+                    };
+                    v.push(Json::obj(vec![("position", end), ("label", label), ("paddingLeft", Json::Bool(true))]));
+                }
+                reply(id.as_ref().unwrap(), Json::Arr(v));
+            }
+            "textDocument/didSave" => {
+                next += 1;
+                send(Json::obj(vec![("jsonrpc", Json::s("2.0")), ("id", Json::i(next)), ("method", Json::s("workspace/inlayHint/refresh"))]));
+            }
+            "textDocument/codeAction" => {
+                let text = docs.get(&doc_uri).cloned().unwrap_or_default();
+                let line_no = p.get("range").and_then(|r| r.get("start")).map(|s| s.int("line", 0) as usize).unwrap_or(0);
+                let line = text.lines().nth(line_no).unwrap_or("");
+                let mut v = Vec::new();
+                if let Some((_, c)) = occurrences(line, "ОШИБКА").first() {
+                    let fix = Json::obj(vec![(
+                        doc_uri.as_str(),
+                        Json::Arr(vec![Json::obj(vec![("range", range(line_no, *c, c + 6)), ("newText", Json::s("ок"))])]),
+                    )]);
+                    let del = Json::obj(vec![
+                        ("textDocument", Json::obj(vec![("uri", Json::s(&doc_uri)), ("version", Json::Null)])),
+                        (
+                            "edits",
+                            Json::Arr(vec![Json::obj(vec![
+                                ("range", Json::obj(vec![("start", pos(line_no, 0)), ("end", pos(line_no + 1, 0))])),
+                                ("newText", Json::s("")),
+                            ])]),
+                        ),
+                    ]);
+                    v.push(Json::obj(vec![
+                        ("title", Json::s("Только команда")),
+                        ("command", Json::obj(vec![("title", Json::s("x")), ("command", Json::s("fake.x"))])),
+                    ]));
+                    v.push(Json::obj(vec![
+                        ("title", Json::s("Удалить строку")),
+                        ("kind", Json::s("refactor")),
+                        ("edit", Json::obj(vec![("documentChanges", Json::Arr(vec![del]))])),
+                    ]));
+                    v.push(Json::obj(vec![
+                        ("title", Json::s("Заменить ОШИБКА на ок")),
+                        ("kind", Json::s("quickfix")),
+                        ("isPreferred", Json::Bool(true)),
+                        ("edit", Json::obj(vec![("changes", fix)])),
+                    ]));
                 }
                 reply(id.as_ref().unwrap(), Json::Arr(v));
             }

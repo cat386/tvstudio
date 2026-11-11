@@ -56,6 +56,8 @@ pub const CM_FIND_REFS: u16 = 205;
 pub const CM_NAV_BACK: u16 = 206;
 /// Все диагностики сервера — в окно сообщений.
 pub const CM_DIAGNOSTICS: u16 = 207;
+/// Быстрые исправления под курсором (Alt+Enter, Ctrl+.).
+pub const CM_CODE_ACTIONS: u16 = 208;
 
 // --- Всегда разрешённые ---
 pub const CM_NEW_PROJECT: u16 = 1100;

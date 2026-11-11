@@ -98,6 +98,7 @@ pub fn menu_bar() -> Menu {
                 .item_key("К ~о~пределению", CM_GOTO_DEF, kb::f(12), "F12")
                 .item_key("Найти сс~ы~лки", CM_FIND_REFS, kb::shift_f(12), "Shift+F12")
                 .item_key("Н~а~зад", CM_NAV_BACK, k(Key::Left, Mods::ALT), "Alt+←")
+                .item_key("~Б~ыстрые исправления", CM_CODE_ACTIONS, k(Key::Enter, Mods::ALT), "Alt+Enter")
                 .item("Д~и~агностика LSP", CM_DIAGNOSTICS)
                 .item("Перезапустить сервер ~L~SP", CM_LSP_RESTART),
         )
@@ -1249,7 +1250,10 @@ impl Ide {
                         Err(e) => Self::error(app, &e),
                     }
                 } else {
-                    self.say(app, &format!("Каталог {}: нет ни файла проекта .{}, ни Cargo.toml — это не исходники Rust.", p.display(), PROJECT_EXT));
+                    self.say(
+                        app,
+                        &format!("Это не исходники Rust: в каталоге {} нет ни файла проекта .{}, ни Cargo.toml.", p.display(), PROJECT_EXT),
+                    );
                 }
             } else {
                 self.open_file(app, &p, None);
@@ -1332,7 +1336,7 @@ impl Ide {
         }
         let code = Self::current_window(app).map(|id| app.find::<CodeWindow>(id).is_some()).unwrap_or(false);
         set(app, CM_GOTO, code);
-        for c in [CM_COMPLETE, CM_GOTO_DEF, CM_FIND_REFS] {
+        for c in [CM_COMPLETE, CM_GOTO_DEF, CM_FIND_REFS, CM_CODE_ACTIONS] {
             set(app, c, code && self.any_lsp());
         }
         set(app, CM_NAV_BACK, !self.lsp_state.nav.is_empty());
@@ -1492,6 +1496,7 @@ impl Ide {
             CM_FIND_REFS => self.lsp_find_refs(app),
             CM_NAV_BACK => self.nav_back(app),
             CM_DIAGNOSTICS => self.list_diagnostics(app),
+            CM_CODE_ACTIONS => self.lsp_code_actions(app),
             CM_LSP_RESTART => self.lsp_restart(app),
             CM_NEXT_ERR => self.next_error(app, true),
             CM_PREV_ERR => self.next_error(app, false),

@@ -12,13 +12,17 @@
 //!   сообщение текущей строки в строке состояния, список по команде;
 //! * дополнение (Ctrl+Space, а также само после `.` и `::`);
 //! * переход к определению (F12), назад (Alt+←), поиск ссылок (Shift+F12);
+//! * подсказки в тексте от сервера Cargo.toml (crates-lsp: «✓» или новая
+//!   версия зависимости) — серым в конце строки;
+//! * быстрые исправления (Alt+Enter, Ctrl+.) — список действий сервера
+//!   для места под курсором и применение выбранной правки;
 //! * ход индексации — в заголовке окна сообщений.
 //!
 //! Всё асинхронно: запрос уходит сразу, ответ разбирается в простое
 //! ([`Ide::lsp_idle`]) — среда не замирает, пока сервер думает.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -27,7 +31,9 @@ use tvision::*;
 
 use super::{same_file, Ide};
 use crate::codeedit::{CodeWindow, Underline};
-use crate::lsp::{col_from_lsp, col_to_lsp, Diagnostic, Encoding, LPos, Location, LspClient, LspEvent, Severity};
+use crate::lsp::{
+    col_from_lsp, col_to_lsp, CodeAction, Diagnostic, Encoding, InlayHint, LPos, LRange, Location, LspClient, LspEvent, Severity, TextEdit,
+};
 use crate::toolwins::{MessagesWindow, MsgEntry, MsgKind};
 
 /// Пауза после последней правки, через которую текст уходит серверу.
@@ -96,6 +102,14 @@ pub enum Wait {
     References {
         word: String,
     },
+    /// Подсказки в тексте для файла.
+    Hints {
+        path: PathBuf,
+    },
+    /// Быстрые исправления, запрошенные в окне `win`.
+    Actions {
+        win: ViewId,
+    },
 }
 
 /// Всё, что среда держит для LSP.
@@ -105,6 +119,11 @@ pub struct LspState {
     /// Последние диагностики по файлам (как прислал сервер).
     pub diags: HashMap<PathBuf, Vec<Diagnostic>>,
     pub diags_dirty: bool,
+    /// Подсказки в тексте по файлам (от сервера Cargo.toml — crates-lsp).
+    pub inlay: HashMap<PathBuf, Vec<InlayHint>>,
+    pub inlay_dirty: bool,
+    /// Файлы, для которых пора запросить подсказки заново.
+    pub inlay_want: HashSet<PathBuf>,
     /// Ожидаемые ответы: (сервер, номер запроса).
     pub wait: HashMap<(Srv, i64), Wait>,
     /// Откуда уходили переходом к определению (для Alt+←).
@@ -276,10 +295,124 @@ impl Ide {
             }
         }
         self.sync_docs(app, false);
+        self.request_hints(app);
         if self.lsp_state.diags_dirty {
             self.apply_diags(app);
         }
+        if self.lsp_state.inlay_dirty {
+            self.apply_hints(app);
+        }
         self.update_diag_hint(app);
+    }
+
+    // ------------------------------------------------------------------
+    // Подсказки в тексте
+    // ------------------------------------------------------------------
+
+    /// Подсказки в тексте берутся только у сервера Cargo.toml: у crates-lsp
+    /// они стоят в конце строки зависимости. Подсказки rust-analyzer (типы
+    /// посреди строки) в конце строки только путали бы.
+    fn hints_server(&self) -> Option<&LspClient> {
+        self.lsp_toml.as_ref().filter(|c| c.ready && c.has_inlay_hints)
+    }
+
+    /// Запросить подсказки для файлов из `inlay_want` (по одному запросу
+    /// на файл за раз: новый — когда придёт ответ на прежний).
+    fn request_hints(&mut self, app: &Program) {
+        if self.lsp_state.inlay_want.is_empty() || self.hints_server().is_none() {
+            return;
+        }
+        let waiting: Vec<PathBuf> =
+            self.lsp_state.wait.values().filter_map(|w| if let Wait::Hints { path } = w { Some(path.clone()) } else { None }).collect();
+        let want: Vec<PathBuf> = self.lsp_state.inlay_want.iter().filter(|p| !waiting.contains(p)).cloned().collect();
+        for path in want {
+            self.lsp_state.inlay_want.remove(&path);
+            let lines = Self::lsp_windows(app)
+                .iter()
+                .find(|(_, p, _)| *p == path)
+                .and_then(|(id, _, _)| app.find::<CodeWindow>(*id))
+                .map(|w| w.editor().fe.editor.line_count())
+                .unwrap_or(0);
+            let Some(c) = self.lsp_toml.as_mut() else { return };
+            if !c.is_open(&path) {
+                continue;
+            }
+            let rid = c.inlay_hints(&path, lines + 1);
+            self.lsp_state.wait.insert((Srv::Toml, rid), Wait::Hints { path });
+        }
+    }
+
+    /// Подсказки — в редакторы: по строке, через два пробела.
+    fn apply_hints(&mut self, app: &mut Program) {
+        self.lsp_state.inlay_dirty = false;
+        for id in Self::windows::<CodeWindow>(app) {
+            let Some(path) = app.find::<CodeWindow>(id).map(|w| w.path()) else { continue };
+            let list = self.lsp_state.inlay.get(&path).or_else(|| self.lsp_state.inlay.iter().find(|(k, _)| same_file(k, &path)).map(|(_, v)| v));
+            let mut by_line: Vec<(usize, String)> = Vec::new();
+            for h in list.into_iter().flatten() {
+                match by_line.iter_mut().find(|(l, _)| *l == h.pos.line) {
+                    Some((_, t)) => {
+                        t.push_str("  ");
+                        t.push_str(&h.label);
+                    }
+                    None => by_line.push((h.pos.line, h.label.clone())),
+                }
+            }
+            if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                w.editor_mut().hints = by_line;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Быстрые исправления
+    // ------------------------------------------------------------------
+
+    /// Запросить быстрые исправления для места под курсором (или выделения).
+    pub fn lsp_code_actions(&mut self, app: &mut Program) {
+        let Some((id, path, pos, srv)) = self.lsp_target(app) else { return };
+        if !self.client(srv).map(|c| c.has_code_actions).unwrap_or(false) {
+            return self.say(app, &format!("Сервер {} не предлагает быстрых исправлений.", srv.title()));
+        }
+        let sel = app.find::<CodeWindow>(id).and_then(|w| w.editor().fe.editor.selection());
+        let (a, b) = sel.unwrap_or((pos, pos));
+        let r = LRange { start: self.lsp_pos(app, srv, id, a), end: self.lsp_pos(app, srv, id, b) };
+        // Диагностики, задевающие строки запроса.
+        let diags: Vec<Diagnostic> = self
+            .diags_for(&path)
+            .map(|v| v.iter().filter(|d| d.range.start.line <= r.end.line && d.range.end.line >= r.start.line).cloned().collect())
+            .unwrap_or_default();
+        let Some(rid) = self.client_mut(srv).map(|c| c.code_actions(&path, r, &diags)) else { return };
+        self.lsp_state.wait.insert((srv, rid), Wait::Actions { win: id });
+    }
+
+    /// Показать список исправлений и применить выбранное.
+    fn show_code_actions(&mut self, app: &mut Program, srv: Srv, items: Vec<CodeAction>) {
+        if items.is_empty() {
+            return self.say(app, "Быстрых исправлений здесь нет.");
+        }
+        let titles: Vec<String> = items.iter().map(|a| a.title.clone()).collect();
+        let Some(i) = crate::dialogs::choose(app, "Быстрые исправления", &titles) else { return };
+        let action = items[i].clone();
+        self.apply_workspace_edit(app, srv, &action.edits);
+        self.say(app, &format!("Исправление: {}", action.title));
+    }
+
+    /// Применить правки сервера: файлы открываются в редакторе (если ещё не
+    /// открыты), правки делаются там же — сохранить их можно как обычно.
+    pub fn apply_workspace_edit(&mut self, app: &mut Program, srv: Srv, edits: &[(PathBuf, Vec<TextEdit>)]) {
+        let enc = self.encoding(srv);
+        for (path, list) in edits {
+            let open = Self::windows::<CodeWindow>(app)
+                .into_iter()
+                .find(|&id| app.find::<CodeWindow>(id).map(|w| same_file(&w.path(), path)).unwrap_or(false));
+            let Some(id) = open.or_else(|| self.open_file(app, path, None)) else { continue };
+            let Some(w) = app.find_mut::<CodeWindow>(id) else { continue };
+            apply_text_edits(&mut w.editor_mut().fe.editor, list, enc);
+        }
+        // Полосы прокрутки и индикатор обновятся по «пустому» оповещению.
+        app.put_event(Event::Broadcast(Message::new(0xFFFE)));
+        self.sync_docs(app, true);
     }
 
     fn lsp_event(&mut self, app: &mut Program, srv: Srv, e: LspEvent) {
@@ -297,6 +430,10 @@ impl Ide {
                 self.show_lsp_status(app);
             }
             LspEvent::Diagnostics { path, items } => {
+                // crates-lsp присылает диагностику, когда узнал версии, — время обновить и подсказки.
+                if srv == Srv::Toml {
+                    self.lsp_state.inlay_want.insert(path.clone());
+                }
                 self.lsp_state.diags.insert(path, items);
                 self.lsp_state.diags_dirty = true;
             }
@@ -332,6 +469,22 @@ impl Ide {
                 Some(Wait::References { word }) => self.show_references(app, srv, &word, items),
                 _ => {}
             },
+            LspEvent::InlayHints { id, items } => {
+                if let Some(Wait::Hints { path }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    self.lsp_state.inlay.insert(path, items);
+                    self.lsp_state.inlay_dirty = true;
+                }
+            }
+            LspEvent::CodeActions { id, items } => {
+                if let Some(Wait::Actions { .. }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    self.show_code_actions(app, srv, items);
+                }
+            }
+            // Сервер узнал новое (версии с crates.io) — подсказки заново для всех его файлов.
+            LspEvent::RefreshHints => {
+                let docs: Vec<PathBuf> = self.client(srv).map(|c| c.open_docs()).unwrap_or_default();
+                self.lsp_state.inlay_want.extend(docs);
+            }
             LspEvent::Exited => {
                 let tail = self.client(srv).map(|c| c.stderr_tail.lock().map(|t| t.clone()).unwrap_or_default()).unwrap_or_default();
                 self.say(app, &format!("Сервер {} завершил работу. Поиск → Перезапустить сервер LSP — запустить снова.", srv.title()));
@@ -346,7 +499,10 @@ impl Ide {
                 st.diags.retain(|p, _| Srv::for_path(p) != Some(srv));
                 st.docs.retain(|p, _| Srv::for_path(p) != Some(srv));
                 st.wait.retain(|(s, _), _| *s != srv);
+                st.inlay.retain(|p, _| Srv::for_path(p) != Some(srv));
+                st.inlay_want.retain(|p| Srv::for_path(p) != Some(srv));
                 st.diags_dirty = true;
+                st.inlay_dirty = true;
                 match srv {
                     Srv::Rust => {
                         st.status.clear();
@@ -392,6 +548,9 @@ impl Ide {
                 let text = ed.text();
                 lsp.did_open(path, &text);
                 self.lsp_state.docs.insert(path.clone(), DocSync { sent: text, changed: None, modified });
+                if *srv == Srv::Toml {
+                    self.lsp_state.inlay_want.insert(path.clone());
+                }
                 continue;
             }
             let doc = self.lsp_state.docs.entry(path.clone()).or_default();
@@ -402,6 +561,9 @@ impl Ide {
                     lsp.did_change(path, &text);
                     doc.sent = text;
                     doc.changed = None;
+                    if *srv == Srv::Toml {
+                        self.lsp_state.inlay_want.insert(path.clone());
+                    }
                 }
             } else {
                 doc.changed = None;
@@ -731,4 +893,27 @@ impl Ide {
             });
         }
     }
+}
+
+/// Применить правки к тексту редактора. Диапазоны — в единицах сервера
+/// (`enc`) относительно исходного текста, поэтому правки идут с конца к
+/// началу: более ранние позиции от поздних правок не сдвигаются.
+pub fn apply_text_edits(e: &mut tvision::Editor, edits: &[TextEdit], enc: Encoding) {
+    let mut list: Vec<&TextEdit> = edits.iter().collect();
+    list.sort_by_key(|t| std::cmp::Reverse(t.range.start));
+    let to_pos = |e: &tvision::Editor, p: LPos| {
+        let n = e.line_count();
+        if p.line >= n {
+            let last = n.saturating_sub(1);
+            return Pos::new(last, e.line(last).chars().count());
+        }
+        Pos::new(p.line, col_from_lsp(&e.line(p.line), p.col, enc))
+    };
+    for t in list {
+        let a = to_pos(e, t.range.start);
+        let b = to_pos(e, t.range.end).max(a);
+        e.set_select(a, b);
+        e.insert_text(&t.text, false);
+    }
+    e.track_cursor(false);
 }

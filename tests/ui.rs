@@ -113,7 +113,7 @@ fn startup_shows_tools_and_project() {
 /// «Окно → Компоненты» ведёт к списку, F11 — к свойствам.
 #[test]
 fn inspector_holds_components_on_the_right() {
-    let mut t = T::new("insp");
+    let mut t = T::new("insp_tools");
     t.open_about();
     let id = t.ide.inspector.expect("окно инспектора");
     let desk = t.app.desktop().group.vs.size;
@@ -349,7 +349,14 @@ fn build_finds_error_and_jumps() {
     assert!(s.contains("не удалась"), "итог сборки:\n{}", s);
     t.cmd(CM_NEXT_ERR);
     let ids = Ide::windows::<CodeWindow>(&t.app);
-    let w = t.app.find::<CodeWindow>(*ids.last().expect("файл открыт")).unwrap();
+    let msgs: Vec<String> = t
+        .ide
+        .messages
+        .and_then(|id| t.app.find::<tvstudio::toolwins::MessagesWindow>(id))
+        .map(|m| m.entries.iter().map(|e| format!("{:?} {:?} {}", e.kind, e.loc, e.text)).collect())
+        .unwrap_or_default();
+    let Some(&last) = ids.last() else { panic!("F8 не открыл файл; сообщения:\n{}", msgs.join("\n")) };
+    let w = t.app.find::<CodeWindow>(last).unwrap();
     assert!(w.path().ends_with("src/main.rs"));
     assert_eq!(w.editor().fe.editor.cursor().line + 1, err_line);
     assert!(t.screen().contains('●'), "пометка ошибки в полосе номеров");
@@ -544,7 +551,7 @@ fn startup_with_cargo_dir_creates_rust_project() {
     // Не исходники Rust — только сообщение.
     let (app, ide) = run(vec![empty.display().to_string()]);
     assert!(ide.project.is_none());
-    assert!(app.screen_text().contains("это не исходники Rust"), "{}", app.screen_text());
+    assert!(app.screen_text().contains("Это не исходники Rust"), "{}", app.screen_text());
     assert!(std::fs::read_dir(&empty).unwrap().next().is_none(), "в каталоге ничего не создано");
     let _ = std::fs::remove_dir_all(&base);
 }
