@@ -1,0 +1,49 @@
+# Автопроверка: сборка и тесты на Ubuntu и Windows при каждом push и PR.
+# tvstudio ждёт tvision-rs рядом с собой (../tvision-rs), поэтому оба
+# репозитория выкладываются в соседние каталоги.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tvstudio
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tvstudio
+      - uses: actions/checkout@v4
+        with:
+          repository: cat386/tvision-rs
+          path: tvision-rs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tvstudio
+      - name: Сборка
+        run: cargo build --all-targets
+      - name: Тесты
+        run: cargo test
+      - name: Долгие тесты (сгенерированный проект и все примеры собираются)
+        run: cargo test -- --ignored
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Форматирование
+        if: runner.os == 'Linux'
+        run: cargo fmt --check

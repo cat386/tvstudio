@@ -30,6 +30,10 @@ tvision-rs. В духе Turbo Pascal / Delphi: форма рисуется мы�
 
 ## Сборка и запуск
 
+[![CI](https://github.com/cat386/tvstudio/actions/workflows/ci.yml/badge.svg)](https://github.com/cat386/tvstudio/actions/workflows/ci.yml)
+— сборка, тесты, clippy и rustfmt на Ubuntu и Windows при каждом коммите
+(`.github/workflows/ci.yml`).
+
 Крейт ждёт tvision-rs рядом с собой (`../tvision-rs`):
 
 ```
