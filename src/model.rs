@@ -1234,7 +1234,16 @@ impl Project {
             .or_else(|| dir.file_name().map(|n| n.to_string_lossy().to_string()))
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| "project".into());
-        let open_files = ["src/main.rs", "src/lib.rs"].iter().find(|f| dir.join(f).is_file()).map(|f| vec![f.to_string()]).unwrap_or_default();
+        // Открыть main.rs / lib.rs корневого пакета, а у workspace без
+        // своего пакета — первого участника, где он есть.
+        let layout = cargo_layout(&dir);
+        let roots = std::iter::once(dir.clone()).chain(layout.members.iter().map(|m| m.dir.clone()));
+        let open_files = roots
+            .flat_map(|d| ["src/main.rs", "src/lib.rs"].map(|f| d.join(f)))
+            .find(|f| f.is_file())
+            .and_then(|f| f.strip_prefix(&dir).ok().map(|r| r.to_string_lossy().replace('\\', "/")))
+            .map(|f| vec![f])
+            .unwrap_or_default();
         let p = Project { dir, name: name.clone(), kind: ProjectKind::Rust, app: AppModel::starter(&name), forms: vec![], open_files };
         if p.file().exists() {
             return Err(format!("файл проекта {} уже есть", p.file().display()));
@@ -1289,6 +1298,118 @@ impl Project {
 pub fn cargo_path(p: &str) -> String {
     let p = if let Some(rest) = p.strip_prefix(r"\\?\UNC\") { format!(r"\\{}", rest) } else { p.strip_prefix(r"\\?\").unwrap_or(p).to_string() };
     p.replace('\\', "/")
+}
+
+/// Пакет (крейт) Cargo: имя и каталог.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CrateDir {
+    pub name: String,
+    pub dir: PathBuf,
+}
+
+/// Состав каталога Cargo: есть ли свой пакет (`[package]`) и участники
+/// workspace (`[workspace] members`, без `exclude`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CargoLayout {
+    pub package: bool,
+    pub members: Vec<CrateDir>,
+}
+
+impl CargoLayout {
+    /// Пакет для `cargo run -p` (Ctrl+F9) в workspace: участник, где лежит
+    /// файл `file` (если у него есть программа — `src/main.rs` или
+    /// `src/bin/`); иначе корневой пакет (`None` — cargo выберет сам); без
+    /// своего пакета — первый участник с программой. Не workspace — `None`.
+    pub fn run_package(&self, file: Option<&Path>) -> Option<String> {
+        let has_bin = |d: &Path| d.join("src/main.rs").is_file() || d.join("src/bin").is_dir();
+        let owner = file.and_then(|f| {
+            let f = normalize(f);
+            self.members.iter().filter(|m| f.starts_with(&m.dir)).max_by_key(|m| m.dir.components().count())
+        });
+        if let Some(m) = owner.filter(|m| has_bin(&m.dir)) {
+            return Some(m.name.clone());
+        }
+        if self.package {
+            return None;
+        }
+        self.members.iter().find(|m| has_bin(&m.dir)).map(|m| m.name.clone())
+    }
+}
+
+/// Прочитать `dir/Cargo.toml`: свой пакет и участники workspace. Шаблоны
+/// участников — `*` и `?` в любой части пути (`crates/*`, `tools/x-*`).
+/// Нет файла или он не разбирается — пустой состав.
+pub fn cargo_layout(dir: &Path) -> CargoLayout {
+    let Ok(text) = std::fs::read_to_string(dir.join("Cargo.toml")) else { return CargoLayout::default() };
+    let Ok(j) = crate::toml::parse(&text) else {
+        // Не разобрали TOML — хотя бы свой пакет по строке «[package]».
+        return CargoLayout { package: text.lines().any(|l| l.trim() == "[package]"), members: vec![] };
+    };
+    let package = matches!(j.get("package"), Some(Json::Obj(_)));
+    let Some(ws) = j.get("workspace") else { return CargoLayout { package, members: vec![] } };
+    let exclude: Vec<PathBuf> = ws.strings("exclude").iter().map(|e| normalize(&dir.join(e))).collect();
+    let mut members: Vec<CrateDir> = Vec::new();
+    for pat in ws.strings("members") {
+        for d in expand_member(dir, &pat) {
+            let d = normalize(&d);
+            if d == normalize(dir) || exclude.contains(&d) || members.iter().any(|m| m.dir == d) {
+                continue;
+            }
+            let Ok(t) = std::fs::read_to_string(d.join("Cargo.toml")) else { continue };
+            let name = cargo_package_name(&t).unwrap_or_else(|| d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+            members.push(CrateDir { name, dir: d });
+        }
+    }
+    CargoLayout { package, members }
+}
+
+/// Каталоги участника по шаблону (части пути со `*` / `?` — по каталогам
+/// диска, по алфавиту); без шаблона — сам путь.
+fn expand_member(root: &Path, pat: &str) -> Vec<PathBuf> {
+    let mut cur = vec![root.to_path_buf()];
+    for part in pat.split(['/', '\\']).filter(|p| !p.is_empty() && *p != ".") {
+        let mut next = Vec::new();
+        for base in &cur {
+            if part.contains(['*', '?']) {
+                let mut found: Vec<PathBuf> =
+                    std::fs::read_dir(base).map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
+                found.retain(|p| p.file_name().map(|n| wildcard(part, &n.to_string_lossy())).unwrap_or(false));
+                found.sort();
+                next.extend(found);
+            } else {
+                next.push(base.join(part));
+            }
+        }
+        cur = next;
+    }
+    cur
+}
+
+/// Совпадение имени с шаблоном: `*` — любые символы, `?` — один.
+fn wildcard(pat: &str, name: &str) -> bool {
+    let p: Vec<char> = pat.chars().collect();
+    let n: Vec<char> = name.chars().collect();
+    let (mut i, mut j, mut star, mut mark) = (0, 0, None, 0);
+    while j < n.len() {
+        if i < p.len() && (p[i] == '?' || p[i] == n[j]) {
+            i += 1;
+            j += 1;
+        } else if i < p.len() && p[i] == '*' {
+            star = Some(i);
+            mark = j;
+            i += 1;
+        } else if let Some(s) = star {
+            i = s + 1;
+            mark += 1;
+            j = mark;
+        } else {
+            return false;
+        }
+    }
+    while i < p.len() && p[i] == '*' {
+        i += 1;
+    }
+    i == p.len()
 }
 
 /// Имя пакета из текста `Cargo.toml`: `name = "…"` в разделе `[package]`.
@@ -1515,6 +1636,55 @@ mod tests {
         assert_eq!(cargo_path(r"D:\develop\tvision-rs"), "D:/develop/tvision-rs");
         assert_eq!(cargo_path("../tvision-rs"), "../tvision-rs");
         assert_eq!(Dependency::Path(r"\\?\C:\x".into()).cargo_line(), "tvision-rs = { path = \"C:/x\" }");
+    }
+
+    /// Workspace: участники по списку и шаблонам, без exclude; имена — из их
+    /// Cargo.toml; свой пакет в корне — по [package].
+    #[test]
+    fn workspace_layout() {
+        let base = std::env::temp_dir().join(format!("tvs_ws_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let mk = |rel: &str, name: &str| {
+            let d = base.join(rel);
+            std::fs::create_dir_all(d.join("src")).unwrap();
+            std::fs::write(d.join("Cargo.toml"), format!("[package]\nname = \"{}\"\nversion = \"0.1.0\"\n", name)).unwrap();
+            std::fs::write(d.join("src/lib.rs"), "").unwrap();
+        };
+        mk("crates/core", "my-core");
+        mk("crates/ui", "my-ui");
+        mk("crates/old", "my-old");
+        mk("tools/gen", "gen");
+        std::fs::create_dir_all(base.join("crates/not-a-crate")).unwrap();
+        std::fs::write(
+            base.join("Cargo.toml"),
+            "[workspace]\nresolver = \"2\"\nmembers = [\"crates/*\", \"tools/gen\", \"tools/gen\", \"нет-такого\"]\nexclude = [\"crates/old\"]\n\n[workspace.dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\n",
+        )
+        .unwrap();
+        let l = cargo_layout(&base);
+        assert!(!l.package);
+        let names: Vec<&str> = l.members.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["my-core", "my-ui", "gen"]);
+        assert_eq!(l.members[0].dir, normalize(&base.join("crates/core")));
+        // Проект на Rust из workspace: открыт lib.rs первого участника.
+        let p = Project::adopt_rust(&base).unwrap();
+        assert_eq!(p.open_files, vec!["crates/core/src/lib.rs".to_string()]);
+        // Пакет с workspace в корне (members = ["."] и подкаталог).
+        std::fs::write(base.join("Cargo.toml"), "[package]\nname = \"root\"\n\n[workspace]\nmembers = [\".\", \"tools/*\"]\n").unwrap();
+        let l = cargo_layout(&base);
+        assert!(l.package);
+        assert_eq!(l.members.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), vec!["gen"]);
+        assert!(wildcard("x-*", "x-gen") && wildcard("a?c", "abc") && !wildcard("x-*", "y-gen") && wildcard("*", "any"));
+        // Ctrl+F9: участник открытого файла, если у него есть программа.
+        std::fs::write(base.join("tools/gen/src/main.rs"), "fn main() {}").unwrap();
+        std::fs::write(base.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", \"tools/*\"]\n").unwrap();
+        let l = cargo_layout(&base);
+        assert_eq!(l.run_package(Some(&base.join("tools/gen/src/main.rs"))).as_deref(), Some("gen"));
+        assert_eq!(l.run_package(Some(&base.join("crates/core/src/lib.rs"))).as_deref(), Some("gen"), "у core нет программы — первая с программой");
+        assert_eq!(l.run_package(None).as_deref(), Some("gen"));
+        assert_eq!(CargoLayout::default().run_package(None), None);
+        let with_root = CargoLayout { package: true, ..l };
+        assert_eq!(with_root.run_package(Some(&base.join("crates/core/src/lib.rs"))), None, "корневой пакет — cargo сам");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// Каталог с Cargo.toml берётся в проект на Rust; имя — из [package].

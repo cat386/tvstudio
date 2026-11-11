@@ -7,7 +7,7 @@ use tvision::*;
 
 use crate::cmds::*;
 use crate::inspector::tool_palette;
-use crate::model::{Kind, Project};
+use crate::model::{cargo_layout, Kind, Project};
 
 // ======================================================================
 // Ретранслятор
@@ -153,12 +153,25 @@ impl ProjectWindow {
                     .child(TreeNode::new("Строка состояния").data("model:status"))
                     .child(TreeNode::new("Команды").data("model:commands"))
                     .child(TreeNode::new("Параметры").data("model:options"));
-                let src = dir_node("src", &p.dir.join("src"));
-                let cargo = TreeNode::new("Cargo.toml").data(&format!("file:{}", p.dir.join("Cargo.toml").display()));
                 let root = TreeNode::new(&p.name).icon('◘').expanded(true).data("project");
                 // У программы на Rust нет ни форм, ни модели — только файлы.
-                let root = if p.has_forms() { root.child(forms).child(model) } else { root };
-                vec![root.child(src).child(cargo)]
+                let mut root = if p.has_forms() { root.child(forms).child(model) } else { root };
+                // Файлы своего пакета (src, tests, examples, benches, build.rs),
+                // затем участники workspace — каждый своим узлом, затем Cargo.toml.
+                let layout = cargo_layout(&p.dir);
+                for n in crate_children(&p.dir) {
+                    root = root.child(n);
+                }
+                for m in &layout.members {
+                    // Имя пакета (путь к нему — в заголовке окна открытого файла).
+                    let mut node = TreeNode::new(&m.name).icon('◇').expanded(layout.members.len() == 1).data(&format!("dir:{}", m.dir.display()));
+                    for n in crate_children(&m.dir) {
+                        node = node.child(n);
+                    }
+                    node = node.child(file_leaf("Cargo.toml", &m.dir.join("Cargo.toml")));
+                    root = root.child(node);
+                }
+                vec![root.child(file_leaf("Cargo.toml", &p.dir.join("Cargo.toml")))]
             }
         };
         if let Some(t) = self.win.group.find_mut::<TreeView>(self.tree_id) {
@@ -196,6 +209,29 @@ impl ProjectWindow {
 }
 
 /// Узел каталога с файлами `.rs` (рекурсивно, каталоги вперёд).
+/// Лист дерева — файл.
+fn file_leaf(name: &str, path: &Path) -> TreeNode {
+    TreeNode::new(name).data(&format!("file:{}", path.display()))
+}
+
+/// Содержимое пакета Cargo в каталоге `dir`: `src` (раскрыт), `tests`,
+/// `examples`, `benches` (свёрнуты) — те, что есть, и `build.rs`.
+fn crate_children(dir: &Path) -> Vec<TreeNode> {
+    let mut v = Vec::new();
+    for (sub, open) in [("src", true), ("tests", false), ("examples", false), ("benches", false)] {
+        let d = dir.join(sub);
+        if d.is_dir() {
+            let mut n = dir_node(sub, &d);
+            n.expanded = open;
+            v.push(n);
+        }
+    }
+    if dir.join("build.rs").is_file() {
+        v.push(file_leaf("build.rs", &dir.join("build.rs")));
+    }
+    v
+}
+
 fn dir_node(name: &str, dir: &Path) -> TreeNode {
     let mut node = TreeNode::new(name).icon('▸').expanded(true).data(&format!("dir:{}", dir.display()));
     let mut dirs: Vec<PathBuf> = Vec::new();

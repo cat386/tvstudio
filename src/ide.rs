@@ -846,7 +846,14 @@ impl Ide {
         if ok && after == After::Run && !self.headless {
             if let Some(dir) = self.base_dir() {
                 let cargo = self.cfg.cargo.clone();
-                let code = app.suspended(|| crate::runner::run_foreground(&dir, &cargo, &[]));
+                // Workspace: программа участника, в котором верхний открытый файл.
+                let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
+                let pkg = crate::model::cargo_layout(&dir).run_package(file.as_deref());
+                if let Some(p) = &pkg {
+                    self.say(app, &format!("— Запуск пакета {} (cargo run -p {})", p, p));
+                }
+                let extra: Vec<&str> = pkg.as_deref().map(|p| vec!["-p", p]).unwrap_or_default();
+                let code = app.suspended(|| crate::runner::run_foreground(&dir, &cargo, &extra));
                 self.say(app, &format!("— Программа завершилась, код {}", code.map(|c| c.to_string()).unwrap_or("?".into())));
             }
         }

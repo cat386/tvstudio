@@ -584,3 +584,41 @@ fn windows_have_no_shadow() {
     assert_eq!(d.win.group.vs.state & sf::SHADOW, 0);
     assert_eq!(tvstudio::dialogs::flat(Dialog::centered(30, 8, "x")).win.group.vs.state & sf::SHADOW, 0);
 }
+
+/// `tvstudio КАТАЛОГ` с workspace (без своего пакета): в дереве проекта —
+/// участники по `members` (с шаблонами, без `exclude`), у каждого src и
+/// Cargo.toml; в редакторе — main.rs первого участника, где он есть.
+#[test]
+fn workspace_members_in_project_tree() {
+    let base = std::env::temp_dir().join(format!("tvs_ui_ws_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let ws = base.join("ws");
+    for (rel, name, file) in [("crates/app", "ws-app", "main.rs"), ("crates/core", "ws-core", "lib.rs"), ("crates/skip", "ws-skip", "lib.rs")] {
+        let d = ws.join(rel);
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("Cargo.toml"), format!("[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n", name)).unwrap();
+        std::fs::write(d.join("src").join(file), "fn main() {}\n").unwrap();
+    }
+    std::fs::create_dir_all(ws.join("crates/app/tests")).unwrap();
+    std::fs::write(ws.join("crates/app/tests/it.rs"), "#[test]\nfn t() {}\n").unwrap();
+    std::fs::write(ws.join("Cargo.toml"), "[workspace]\nresolver = \"2\"\nmembers = [\"crates/*\"]\nexclude = [\"crates/skip\"]\n").unwrap();
+
+    let mut b = HeadlessBackend::new(120, 40);
+    b.esc_budget = 0;
+    let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+    let mut ide = Ide::new(Config { lsp_enabled: false, ..Config::default() }, true);
+    ide.startup(&mut app, vec![ws.display().to_string()]);
+    app.pump(&mut ide);
+    app.pump(&mut ide);
+    let s = app.screen_text();
+    assert!(s.contains("◇ ws-app") && s.contains("◇ ws-core"), "участники в дереве:\n{}", s);
+    assert!(!s.contains("ws-skip"), "exclude:\n{}", s);
+    assert!(s.contains("Cargo.toml"), "{}", s);
+    let main = ws.join("crates/app/src/main.rs");
+    assert!(
+        Ide::windows::<CodeWindow>(&app).iter().any(|&id| tvstudio::ide::same_file(&app.find::<CodeWindow>(id).unwrap().path(), &main)),
+        "открыт main.rs первого участника"
+    );
+    ide.shutdown(&mut app);
+    let _ = std::fs::remove_dir_all(&base);
+}
