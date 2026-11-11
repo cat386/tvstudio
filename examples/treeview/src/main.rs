@@ -653,7 +653,9 @@ mod tests {
         app.redraw();
         let screen = app.screen_text();
         assert!(screen.contains("file10.txt"), "{}", screen);
-        assert!(screen.contains("file10.txt\n") || screen.contains("/file10.txt"), "{}", screen);
+        // Полный путь — с разделителем каталогов этой системы (на Windows «\»).
+        let sep = std::path::MAIN_SEPARATOR;
+        assert!(screen.contains("file10.txt\n") || screen.contains(&format!("{}file10.txt", sep)), "{}", screen);
         assert!(screen.contains("file10.txt — 2 байт"), "сведения о последнем файле:\n{}", screen);
         let _ = std::fs::remove_dir_all(&d);
     }
