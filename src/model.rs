@@ -1057,7 +1057,7 @@ impl Dependency {
 
     pub fn cargo_line(&self) -> String {
         match self {
-            Dependency::Path(p) => format!("tvision-rs = {{ path = \"{}\" }}", p.replace('\\', "/")),
+            Dependency::Path(p) => format!("tvision-rs = {{ path = \"{}\" }}", cargo_path(p)),
             Dependency::Git(u) => format!("tvision-rs = {{ git = \"{}\" }}", u),
         }
     }
@@ -1283,6 +1283,14 @@ impl Project {
     }
 }
 
+/// Путь для `Cargo.toml`: прямые косые черты; без приставки `\\?\` длинных
+/// путей Windows (её даёт `canonicalize`, а cargo такой путь не понимает):
+/// `\\?\D:\x` → `D:/x`, `\\?\UNC\srv\share` → `//srv/share`.
+pub fn cargo_path(p: &str) -> String {
+    let p = if let Some(rest) = p.strip_prefix(r"\\?\UNC\") { format!(r"\\{}", rest) } else { p.strip_prefix(r"\\?\").unwrap_or(p).to_string() };
+    p.replace('\\', "/")
+}
+
 /// Имя пакета из текста `Cargo.toml`: `name = "…"` в разделе `[package]`.
 /// `None` — раздела нет (например, только `[workspace]`) или имя не строкой.
 pub fn cargo_package_name(toml: &str) -> Option<String> {
@@ -1497,6 +1505,16 @@ mod tests {
         std::fs::write(p.file(), j.to_pretty()).unwrap();
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Пути в Cargo.toml: без приставки `\\?\` и с прямыми косыми.
+    #[test]
+    fn cargo_paths() {
+        assert_eq!(cargo_path(r"\\?\D:\a\tvision-rs"), "D:/a/tvision-rs");
+        assert_eq!(cargo_path(r"\\?\UNC\srv\share\tv"), "//srv/share/tv");
+        assert_eq!(cargo_path(r"D:\develop\tvision-rs"), "D:/develop/tvision-rs");
+        assert_eq!(cargo_path("../tvision-rs"), "../tvision-rs");
+        assert_eq!(Dependency::Path(r"\\?\C:\x".into()).cargo_line(), "tvision-rs = { path = \"C:/x\" }");
     }
 
     /// Каталог с Cargo.toml берётся в проект на Rust; имя — из [package].
