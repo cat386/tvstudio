@@ -67,7 +67,19 @@ pub fn format(src: &str, file: &Path, cmd: &str) -> Result<String, String> {
         let msg = err.lines().filter(|l| !l.trim().is_empty()).take(6).collect::<Vec<_>>().join("\n");
         return Err(if msg.is_empty() { format!("rustfmt завершился с кодом {:?}", status.code()) } else { msg });
     }
-    Ok(out)
+    Ok(same_newlines(src, out))
+}
+
+/// Переводы строк результата — как у исходного текста. rustfmt по
+/// умолчанию (`newline_style = "Auto"`) для текста без переводов строк или
+/// с одними `\n` на Windows пишет `\r\n`, а редактор держит `\n`: без
+/// этого каждое сохранение «меняло» весь файл.
+fn same_newlines(src: &str, out: String) -> String {
+    if src.contains("\r\n") || !out.contains('\r') {
+        out
+    } else {
+        out.replace("\r\n", "\n")
+    }
 }
 
 #[cfg(test)]
@@ -76,6 +88,15 @@ mod tests {
 
     fn have_rustfmt() -> bool {
         Command::new("rustfmt").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    /// Переводы строк результата — как у исходного текста.
+    #[test]
+    fn keeps_newline_style() {
+        assert_eq!(same_newlines("a\nb", "x\r\ny\r\n".into()), "x\ny\n");
+        assert_eq!(same_newlines("ab", "x\r\n".into()), "x\n");
+        assert_eq!(same_newlines("a\r\nb", "x\r\ny\r\n".into()), "x\r\ny\r\n");
+        assert_eq!(same_newlines("a\nb", "x\ny\n".into()), "x\ny\n");
     }
 
     #[test]
@@ -91,6 +112,9 @@ mod tests {
         let out = format("fn  main( ){let x=1;println!(\"{}\",x);}", &f, "rustfmt").unwrap();
         assert_eq!(out, "fn main() {\n    let x = 1;\n    println!(\"{}\", x);\n}\n");
         assert!(format("fn main( {", &f, "rustfmt").is_err());
+        // Многострочный текст с \n — результат тоже с \n (на любой ОС).
+        let out = format("fn main() {\nlet x=1;\n}\n", &f, "rustfmt").unwrap();
+        assert_eq!(out, "fn main() {\n    let x = 1;\n}\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
