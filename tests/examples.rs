@@ -82,6 +82,7 @@ fn examples_build_and_pass_tests() {
             .current_dir(&p.dir)
             .output()
             .unwrap();
-        assert!(out.status.success(), "{}:\n{}", p.name, String::from_utf8_lossy(&out.stderr));
+        // Вывод тестов примера (stdout) — тоже: по нему видно, что упало.
+        assert!(out.status.success(), "{}:\n{}\n{}", p.name, String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     }
 }
