@@ -159,6 +159,17 @@ pub fn build_dialog(form: &Form, resolve: &dyn Fn(&str) -> u16) -> (Dialog, Hash
                 finish(&mut v.vs, c);
                 d.add(v)
             }
+            Kind::Line => {
+                let mut v = if c.vertical { Line::vertical(r) } else { Line::horizontal(r) };
+                if c.double {
+                    v = v.double();
+                }
+                if c.to_frame {
+                    v = v.to_frame();
+                }
+                finish(&mut v.vs, c);
+                d.add(v)
+            }
             Kind::ProgressBar => {
                 let mut v = ProgressBar::new(r, c.max.max(1));
                 v.set_value(c.value);

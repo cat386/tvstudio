@@ -332,6 +332,13 @@ fn control_code(app: &AppModel, c: &Control) -> Vec<String> {
             }
         }
         Kind::ScrollBar => format!("ScrollBar::new({})", r),
+        Kind::Line => format!(
+            "Line::{}({}){}{}",
+            if c.vertical { "vertical" } else { "horizontal" },
+            r,
+            if c.double { ".double()" } else { "" },
+            if c.to_frame { ".to_frame()" } else { "" }
+        ),
         Kind::ProgressBar => {
             if c.value != 0 {
                 setup.push(format!("v.set_value({});", c.value));
@@ -725,6 +732,37 @@ mod tests {
         assert!(code.contains("pub fn open(") && code.contains("pub fn read(") && !code.contains("pub fn run("));
         let ui = ui_rs(&p, &[f.clone()]);
         assert!(ui.contains("crate::forms::about::open(app"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn line_code_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("tvs_cg_line_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tv = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tvision-rs");
+        let p = Project::create(&dir, "line_app", &Dependency::Path(tv.display().to_string())).unwrap();
+        let mut f = about_form("x");
+        let mut h = f.new_control(Kind::Line, 1, 5);
+        h.double = true;
+        h.to_frame = true;
+        f.controls.push(h);
+        let mut v = f.new_control(Kind::Line, 10, 1);
+        v.vertical = true;
+        v.w = 1;
+        v.h = 4;
+        f.controls.push(v);
+        let code = form_rs(&p, &f);
+        assert!(code.contains("Line::horizontal(") && code.contains(".double().to_frame()"), "{code}");
+        assert!(code.contains("Line::vertical("), "{code}");
+        let x = crate::formextract::extract(&code, &std::collections::HashMap::new());
+        let g = &x[0].form;
+        let lines: Vec<_> = g.controls.iter().filter(|c| c.kind == Kind::Line).collect();
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[0].vertical && lines[0].double && lines[0].to_frame);
+        assert_eq!((lines[0].x, lines[0].y, lines[0].w, lines[0].h), (1, 5, 20, 1));
+        assert!(lines[1].vertical && !lines[1].double && !lines[1].to_frame);
+        assert_eq!((lines[1].x, lines[1].y, lines[1].w, lines[1].h), (10, 1, 1, 4));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -52,6 +52,10 @@ fn big_form() -> Form {
                 c.command = "HELLO".into();
                 c.disabled = true;
             }
+            Kind::Line => {
+                c.double = true;
+                c.to_frame = true;
+            }
             _ => {}
         }
         if k != Kind::ScrollBar {
@@ -59,6 +63,12 @@ fn big_form() -> Form {
         }
         f.controls.push(c);
     }
+    // Вертикальная линия между столбцами.
+    let mut vl = f.new_control(Kind::Line, 41, 2);
+    vl.vertical = true;
+    vl.w = 1;
+    vl.h = 18;
+    f.controls.push(vl);
     // Таблица и дерево — во втором столбце.
     let mut t = f.new_control(Kind::Table, 42, 2);
     t.w = 32;

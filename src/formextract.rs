@@ -738,6 +738,17 @@ impl<'a> Run<'a> {
                 let Some(r) = self.rect(a.first()) else { return V::U };
                 pend(self.ctl(Kind::ScrollBar, r))
             }
+            ("Line", "new") | ("Line", "horizontal") | ("Line", "vertical") => {
+                let Some(r) = self.rect(a.first()) else { return V::U };
+                let mut c = self.ctl(Kind::Line, r);
+                // Line::new — вертикальная, если шириной в 1 клетку и выше, чем шире.
+                c.vertical = match last2.1 {
+                    "vertical" => true,
+                    "horizontal" => false,
+                    _ => c.w == 1 && c.h > 1,
+                };
+                pend(c)
+            }
             ("ProgressBar", "new") => {
                 let Some(r) = self.rect(a.first()) else { return V::U };
                 let mut c = self.ctl(Kind::ProgressBar, r);
@@ -821,6 +832,8 @@ impl<'a> Run<'a> {
             "checkboxes" => c.checks = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),
             "lines" => c.lines = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),
             "header" => c.header = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),
+            "double" if c.kind == Kind::Line => c.double = true,
+            "to_frame" if c.kind == Kind::Line => c.to_frame = true,
             "grid" => c.grid = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),
             "editable" => c.editable = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),
             "row_numbers" => c.row_numbers = a.first().map(|x| has_path_end(x, "true")).unwrap_or(true),

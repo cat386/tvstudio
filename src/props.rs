@@ -30,6 +30,9 @@ pub enum Prop {
     Checks,
     Lines,
     Expanded,
+    Vertical,
+    Double,
+    ToFrame,
     Disabled,
     HelpCtx,
     // Свойства формы
@@ -89,6 +92,9 @@ impl Prop {
             Prop::Checks => "Флажки",
             Prop::Lines => "Линии",
             Prop::Expanded => "Раскрыто",
+            Prop::Vertical => "Вертикальная",
+            Prop::Double => "Двойная",
+            Prop::ToFrame => "До рамки",
             Prop::Disabled => "Недоступен",
             Prop::HelpCtx | Prop::FormHelp => "Справка",
             Prop::FormTitle => "Заголовок",
@@ -118,7 +124,10 @@ impl Prop {
             | Prop::Checks
             | Prop::Lines
             | Prop::Expanded
+            | Prop::Vertical
+            | Prop::Double
             | Prop::FormResizable => "да / нет",
+            Prop::ToFrame => "да — линия во всю ширину (высоту) окна, концы соединены с рамкой",
             Prop::FormClass => "Dialog — модальный диалог, Window — немодальное окно",
             Prop::FormNumber => "0…9: окно выбирается Alt+номер; 0 — без номера",
             Prop::Link => "имя элемента, который выбирает метка",
@@ -151,6 +160,9 @@ impl Prop {
                 | Prop::Checks
                 | Prop::Lines
                 | Prop::Expanded
+                | Prop::Vertical
+                | Prop::Double
+                | Prop::ToFrame
                 | Prop::FormResizable
         )
     }
@@ -173,6 +185,7 @@ pub fn control_props(kind: Kind) -> Vec<Prop> {
         Kind::ProgressBar => &[Value, Max],
         Kind::Table => &[Items, Text, Value, Header, Grid, Editable, RowNumbers, Scrollbar],
         Kind::TreeView => &[Items, Expanded, Lines, Checks, Scrollbar],
+        Kind::Line => &[Vertical, Double, ToFrame],
     });
     v.push(Disabled);
     v.push(HelpCtx);
@@ -310,6 +323,9 @@ fn get_control(c: &Control, p: Prop) -> String {
         Prop::RowNumbers => yes_no(c.row_numbers),
         Prop::Checks => yes_no(c.checks),
         Prop::Lines => yes_no(c.lines),
+        Prop::Vertical => yes_no(c.vertical),
+        Prop::Double => yes_no(c.double),
+        Prop::ToFrame => yes_no(c.to_frame),
         Prop::Expanded => yes_no(c.expanded),
         Prop::Disabled => yes_no(c.disabled),
         Prop::HelpCtx => c.help_ctx.to_string(),
@@ -432,6 +448,16 @@ pub fn set(form: &mut Form, sel: Option<usize>, p: Prop, v: &str) -> Result<(), 
             Prop::Checks => c.checks = parse_bool(v)?,
             Prop::Lines => c.lines = parse_bool(v)?,
             Prop::Expanded => c.expanded = parse_bool(v)?,
+            Prop::Vertical => {
+                // Повернули линию — ширина и высота меняются местами.
+                let vert = parse_bool(v)?;
+                if vert != c.vertical {
+                    std::mem::swap(&mut c.w, &mut c.h);
+                }
+                c.vertical = vert;
+            }
+            Prop::Double => c.double = parse_bool(v)?,
+            Prop::ToFrame => c.to_frame = parse_bool(v)?,
             Prop::Disabled => c.disabled = parse_bool(v)?,
             Prop::HelpCtx => c.help_ctx = int(v)?.clamp(0, 65535),
             _ => return Err("у элемента нет такого свойства".into()),
@@ -519,6 +545,26 @@ mod tests {
         let c = f.controls.last().unwrap();
         assert_eq!(c.table_columns(), vec![("Имя".to_string(), 16), ("Телефон".to_string(), 14)]);
         assert_eq!(c.table_rows()[1], vec!["Борис", "234-56-78"]);
+    }
+
+    #[test]
+    fn line_props() {
+        let mut f = about_form("x");
+        f.controls.push(crate::model::Control::new(Kind::Line, "line", 2, 2));
+        let i = f.controls.len() - 1;
+        assert_eq!((f.controls[i].w, f.controls[i].h), (20, 1));
+        set(&mut f, Some(i), Prop::Vertical, "да").unwrap();
+        assert!(f.controls[i].vertical);
+        assert_eq!((f.controls[i].w, f.controls[i].h), (1, 20));
+        // Повторная установка того же значения размеры не трогает.
+        set(&mut f, Some(i), Prop::Vertical, "да").unwrap();
+        assert_eq!((f.controls[i].w, f.controls[i].h), (1, 20));
+        set(&mut f, Some(i), Prop::Double, "да").unwrap();
+        set(&mut f, Some(i), Prop::ToFrame, "да").unwrap();
+        assert!(f.controls[i].double && f.controls[i].to_frame);
+        assert_eq!(get(&f, Some(i), Prop::ToFrame), "да");
+        set(&mut f, Some(i), Prop::Vertical, "нет").unwrap();
+        assert_eq!((f.controls[i].w, f.controls[i].h), (20, 1));
     }
 
     #[test]

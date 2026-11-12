@@ -108,6 +108,7 @@ pub fn icon(k: Kind) -> &'static str {
         Kind::ProgressBar => "█░ ",
         Kind::Table => "▦  ",
         Kind::TreeView => "├─ ",
+        Kind::Line => "─┼─",
     }
 }
 

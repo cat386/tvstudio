@@ -35,11 +35,13 @@ pub enum Kind {
     ProgressBar,
     Table,
     TreeView,
+    /// Линия (tvision-rs `Line`): соединяется с другими линиями и рамкой.
+    Line,
 }
 
 impl Kind {
     /// Все виды — в порядке палитры компонентов.
-    pub const ALL: [Kind; 13] = [
+    pub const ALL: [Kind; 14] = [
         Kind::StaticText,
         Kind::Label,
         Kind::Button,
@@ -53,6 +55,7 @@ impl Kind {
         Kind::ProgressBar,
         Kind::Table,
         Kind::TreeView,
+        Kind::Line,
     ];
 
     /// Имя для файлов формы.
@@ -71,6 +74,7 @@ impl Kind {
             Kind::ProgressBar => "progress_bar",
             Kind::Table => "table",
             Kind::TreeView => "tree_view",
+            Kind::Line => "line",
         }
     }
 
@@ -94,6 +98,7 @@ impl Kind {
             Kind::ProgressBar => "Полоса выполнения",
             Kind::Table => "Таблица",
             Kind::TreeView => "Дерево",
+            Kind::Line => "Линия",
         }
     }
 
@@ -113,6 +118,7 @@ impl Kind {
             Kind::ProgressBar => "ProgressBar",
             Kind::Table => "Table",
             Kind::TreeView => "TreeView",
+            Kind::Line => "Line",
         }
     }
 
@@ -132,6 +138,7 @@ impl Kind {
             Kind::ProgressBar => "progress",
             Kind::Table => "table",
             Kind::TreeView => "tree",
+            Kind::Line => "line",
         }
     }
 
@@ -150,6 +157,7 @@ impl Kind {
             Kind::ProgressBar => (30, 1),
             Kind::Table => (40, 6),
             Kind::TreeView => (30, 8),
+            Kind::Line => (20, 1),
         }
     }
 
@@ -234,6 +242,10 @@ pub struct Control {
     pub checks: bool,
     pub lines: bool,
     pub expanded: bool,
+    /// Линия: вертикальная (иначе горизонтальная), двойная, до рамки окна.
+    pub vertical: bool,
+    pub double: bool,
+    pub to_frame: bool,
     /// Элемент недоступен.
     pub disabled: bool,
     /// Контекст справки.
@@ -270,6 +282,9 @@ impl Control {
             checks: false,
             lines: true,
             expanded: true,
+            vertical: false,
+            double: false,
+            to_frame: false,
             disabled: false,
             help_ctx: 0,
         };
@@ -364,6 +379,9 @@ impl Control {
             ("checks", self.checks, d.checks),
             ("lines", self.lines, d.lines),
             ("expanded", self.expanded, d.expanded),
+            ("vertical", self.vertical, d.vertical),
+            ("double", self.double, d.double),
+            ("to_frame", self.to_frame, d.to_frame),
         ] {
             if v != dv {
                 p.push((k, Json::Bool(v)));
@@ -400,6 +418,9 @@ impl Control {
         c.editable = j.bool("editable", c.editable);
         c.row_numbers = j.bool("row_numbers", c.row_numbers);
         c.checks = j.bool("checks", c.checks);
+        c.vertical = j.bool("vertical", c.vertical);
+        c.double = j.bool("double", c.double);
+        c.to_frame = j.bool("to_frame", c.to_frame);
         c.lines = j.bool("lines", c.lines);
         c.expanded = j.bool("expanded", c.expanded);
         c.disabled = j.bool("disabled", false);
@@ -1723,6 +1744,9 @@ mod tests {
         let mut l = f.new_control(Kind::Label, 2, 2);
         l.link = "info".into();
         f.controls.push(l);
+        let mut ln = f.new_control(Kind::Line, 1, 6);
+        (ln.vertical, ln.double, ln.to_frame) = (true, true, true);
+        f.controls.push(ln);
         let j = crate::toml::to_string(&f.to_json()).unwrap();
         let g = Form::from_json(&crate::toml::parse(&j).unwrap()).unwrap();
         assert_eq!(f, g);
