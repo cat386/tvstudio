@@ -991,7 +991,7 @@ impl Ide {
                 }
                 _ => text.trim().to_string(),
             };
-            let p = Problem { kind: e.kind, shown: f.clone(), path, line: *l, col: *c, text, source: "cargo" };
+            let p = Problem { kind: e.kind, shown: f.replace('\\', "/"), path, line: *l, col: *c, text, source: "cargo" };
             if !v.contains(&p) {
                 v.push(p);
             }

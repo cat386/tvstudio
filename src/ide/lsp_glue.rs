@@ -741,8 +741,12 @@ impl Ide {
                 };
                 let lt = text_cache.entry(d.range.start.line).or_insert_with(|| self.line_text(app, p, d.range.start.line));
                 let col = col_from_lsp(lt, d.range.start.col, self.encoding_for(p)) + 1;
-                let shown =
-                    base.as_ref().and_then(|b| p.strip_prefix(b).ok()).map(|r| r.display().to_string()).unwrap_or_else(|| p.display().to_string());
+                let shown = base
+                    .as_ref()
+                    .and_then(|b| p.strip_prefix(b).ok())
+                    .map(|r| r.display().to_string())
+                    .unwrap_or_else(|| p.display().to_string())
+                    .replace('\\', "/");
                 let code = if d.code.is_empty() { String::new() } else { format!("[{}] ", d.code) };
                 let msg = d.message.lines().next().unwrap_or("").to_string();
                 v.push(Problem { kind, path: p.clone(), shown, line: d.range.start.line + 1, col, text: format!("{}{}", code, msg), source: "LSP" });
