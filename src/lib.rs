@@ -18,7 +18,7 @@
 //! | [`codeedit`], [`highlight`] | редактор кода и подсветка |
 //! | [`runner`] | запуск cargo в фоне |
 //! | [`dialogs`] | прочие диалоги и настройки среды |
-//! | [`toml`], [`json`] | формат файлов проекта и форм (TOML; старые — JSON) |
+//! | [`yaml`], [`toml`], [`json`] | формат файлов проекта и форм (YAML; старые — TOML и JSON); TOML — ещё и Cargo.toml |
 //! | [`formextract`] | извлечение форм из диалогов в коде |
 //! | [`importer`] | импорт готовой программы на tvision-rs |
 //! | [`ide`] | сама среда: меню и обработчик команд |
@@ -44,3 +44,4 @@ pub mod rustfmt;
 pub mod toml;
 pub mod toolwins;
 pub mod words;
+pub mod yaml;

@@ -1,207 +1,138 @@
-format = "tvstudio-project"
-version = 1
-name = "json_parse"
-forms = []
-open_files = ["src/main.rs"]
-
-[app]
-title = "json_parse"
-russian = false
-startup_form = ""
-
-[[app.menu]]
-title = "~Ф~айл"
-
-[[app.menu.items]]
-title = "~Н~овый (образец)"
-command = "cm::NEW"
-key = "Ctrl-N"
-help = 0
-
-[[app.menu.items]]
-title = "~О~ткрыть..."
-command = "cm::OPEN"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-title = "~С~охранить"
-command = "cm::SAVE"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-title = "Сохранить ~к~ак..."
-command = "cm::SAVE_AS"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ыход"
-command = "cm::QUIT"
-key = "Alt-X"
-help = 0
-
-[[app.menu]]
-title = "~J~SON"
-
-[[app.menu.items]]
-title = "~П~роверить"
-command = "CM_CHECK"
-key = "F9"
-help = 0
-
-[[app.menu.items]]
-title = "~Ф~орматировать"
-command = "CM_FORMAT"
-key = "F8"
-help = 0
-
-[[app.menu.items]]
-title = "~С~жать"
-command = "CM_COMPACT"
-key = "F7"
-help = 0
-
-[[app.menu]]
-title = "~П~равка"
-
-[[app.menu.items]]
-title = "~О~тменить"
-command = "cm::UNDO"
-key = "Ctrl-U"
-help = 0
-
-[[app.menu.items]]
-title = "~П~овторить"
-command = "cm::REDO"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ырезать"
-command = "cm::CUT"
-key = "Shift-Del"
-help = 0
-
-[[app.menu.items]]
-title = "~К~опировать"
-command = "cm::COPY"
-key = "Ctrl-Ins"
-help = 0
-
-[[app.menu.items]]
-title = "Вст~а~вить"
-command = "cm::PASTE"
-key = "Shift-Ins"
-help = 0
-
-[[app.menu]]
-title = "~О~кна"
-
-[[app.menu.items]]
-title = "~М~озаика"
-command = "cm::TILE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~К~аскад"
-command = "cm::CASCADE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "Р~а~спахнуть"
-command = "cm::ZOOM"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-title = "~С~ледующее"
-command = "cm::NEXT"
-key = "F6"
-help = 0
-
-[[app.menu.items]]
-title = "~З~акрыть"
-command = "cm::CLOSE"
-key = "Alt-F3"
-help = 0
-
-[[app.status]]
-text = "~F9~ Проверить"
-key = "F9"
-command = "CM_CHECK"
-
-[[app.status]]
-text = "~F8~ Форматировать"
-key = "F8"
-command = "CM_FORMAT"
-
-[[app.status]]
-text = "~F7~ Сжать"
-key = "F7"
-command = "CM_COMPACT"
-
-[[app.status]]
-text = "~F3~ Открыть"
-key = "F3"
-command = "cm::OPEN"
-
-[[app.status]]
-text = "~F2~ Сохранить"
-key = "F2"
-command = "cm::SAVE"
-
-[[app.status]]
-text = "~Alt-X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.status]]
-text = ""
-key = "F5"
-command = "cm::ZOOM"
-
-[[app.status]]
-text = ""
-key = "F6"
-command = "cm::NEXT"
-
-[[app.status]]
-text = ""
-key = "Alt+F3"
-command = "cm::CLOSE"
-
-[[app.commands]]
-name = "CM_CHECK"
-value = 100
-action = ""
-comment = "Проверить JSON в активном окне."
-
-[[app.commands]]
-name = "CM_FORMAT"
-value = 101
-action = ""
-comment = "Отформатировать с отступами."
-
-[[app.commands]]
-name = "CM_COMPACT"
-value = 102
-action = ""
-comment = "Сжать в одну строку."
+format: tvstudio-project
+version: 1
+name: json_parse
+kind: tvision
+forms: []
+open_files: [src/main.rs]
+app:
+  title: json_parse
+  russian: false
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~Н~овый (образец)
+          command: cm::NEW
+          key: Ctrl-N
+          help: 0
+        - title: ~О~ткрыть...
+          command: cm::OPEN
+          key: F3
+          help: 0
+        - title: ~С~охранить
+          command: cm::SAVE
+          key: F2
+          help: 0
+        - title: Сохранить ~к~ак...
+          command: cm::SAVE_AS
+          key: ''
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt-X
+          help: 0
+    - title: ~J~SON
+      items:
+        - title: ~П~роверить
+          command: CM_CHECK
+          key: F9
+          help: 0
+        - title: ~Ф~орматировать
+          command: CM_FORMAT
+          key: F8
+          help: 0
+        - title: ~С~жать
+          command: CM_COMPACT
+          key: F7
+          help: 0
+    - title: ~П~равка
+      items:
+        - title: ~О~тменить
+          command: cm::UNDO
+          key: Ctrl-U
+          help: 0
+        - title: ~П~овторить
+          command: cm::REDO
+          key: ''
+          help: 0
+        - separator: true
+        - title: ~В~ырезать
+          command: cm::CUT
+          key: Shift-Del
+          help: 0
+        - title: ~К~опировать
+          command: cm::COPY
+          key: Ctrl-Ins
+          help: 0
+        - title: Вст~а~вить
+          command: cm::PASTE
+          key: Shift-Ins
+          help: 0
+    - title: ~О~кна
+      items:
+        - title: ~М~озаика
+          command: cm::TILE
+          key: ''
+          help: 0
+        - title: ~К~аскад
+          command: cm::CASCADE
+          key: ''
+          help: 0
+        - separator: true
+        - title: Р~а~спахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt-F3
+          help: 0
+  status:
+    - text: ~F9~ Проверить
+      key: F9
+      command: CM_CHECK
+    - text: ~F8~ Форматировать
+      key: F8
+      command: CM_FORMAT
+    - text: ~F7~ Сжать
+      key: F7
+      command: CM_COMPACT
+    - text: ~F3~ Открыть
+      key: F3
+      command: cm::OPEN
+    - text: ~F2~ Сохранить
+      key: F2
+      command: cm::SAVE
+    - text: ~Alt-X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ''
+      key: F10
+      command: cm::MENU
+    - text: ''
+      key: F5
+      command: cm::ZOOM
+    - text: ''
+      key: F6
+      command: cm::NEXT
+    - text: ''
+      key: Alt+F3
+      command: cm::CLOSE
+  commands:
+    - name: CM_CHECK
+      value: 100
+      action: ''
+      comment: Проверить JSON в активном окне.
+    - name: CM_FORMAT
+      value: 101
+      action: ''
+      comment: Отформатировать с отступами.
+    - name: CM_COMPACT
+      value: 102
+      action: ''
+      comment: Сжать в одну строку.

@@ -1,44 +1,42 @@
-format = "tvstudio-form"
-version = 1
-name = "choose"
-title = "{title}"
-x = 10
-y = 3
-w = 60
-h = 16
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "list_box"
-name = "lid"
-x = 2
-y = 2
-w = 55
-h = 10
-items = ["?"]
-scrollbar = true
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 17
-y = 13
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 31
-y = 13
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: choose
+title: '{title}'
+x: 10
+y: 3
+w: 60
+h: 16
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: list_box
+    name: lid
+    x: 2
+    y: 2
+    w: 55
+    h: 10
+    items: ['?']
+    scrollbar: true
+  - kind: button
+    name: button1
+    x: 17
+    y: 13
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 31
+    y: 13
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

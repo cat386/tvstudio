@@ -1,4 +1,4 @@
-//! Подсветка синтаксиса: Rust, TOML и JSON.
+//! Подсветка синтаксиса: Rust, TOML, YAML и JSON.
 //!
 //! Разбор идёт построчно; между строками переносится только состояние
 //! «внутри многострочного комментария / строки». Этого достаточно для
@@ -20,6 +20,7 @@ const RUST_PRIMITIVES: &[&str] =
 pub enum Lang {
     Rust,
     Toml,
+    Yaml,
     Json,
     Plain,
 }
@@ -29,7 +30,8 @@ impl Lang {
     pub fn from_path(p: &std::path::Path) -> Lang {
         match p.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
             Some("rs") => Lang::Rust,
-            Some("toml") | Some("tvf") | Some("tvsp") => Lang::Toml,
+            Some("toml") => Lang::Toml,
+            Some("yaml") | Some("yml") | Some("tvf") | Some("tvsp") => Lang::Yaml,
             Some("json") => Lang::Json,
             _ => Lang::Plain,
         }
@@ -64,6 +66,8 @@ pub enum State {
     Raw(u8),
     /// TOML: внутри многострочной строки `"""…"""`.
     TomlMulti,
+    /// YAML: внутри блока `|` / `>`; число — отступ строки, где он начат.
+    YamlBlock(u16),
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -80,6 +84,7 @@ pub fn highlight_line(line: &[char], state: &mut State, lang: Lang) -> Vec<Class
     match lang {
         Lang::Rust => rust_line(line, state),
         Lang::Toml => toml_line(line, state),
+        Lang::Yaml => yaml_line(line, state),
         Lang::Json => json_line(line),
         Lang::Plain => vec![Class::Normal; line.len()],
     }
@@ -145,7 +150,7 @@ fn rust_line(l: &[char], state: &mut State) -> Vec<Class> {
                 }
                 continue;
             }
-            State::TomlMulti => *state = State::Normal,
+            State::TomlMulti | State::YamlBlock(_) => *state = State::Normal,
             State::Normal => {}
         }
         if i >= n {
@@ -397,6 +402,141 @@ fn toml_line(l: &[char], state: &mut State) -> Vec<Class> {
     out
 }
 
+fn yaml_line(l: &[char], state: &mut State) -> Vec<Class> {
+    let n = l.len();
+    let mut out = vec![Class::Normal; n];
+    let indent = l.iter().take_while(|&&c| c == ' ').count();
+    if let State::YamlBlock(k) = *state {
+        if indent == n {
+            return out;
+        }
+        if indent > k as usize {
+            for o in out.iter_mut().skip(indent) {
+                *o = Class::Str;
+            }
+            return out;
+        }
+        *state = State::Normal;
+    }
+    let mut i = indent;
+    // `- ` элементов списка (и `- - `).
+    while i < n && l[i] == '-' && (i + 1 == n || l[i + 1] == ' ') {
+        out[i] = Class::Punct;
+        i += 1;
+        while i < n && l[i] == ' ' {
+            i += 1;
+        }
+    }
+    if i < n && l[i] == '#' {
+        for o in out.iter_mut().skip(i) {
+            *o = Class::Comment;
+        }
+        return out;
+    }
+    let rest: String = l[i..].iter().collect();
+    if rest.trim_end() == "---" || rest.trim_end() == "..." {
+        for o in out.iter_mut().skip(i) {
+            *o = Class::Keyword;
+        }
+        return out;
+    }
+    // Ключ.
+    if let Some(cb) = crate::yaml::find_colon(&rest) {
+        let c = rest[..cb].chars().count();
+        for o in out.iter_mut().skip(i).take(c) {
+            *o = Class::Type;
+        }
+        if rest[..cb].starts_with(['"', '\'']) {
+            for o in out.iter_mut().skip(i).take(c) {
+                *o = Class::Str;
+            }
+        }
+        out[i + c] = Class::Punct;
+        i += c + 1;
+    }
+    while i < n && l[i] == ' ' {
+        i += 1;
+    }
+    if i < n && (l[i] == '|' || l[i] == '>') {
+        out[i] = Class::Punct;
+        *state = State::YamlBlock(indent as u16);
+        if let Some(h) = (i..n).find(|&j| l[j] == '#' && l[j - 1] == ' ') {
+            for o in out.iter_mut().skip(h) {
+                *o = Class::Comment;
+            }
+        }
+        return out;
+    }
+    yaml_value(l, i, &mut out);
+    out
+}
+
+/// Значение YAML с позиции `i`: строки в кавычках, скобки, слова и комментарий.
+fn yaml_value(l: &[char], mut i: usize, out: &mut [Class]) {
+    let n = l.len();
+    let flow = i < n && (l[i] == '[' || l[i] == '{');
+    while i < n {
+        let c = l[i];
+        if c == '#' && (i == 0 || l[i - 1] == ' ') {
+            for o in out.iter_mut().skip(i) {
+                *o = Class::Comment;
+            }
+            return;
+        }
+        if c == '"' || c == '\'' {
+            let mut j = i + 1;
+            while j < n {
+                if c == '"' && l[j] == '\\' {
+                    j += 2;
+                    continue;
+                }
+                if l[j] == c {
+                    if c == '\'' && j + 1 < n && l[j + 1] == '\'' {
+                        j += 2;
+                        continue;
+                    }
+                    break;
+                }
+                j += 1;
+            }
+            let end = (j + 1).min(n);
+            for o in out.iter_mut().take(end).skip(i) {
+                *o = Class::Str;
+            }
+            i = end;
+            continue;
+        }
+        if flow && "[]{},:".contains(c) {
+            out[i] = Class::Punct;
+            i += 1;
+            continue;
+        }
+        if c == ' ' {
+            i += 1;
+            continue;
+        }
+        // Слово до конца значения (во встроенном стиле — до разделителя).
+        let mut j = i;
+        while j < n && !(flow && "[]{},".contains(l[j])) && !(l[j] == '#' && j > 0 && l[j - 1] == ' ') {
+            if flow && l[j] == ':' && (j + 1 == n || l[j + 1] == ' ') {
+                break;
+            }
+            j += 1;
+        }
+        let word: String = l[i..j].iter().collect();
+        let cls = match crate::yaml::resolve_plain(word.trim()) {
+            crate::json::Json::Num(_) => Class::Number,
+            crate::json::Json::Bool(_) | crate::json::Json::Null => Class::Keyword,
+            _ => Class::Str,
+        };
+        let trimmed = word.trim_end().chars().count();
+        for o in out.iter_mut().skip(i).take(trimmed) {
+            *o = cls;
+        }
+        i = j;
+    }
+}
+
 fn json_line(l: &[char]) -> Vec<Class> {
     let n = l.len();
     let mut out = vec![Class::Normal; n];
@@ -478,6 +618,28 @@ mod tests {
         assert_eq!(c[0], Class::Comment);
         assert_eq!(c[5], Class::Normal);
         assert_eq!(st, State::Normal);
+    }
+
+    #[test]
+    fn yaml() {
+        let hl = |s: &str, st: &mut State| highlight_line(&s.chars().collect::<Vec<_>>(), st, Lang::Yaml);
+        let mut st = State::Normal;
+        let c = hl("name: about  # c", &mut st);
+        assert_eq!((c[0], c[4], c[6], c[13]), (Class::Type, Class::Punct, Class::Str, Class::Comment));
+        let c = hl("  - w: 40", &mut st);
+        assert_eq!((c[2], c[4], c[7]), (Class::Punct, Class::Type, Class::Number));
+        let c = hl("ok: [true, 'x', 1]", &mut st);
+        assert_eq!((c[4], c[5], c[11], c[16]), (Class::Punct, Class::Keyword, Class::Str, Class::Number));
+        let c = hl("text: |-", &mut st);
+        assert_eq!(c[6], Class::Punct);
+        assert_eq!(st, State::YamlBlock(0));
+        let c = hl("  # не комментарий: это текст", &mut st);
+        assert_eq!(c[2], Class::Str);
+        hl("", &mut st);
+        assert_eq!(st, State::YamlBlock(0));
+        let c = hl("next: 1", &mut st);
+        assert_eq!((c[0], st), (Class::Type, State::Normal));
+        assert_eq!(Lang::from_path(std::path::Path::new("forms/a.tvf")), Lang::Yaml);
     }
 
     #[test]

@@ -1,57 +1,53 @@
-format = "tvstudio-form"
-version = 1
-name = "input_box_hist"
-title = "{title}"
-x = 10
-y = 3
-w = 62
-h = 8
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "input_line"
-name = "iid"
-x = 3
-y = 3
-w = 56
-h = 1
-text = "{initial}"
-max_len = 1024
-history = 1
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "label1"
-x = 2
-y = 2
-w = 38
-h = 1
-text = "{label}"
-link = "iid"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 17
-y = 5
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 31
-y = 5
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: input_box_hist
+title: '{title}'
+x: 10
+y: 3
+w: 62
+h: 8
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: input_line
+    name: iid
+    x: 3
+    y: 3
+    w: 56
+    h: 1
+    text: '{initial}'
+    max_len: 1024
+    history: 1
+    scrollbar: false
+  - kind: label
+    name: label1
+    x: 2
+    y: 2
+    w: 38
+    h: 1
+    text: '{label}'
+    link: iid
+    scrollbar: false
+  - kind: button
+    name: button1
+    x: 17
+    y: 5
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 31
+    y: 5
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

@@ -1,55 +1,51 @@
-format = "tvstudio-form"
-version = 1
-name = "name_dialog"
-title = "Знакомство"
-x = 10
-y = 3
-w = 40
-h = 9
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "input_line"
-name = "name"
-x = 10
-y = 2
-w = 27
-h = 1
-max_len = 30
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "name_label"
-x = 2
-y = 2
-w = 7
-h = 1
-text = "~И~мя:"
-link = "name"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "ok"
-x = 6
-y = 5
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "cancel"
-x = 21
-y = 5
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: name_dialog
+title: Знакомство
+x: 10
+y: 3
+w: 40
+h: 9
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: input_line
+    name: name
+    x: 10
+    y: 2
+    w: 27
+    h: 1
+    max_len: 30
+    scrollbar: false
+  - kind: label
+    name: name_label
+    x: 2
+    y: 2
+    w: 7
+    h: 1
+    text: '~И~мя:'
+    link: name
+    scrollbar: false
+  - kind: button
+    name: ok
+    x: 6
+    y: 5
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: cancel
+    x: 21
+    y: 5
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

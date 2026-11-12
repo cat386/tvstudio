@@ -1,65 +1,59 @@
-format = "tvstudio-form"
-version = 1
-name = "sort"
-title = "Сортировка"
-x = 10
-y = 3
-w = 44
-h = 13
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "radio_buttons"
-name = "rid"
-x = 3
-y = 3
-w = 19
-h = 5
-items = ["~И~мя", "~Р~асширение", "Ра~з~мер", "~В~ремя", "~Б~ез сортировки"]
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "label1"
-x = 2
-y = 2
-w = 18
-h = 1
-text = "~П~орядок"
-link = "rid"
-scrollbar = false
-
-[[controls]]
-kind = "check_boxes"
-name = "cid"
-x = 23
-y = 3
-w = 19
-h = 3
-items = ["~О~братный", "~К~аталоги с файлами", "Р~е~гистр"]
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 9
-y = 10
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 23
-y = 10
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: sort
+title: Сортировка
+x: 10
+y: 3
+w: 44
+h: 13
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: radio_buttons
+    name: rid
+    x: 3
+    y: 3
+    w: 19
+    h: 5
+    items: [~И~мя, ~Р~асширение, Ра~з~мер, ~В~ремя, ~Б~ез сортировки]
+    scrollbar: false
+  - kind: label
+    name: label1
+    x: 2
+    y: 2
+    w: 18
+    h: 1
+    text: ~П~орядок
+    link: rid
+    scrollbar: false
+  - kind: check_boxes
+    name: cid
+    x: 23
+    y: 3
+    w: 19
+    h: 3
+    items: [~О~братный, ~К~аталоги с файлами, Р~е~гистр]
+    scrollbar: false
+  - kind: button
+    name: button1
+    x: 9
+    y: 10
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 23
+    y: 10
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

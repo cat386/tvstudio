@@ -1,117 +1,80 @@
-format = "tvstudio-project"
-version = 1
-name = "json_table"
-forms = ["record_dialog"]
-open_files = ["src/main.rs"]
-
-[app]
-title = "json_table"
-russian = false
-startup_form = ""
-
-[[app.menu]]
-title = "~Ф~айл"
-
-[[app.menu.items]]
-title = "~О~ткрыть JSON..."
-command = "CM_OPEN_JSON"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-title = "~З~апись..."
-command = "CM_SHOW_RECORD"
-key = "F4"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ыход"
-command = "cm::QUIT"
-key = "Alt-X"
-help = 0
-
-[[app.menu]]
-title = "~О~кна"
-
-[[app.menu.items]]
-title = "~М~озаика"
-command = "cm::TILE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~К~аскад"
-command = "cm::CASCADE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "Р~а~спахнуть"
-command = "cm::ZOOM"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-title = "~С~ледующее"
-command = "cm::NEXT"
-key = "F6"
-help = 0
-
-[[app.menu.items]]
-title = "~З~акрыть"
-command = "cm::CLOSE"
-key = "Alt-F3"
-help = 0
-
-[[app.status]]
-text = "~F3~ Открыть"
-key = "F3"
-command = "CM_OPEN_JSON"
-
-[[app.status]]
-text = "~F4~ Запись"
-key = "F4"
-command = "CM_SHOW_RECORD"
-
-[[app.status]]
-text = "~Alt-F3~ Закрыть"
-key = "Alt+F3"
-command = "cm::CLOSE"
-
-[[app.status]]
-text = "~Alt-X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.status]]
-text = ""
-key = "F5"
-command = "cm::ZOOM"
-
-[[app.status]]
-text = ""
-key = "F6"
-command = "cm::NEXT"
-
-[[app.commands]]
-name = "CM_OPEN_JSON"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_SHOW_RECORD"
-value = 101
-action = ""
-comment = "Показать запись под курсором (F4; Enter и двойной щелчок делают то же)."
+format: tvstudio-project
+version: 1
+name: json_table
+kind: tvision
+forms: [record_dialog]
+open_files: [src/main.rs]
+app:
+  title: json_table
+  russian: false
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~О~ткрыть JSON...
+          command: CM_OPEN_JSON
+          key: F3
+          help: 0
+        - title: ~З~апись...
+          command: CM_SHOW_RECORD
+          key: F4
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt-X
+          help: 0
+    - title: ~О~кна
+      items:
+        - title: ~М~озаика
+          command: cm::TILE
+          key: ''
+          help: 0
+        - title: ~К~аскад
+          command: cm::CASCADE
+          key: ''
+          help: 0
+        - separator: true
+        - title: Р~а~спахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt-F3
+          help: 0
+  status:
+    - text: ~F3~ Открыть
+      key: F3
+      command: CM_OPEN_JSON
+    - text: ~F4~ Запись
+      key: F4
+      command: CM_SHOW_RECORD
+    - text: ~Alt-F3~ Закрыть
+      key: Alt+F3
+      command: cm::CLOSE
+    - text: ~Alt-X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ''
+      key: F10
+      command: cm::MENU
+    - text: ''
+      key: F5
+      command: cm::ZOOM
+    - text: ''
+      key: F6
+      command: cm::NEXT
+  commands:
+    - name: CM_OPEN_JSON
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_SHOW_RECORD
+      value: 101
+      action: ''
+      comment: Показать запись под курсором (F4; Enter и двойной щелчок делают то же).

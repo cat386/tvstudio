@@ -173,7 +173,7 @@ fn in_string_or_comment(before: &str, lang: Lang) -> bool {
         match c {
             '"' => in_str = true,
             '/' if lang == Lang::Rust && chars.get(i + 1) == Some(&'/') => return true,
-            '#' if lang == Lang::Toml => return true,
+            '#' if lang == Lang::Toml || lang == Lang::Yaml => return true,
             _ => {}
         }
     }

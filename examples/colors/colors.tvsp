@@ -1,100 +1,70 @@
-format = "tvstudio-project"
-version = 1
-name = "colors"
-forms = []
-open_files = ["src/main.rs"]
-
-[app]
-title = "colors"
-russian = true
-startup_form = ""
-
-[[app.menu]]
-title = "~Ц~вета"
-
-[[app.menu.items]]
-title = "~П~алитра 256"
-command = "CM_PALETTE"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-title = "~Т~ема: gruvbox/классика/сумерки"
-command = "CM_THEME"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-title = "~Н~астройка цветов…"
-command = "CM_COLORS"
-key = "F4"
-help = 0
-
-[[app.menu.items]]
-title = "~Р~ежим вывода"
-command = "CM_MODE"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "В~ы~ход"
-command = "cm::QUIT"
-key = "Alt+X"
-help = 0
-
-[[app.status]]
-text = "~Alt+X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = "~F2~ Палитра"
-key = "F2"
-command = "CM_PALETTE"
-
-[[app.status]]
-text = "~F3~ Тема"
-key = "F3"
-command = "CM_THEME"
-
-[[app.status]]
-text = "~F4~ Цвета"
-key = "F4"
-command = "CM_COLORS"
-
-[[app.status]]
-text = "~F5~ Режим"
-key = "F5"
-command = "CM_MODE"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.commands]]
-name = "CM_PALETTE"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_THEME"
-value = 101
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_COLORS"
-value = 102
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_MODE"
-value = 103
-action = ""
-comment = ""
+format: tvstudio-project
+version: 1
+name: colors
+kind: tvision
+forms: []
+open_files: [src/main.rs]
+app:
+  title: colors
+  russian: true
+  startup_form: ''
+  menu:
+    - title: ~Ц~вета
+      items:
+        - title: ~П~алитра 256
+          command: CM_PALETTE
+          key: F2
+          help: 0
+        - title: '~Т~ема: gruvbox/классика/сумерки'
+          command: CM_THEME
+          key: F3
+          help: 0
+        - title: ~Н~астройка цветов…
+          command: CM_COLORS
+          key: F4
+          help: 0
+        - title: ~Р~ежим вывода
+          command: CM_MODE
+          key: F5
+          help: 0
+        - separator: true
+        - title: В~ы~ход
+          command: cm::QUIT
+          key: Alt+X
+          help: 0
+  status:
+    - text: ~Alt+X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ~F2~ Палитра
+      key: F2
+      command: CM_PALETTE
+    - text: ~F3~ Тема
+      key: F3
+      command: CM_THEME
+    - text: ~F4~ Цвета
+      key: F4
+      command: CM_COLORS
+    - text: ~F5~ Режим
+      key: F5
+      command: CM_MODE
+    - text: ''
+      key: F10
+      command: cm::MENU
+  commands:
+    - name: CM_PALETTE
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_THEME
+      value: 101
+      action: ''
+      comment: ''
+    - name: CM_COLORS
+      value: 102
+      action: ''
+      comment: ''
+    - name: CM_MODE
+      value: 103
+      action: ''
+      comment: ''

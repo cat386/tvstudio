@@ -1,64 +1,47 @@
-format = "tvstudio-project"
-version = 1
-name = "learn_02_menu"
-forms = []
-open_files = ["src/main.rs"]
-
-[app]
-title = "learn_02_menu"
-russian = true
-startup_form = ""
-
-[[app.menu]]
-title = "~Ф~айл"
-
-[[app.menu.items]]
-title = "~П~ривет"
-command = "CM_HELLO"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ыход"
-command = "cm::QUIT"
-key = "Alt-X"
-help = 0
-
-[[app.menu]]
-title = "~С~правка"
-
-[[app.menu.items]]
-title = "~О~ программе"
-command = "CM_ABOUT"
-key = ""
-help = 0
-
-[[app.status]]
-text = "~F2~ Привет"
-key = "F2"
-command = "CM_HELLO"
-
-[[app.status]]
-text = "~Alt-X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.commands]]
-name = "CM_HELLO"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_ABOUT"
-value = 101
-action = ""
-comment = ""
+format: tvstudio-project
+version: 1
+name: learn_02_menu
+kind: tvision
+forms: []
+open_files: [src/main.rs]
+app:
+  title: learn_02_menu
+  russian: true
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~П~ривет
+          command: CM_HELLO
+          key: F2
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt-X
+          help: 0
+    - title: ~С~правка
+      items:
+        - title: ~О~ программе
+          command: CM_ABOUT
+          key: ''
+          help: 0
+  status:
+    - text: ~F2~ Привет
+      key: F2
+      command: CM_HELLO
+    - text: ~Alt-X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ''
+      key: F10
+      command: cm::MENU
+  commands:
+    - name: CM_HELLO
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_ABOUT
+      value: 101
+      action: ''
+      comment: ''

@@ -1,201 +1,134 @@
-format = "tvstudio-project"
-version = 1
-name = "demo"
-forms = ["dialog"]
-open_files = ["src/main.rs"]
-
-[app]
-title = "demo"
-russian = false
-startup_form = ""
-
-[[app.menu]]
-title = "~Ф~айл"
-
-[[app.menu.items]]
-title = "~Н~овое окно"
-command = "cm::NEW"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-title = "~С~писок"
-command = "CM_LIST"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ыход"
-command = "cm::QUIT"
-key = "Alt-X"
-help = 0
-
-[[app.menu]]
-title = "~Д~иалоги"
-
-[[app.menu.items]]
-title = "~Н~астройки..."
-command = "CM_DIALOG"
-key = "Alt-D"
-help = 0
-
-[[app.menu.items]]
-title = "~В~вод строки..."
-command = "CM_ASK_NAME"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~Ц~вета..."
-command = "CM_COLORS"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~Е~щё"
-
-[[app.menu.items.items]]
-title = "~О~ программе..."
-command = "CM_ABOUT"
-key = ""
-help = 0
-
-[[app.menu]]
-title = "~О~кна"
-
-[[app.menu.items]]
-title = "~Д~ерево каталогов"
-command = "CM_OUTLINE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~М~озаика"
-command = "cm::TILE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~К~аскад"
-command = "cm::CASCADE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~Р~азмер/перемещение"
-command = "cm::RESIZE"
-key = "Ctrl-F5"
-help = 0
-
-[[app.menu.items]]
-title = "Р~а~спахнуть"
-command = "cm::ZOOM"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-title = "~С~ледующее"
-command = "cm::NEXT"
-key = "F6"
-help = 0
-
-[[app.menu.items]]
-title = "~З~акрыть"
-command = "cm::CLOSE"
-key = "Alt-F3"
-help = 0
-
-[[app.status]]
-text = "~F1~ Справка"
-key = "F1"
-command = "cm::HELP"
-
-[[app.status]]
-text = "~Alt-X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = "~F2~ Окно"
-key = "F2"
-command = "cm::NEW"
-
-[[app.status]]
-text = "~F3~ Список"
-key = "F3"
-command = "CM_LIST"
-
-[[app.status]]
-text = "~Alt-D~ Диалог"
-key = "Alt+D"
-command = "CM_DIALOG"
-
-[[app.status]]
-text = "~F10~ Меню"
-key = "F10"
-command = "cm::MENU"
-
-[[app.status]]
-text = ""
-key = "Alt+F3"
-command = "cm::CLOSE"
-
-[[app.status]]
-text = ""
-key = "F5"
-command = "cm::ZOOM"
-
-[[app.status]]
-text = ""
-key = "F6"
-command = "cm::NEXT"
-
-[[app.status]]
-text = ""
-key = "Ctrl+F5"
-command = "cm::RESIZE"
-
-[[app.commands]]
-name = "CM_DIALOG"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_LIST"
-value = 101
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_ABOUT"
-value = 102
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_ASK_NAME"
-value = 103
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_OUTLINE"
-value = 104
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_COLORS"
-value = 105
-action = ""
-comment = ""
+format: tvstudio-project
+version: 1
+name: demo
+kind: tvision
+forms: [dialog]
+open_files: [src/main.rs]
+app:
+  title: demo
+  russian: false
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~Н~овое окно
+          command: cm::NEW
+          key: F2
+          help: 0
+        - title: ~С~писок
+          command: CM_LIST
+          key: F3
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt-X
+          help: 0
+    - title: ~Д~иалоги
+      items:
+        - title: ~Н~астройки...
+          command: CM_DIALOG
+          key: Alt-D
+          help: 0
+        - title: ~В~вод строки...
+          command: CM_ASK_NAME
+          key: ''
+          help: 0
+        - title: ~Ц~вета...
+          command: CM_COLORS
+          key: ''
+          help: 0
+        - title: ~Е~щё
+          items:
+            - title: ~О~ программе...
+              command: CM_ABOUT
+              key: ''
+              help: 0
+    - title: ~О~кна
+      items:
+        - title: ~Д~ерево каталогов
+          command: CM_OUTLINE
+          key: ''
+          help: 0
+        - separator: true
+        - title: ~М~озаика
+          command: cm::TILE
+          key: ''
+          help: 0
+        - title: ~К~аскад
+          command: cm::CASCADE
+          key: ''
+          help: 0
+        - separator: true
+        - title: ~Р~азмер/перемещение
+          command: cm::RESIZE
+          key: Ctrl-F5
+          help: 0
+        - title: Р~а~спахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt-F3
+          help: 0
+  status:
+    - text: ~F1~ Справка
+      key: F1
+      command: cm::HELP
+    - text: ~Alt-X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ~F2~ Окно
+      key: F2
+      command: cm::NEW
+    - text: ~F3~ Список
+      key: F3
+      command: CM_LIST
+    - text: ~Alt-D~ Диалог
+      key: Alt+D
+      command: CM_DIALOG
+    - text: ~F10~ Меню
+      key: F10
+      command: cm::MENU
+    - text: ''
+      key: Alt+F3
+      command: cm::CLOSE
+    - text: ''
+      key: F5
+      command: cm::ZOOM
+    - text: ''
+      key: F6
+      command: cm::NEXT
+    - text: ''
+      key: Ctrl+F5
+      command: cm::RESIZE
+  commands:
+    - name: CM_DIALOG
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_LIST
+      value: 101
+      action: ''
+      comment: ''
+    - name: CM_ABOUT
+      value: 102
+      action: ''
+      comment: ''
+    - name: CM_ASK_NAME
+      value: 103
+      action: ''
+      comment: ''
+    - name: CM_OUTLINE
+      value: 104
+      action: ''
+      comment: ''
+    - name: CM_COLORS
+      value: 105
+      action: ''
+      comment: ''

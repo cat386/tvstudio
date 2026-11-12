@@ -713,18 +713,18 @@ impl Form {
         Ok(f)
     }
 
-    /// Загрузить форму из файла `*.tvf` (TOML; файлы старых версий — JSON).
+    /// Загрузить форму из файла `*.tvf` (YAML; файлы старых версий — TOML или JSON).
     pub fn load(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        Form::from_json(&crate::toml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?)
+        Form::from_json(&crate::yaml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?)
     }
 
-    /// Сохранить форму в TOML.
+    /// Сохранить форму в YAML.
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(d) = path.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let text = crate::toml::to_string(&self.to_json())?;
+        let text = crate::yaml::to_string(&self.to_json());
         std::fs::write(path, text).map_err(|e| format!("{}: {}", path.display(), e))
     }
 }
@@ -1182,10 +1182,10 @@ impl Project {
         ])
     }
 
-    /// Загрузить проект из файла `*.tvsp` (TOML; файлы старых версий — JSON).
+    /// Загрузить проект из файла `*.tvsp` (YAML; файлы старых версий — TOML или JSON).
     pub fn load(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        let j = crate::toml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?;
+        let j = crate::yaml::parse_document(&s).map_err(|e| format!("{}: {}", path.display(), e))?;
         if j.str("format") != "tvstudio-project" {
             return Err(format!("{}: это не файл проекта TV Studio", path.display()));
         }
@@ -1202,10 +1202,10 @@ impl Project {
         })
     }
 
-    /// Сохранить файл проекта в TOML.
+    /// Сохранить файл проекта в YAML.
     pub fn save(&self) -> Result<(), String> {
         let p = self.file();
-        let text = crate::toml::to_string(&self.to_json())?;
+        let text = crate::yaml::to_string(&self.to_json());
         std::fs::write(&p, text).map_err(|e| format!("{}: {}", p.display(), e))
     }
 
@@ -1638,12 +1638,14 @@ mod tests {
         assert!(Project::create_rust(&base, "plain").is_err(), "второй раз в тот же каталог");
         // Старый файл проекта (без kind) — проект tvision-rs.
         let text = std::fs::read_to_string(p.file()).unwrap();
-        assert!(text.starts_with("format = \"tvstudio-project\"\n"), "файл проекта — TOML:\n{}", text);
-        let mut j = crate::toml::parse_document(&text).unwrap();
+        assert!(text.starts_with("format: tvstudio-project\nversion: "), "файл проекта — YAML:\n{}", text);
+        let mut j = crate::yaml::parse_document(&text).unwrap();
         if let Json::Obj(v) = &mut j {
             v.retain(|(k, _)| k != "kind");
         }
-        // …и записан в старом формате JSON — тоже читается.
+        // …и записан в старых форматах — TOML и JSON — тоже читается.
+        std::fs::write(p.file(), crate::toml::to_string(&j).unwrap()).unwrap();
+        assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
         std::fs::write(p.file(), j.to_pretty()).unwrap();
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
         let _ = std::fs::remove_dir_all(&base);
@@ -1747,8 +1749,8 @@ mod tests {
         let mut ln = f.new_control(Kind::Line, 1, 6);
         (ln.vertical, ln.double, ln.to_frame) = (true, true, true);
         f.controls.push(ln);
-        let j = crate::toml::to_string(&f.to_json()).unwrap();
-        let g = Form::from_json(&crate::toml::parse(&j).unwrap()).unwrap();
+        let j = crate::yaml::to_string(&f.to_json());
+        let g = Form::from_json(&crate::yaml::parse(&j).unwrap()).unwrap();
         assert_eq!(f, g);
         assert_eq!(f.unique_name("label"), "label2");
     }
@@ -1757,7 +1759,7 @@ mod tests {
     fn app_roundtrip() {
         let a = AppModel::starter("x");
         let doc = Json::obj(vec![("app", a.to_json())]);
-        let b = AppModel::from_json(crate::toml::parse(&crate::toml::to_string(&doc).unwrap()).unwrap().get("app").unwrap());
+        let b = AppModel::from_json(crate::yaml::parse(&crate::yaml::to_string(&doc)).unwrap().get("app").unwrap());
         assert_eq!(a, b);
         assert_eq!(a.command_value("ABOUT"), Some(100));
         assert_eq!(a.command_value("cm::QUIT"), Some(1));

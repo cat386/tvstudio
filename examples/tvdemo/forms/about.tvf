@@ -1,40 +1,33 @@
-format = "tvstudio-form"
-version = 1
-name = "about"
-title = "About"
-x = 10
-y = 3
-w = 39
-h = 13
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "static_text"
-name = "text1"
-x = 9
-y = 2
-w = 21
-h = 7
-text = """
-\u0003Turbo Vision Demo
-
-\u0003Rust Version
-
-\u0003Copyright (c) 1994
-
-\u0003Borland International"""
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 14
-y = 10
-w = 12
-h = 2
-text = " OK"
-command = "cm::OK"
-default = true
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: about
+title: About
+x: 10
+y: 3
+w: 39
+h: 13
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: static_text
+    name: text1
+    x: 9
+    y: 2
+    w: 21
+    h: 7
+    text: "\x03Turbo Vision Demo\n\n\x03Rust Version\n\n\x03Copyright (c) 1994\n\n\x03Borland International"
+    scrollbar: false
+  - kind: button
+    name: button1
+    x: 14
+    y: 10
+    w: 12
+    h: 2
+    text: ' OK'
+    command: cm::OK
+    default: true
+    scrollbar: false

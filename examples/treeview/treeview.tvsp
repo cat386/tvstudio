@@ -1,256 +1,170 @@
-format = "tvstudio-project"
-version = 1
-name = "treeview"
-forms = ["components_dialog"]
-open_files = ["src/main.rs"]
-
-[app]
-title = "treeview"
-russian = false
-startup_form = ""
-
-[[app.menu]]
-title = "~Ф~айл"
-
-[[app.menu.items]]
-title = "~Ф~айлы"
-command = "CM_FILES"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~П~лан"
-command = "CM_PLAN"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~О~ткрыть JSON..."
-command = "CM_OPEN_JSON"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-title = "Образец ~J~SON"
-command = "CM_SAMPLE_JSON"
-key = "F4"
-help = 0
-
-[[app.menu.items]]
-title = "~К~омпоненты..."
-command = "CM_COMPONENTS"
-key = "F9"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~В~ыход"
-command = "cm::QUIT"
-key = "Alt-X"
-help = 0
-
-[[app.menu]]
-title = "~Д~ерево"
-
-[[app.menu.items]]
-title = "Вложенный ~у~зел..."
-command = "CM_ADD_CHILD"
-key = "F7"
-help = 0
-
-[[app.menu.items]]
-title = "Узел ~р~ядом..."
-command = "CM_ADD_SIBLING"
-key = "Ins"
-help = 0
-
-[[app.menu.items]]
-title = "~П~ереименовать..."
-command = "CM_RENAME"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-title = "~У~далить"
-command = "CM_DELETE"
-key = "Del"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "Р~а~скрыть всё"
-command = "CM_EXPAND_ALL"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~С~вернуть всё"
-command = "CM_COLLAPSE_ALL"
-key = ""
-help = 0
-
-[[app.menu]]
-title = "~О~кна"
-
-[[app.menu.items]]
-title = "~М~озаика"
-command = "cm::TILE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~К~аскад"
-command = "cm::CASCADE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "Р~а~спахнуть"
-command = "cm::ZOOM"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-title = "~С~ледующее"
-command = "cm::NEXT"
-key = "F6"
-help = 0
-
-[[app.menu.items]]
-title = "~З~акрыть"
-command = "cm::CLOSE"
-key = "Alt-F3"
-help = 0
-
-[[app.status]]
-text = "~F7~ Вложенный"
-key = "F7"
-command = "CM_ADD_CHILD"
-
-[[app.status]]
-text = "~Ins~ Рядом"
-key = "Ins"
-command = "CM_ADD_SIBLING"
-
-[[app.status]]
-text = "~F2~ Имя"
-key = "F2"
-command = "CM_RENAME"
-
-[[app.status]]
-text = "~Del~ Удалить"
-key = "Del"
-command = "CM_DELETE"
-
-[[app.status]]
-text = "~F3~ JSON"
-key = "F3"
-command = "CM_OPEN_JSON"
-
-[[app.status]]
-text = "~F9~ Компоненты"
-key = "F9"
-command = "CM_COMPONENTS"
-
-[[app.status]]
-text = "~Alt-X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = ""
-key = "F4"
-command = "CM_SAMPLE_JSON"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.status]]
-text = ""
-key = "F5"
-command = "cm::ZOOM"
-
-[[app.status]]
-text = ""
-key = "F6"
-command = "cm::NEXT"
-
-[[app.status]]
-text = ""
-key = "Alt+F3"
-command = "cm::CLOSE"
-
-[[app.commands]]
-name = "CM_FILES"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_PLAN"
-value = 101
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_OPEN_JSON"
-value = 102
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_SAMPLE_JSON"
-value = 103
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_COMPONENTS"
-value = 104
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_ADD_CHILD"
-value = 110
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_ADD_SIBLING"
-value = 111
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_RENAME"
-value = 112
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_DELETE"
-value = 113
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_EXPAND_ALL"
-value = 114
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_COLLAPSE_ALL"
-value = 115
-action = ""
-comment = ""
+format: tvstudio-project
+version: 1
+name: treeview
+kind: tvision
+forms: [components_dialog]
+open_files: [src/main.rs]
+app:
+  title: treeview
+  russian: false
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~Ф~айлы
+          command: CM_FILES
+          key: ''
+          help: 0
+        - title: ~П~лан
+          command: CM_PLAN
+          key: ''
+          help: 0
+        - title: ~О~ткрыть JSON...
+          command: CM_OPEN_JSON
+          key: F3
+          help: 0
+        - title: Образец ~J~SON
+          command: CM_SAMPLE_JSON
+          key: F4
+          help: 0
+        - title: ~К~омпоненты...
+          command: CM_COMPONENTS
+          key: F9
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt-X
+          help: 0
+    - title: ~Д~ерево
+      items:
+        - title: Вложенный ~у~зел...
+          command: CM_ADD_CHILD
+          key: F7
+          help: 0
+        - title: Узел ~р~ядом...
+          command: CM_ADD_SIBLING
+          key: Ins
+          help: 0
+        - title: ~П~ереименовать...
+          command: CM_RENAME
+          key: F2
+          help: 0
+        - title: ~У~далить
+          command: CM_DELETE
+          key: Del
+          help: 0
+        - separator: true
+        - title: Р~а~скрыть всё
+          command: CM_EXPAND_ALL
+          key: ''
+          help: 0
+        - title: ~С~вернуть всё
+          command: CM_COLLAPSE_ALL
+          key: ''
+          help: 0
+    - title: ~О~кна
+      items:
+        - title: ~М~озаика
+          command: cm::TILE
+          key: ''
+          help: 0
+        - title: ~К~аскад
+          command: cm::CASCADE
+          key: ''
+          help: 0
+        - separator: true
+        - title: Р~а~спахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt-F3
+          help: 0
+  status:
+    - text: ~F7~ Вложенный
+      key: F7
+      command: CM_ADD_CHILD
+    - text: ~Ins~ Рядом
+      key: Ins
+      command: CM_ADD_SIBLING
+    - text: ~F2~ Имя
+      key: F2
+      command: CM_RENAME
+    - text: ~Del~ Удалить
+      key: Del
+      command: CM_DELETE
+    - text: ~F3~ JSON
+      key: F3
+      command: CM_OPEN_JSON
+    - text: ~F9~ Компоненты
+      key: F9
+      command: CM_COMPONENTS
+    - text: ~Alt-X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ''
+      key: F4
+      command: CM_SAMPLE_JSON
+    - text: ''
+      key: F10
+      command: cm::MENU
+    - text: ''
+      key: F5
+      command: cm::ZOOM
+    - text: ''
+      key: F6
+      command: cm::NEXT
+    - text: ''
+      key: Alt+F3
+      command: cm::CLOSE
+  commands:
+    - name: CM_FILES
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_PLAN
+      value: 101
+      action: ''
+      comment: ''
+    - name: CM_OPEN_JSON
+      value: 102
+      action: ''
+      comment: ''
+    - name: CM_SAMPLE_JSON
+      value: 103
+      action: ''
+      comment: ''
+    - name: CM_COMPONENTS
+      value: 104
+      action: ''
+      comment: ''
+    - name: CM_ADD_CHILD
+      value: 110
+      action: ''
+      comment: ''
+    - name: CM_ADD_SIBLING
+      value: 111
+      action: ''
+      comment: ''
+    - name: CM_RENAME
+      value: 112
+      action: ''
+      comment: ''
+    - name: CM_DELETE
+      value: 113
+      action: ''
+      comment: ''
+    - name: CM_EXPAND_ALL
+      value: 114
+      action: ''
+      comment: ''
+    - name: CM_COLLAPSE_ALL
+      value: 115
+      action: ''
+      comment: ''

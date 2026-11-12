@@ -1,231 +1,195 @@
-format = "tvstudio-form"
-version = 1
-name = "calculator"
-title = "Calculator"
-x = 5
-y = 3
-w = 24
-h = 15
-centered = false
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 2
-y = 4
-w = 5
-h = 2
-text = "C"
-command = "200"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 7
-y = 4
-w = 5
-h = 2
-text = "←"
-command = "201"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button3"
-x = 12
-y = 4
-w = 5
-h = 2
-text = "%"
-command = "202"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button4"
-x = 17
-y = 4
-w = 5
-h = 2
-text = "±"
-command = "203"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button5"
-x = 2
-y = 6
-w = 5
-h = 2
-text = "7"
-command = "204"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button6"
-x = 7
-y = 6
-w = 5
-h = 2
-text = "8"
-command = "205"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button7"
-x = 12
-y = 6
-w = 5
-h = 2
-text = "9"
-command = "206"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button8"
-x = 17
-y = 6
-w = 5
-h = 2
-text = "/"
-command = "207"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button9"
-x = 2
-y = 8
-w = 5
-h = 2
-text = "4"
-command = "208"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button10"
-x = 7
-y = 8
-w = 5
-h = 2
-text = "5"
-command = "209"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button11"
-x = 12
-y = 8
-w = 5
-h = 2
-text = "6"
-command = "210"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button12"
-x = 17
-y = 8
-w = 5
-h = 2
-text = "*"
-command = "211"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button13"
-x = 2
-y = 10
-w = 5
-h = 2
-text = "1"
-command = "212"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button14"
-x = 7
-y = 10
-w = 5
-h = 2
-text = "2"
-command = "213"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button15"
-x = 12
-y = 10
-w = 5
-h = 2
-text = "3"
-command = "214"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button16"
-x = 17
-y = 10
-w = 5
-h = 2
-text = "-"
-command = "215"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button17"
-x = 2
-y = 12
-w = 5
-h = 2
-text = "0"
-command = "216"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button18"
-x = 7
-y = 12
-w = 5
-h = 2
-text = "."
-command = "217"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button19"
-x = 12
-y = 12
-w = 5
-h = 2
-text = "="
-command = "218"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button20"
-x = 17
-y = 12
-w = 5
-h = 2
-text = "+"
-command = "219"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: calculator
+title: Calculator
+x: 5
+y: 3
+w: 24
+h: 15
+centered: false
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: button
+    name: button1
+    x: 2
+    y: 4
+    w: 5
+    h: 2
+    text: C
+    command: '200'
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 7
+    y: 4
+    w: 5
+    h: 2
+    text: ←
+    command: '201'
+    scrollbar: false
+  - kind: button
+    name: button3
+    x: 12
+    y: 4
+    w: 5
+    h: 2
+    text: '%'
+    command: '202'
+    scrollbar: false
+  - kind: button
+    name: button4
+    x: 17
+    y: 4
+    w: 5
+    h: 2
+    text: ±
+    command: '203'
+    scrollbar: false
+  - kind: button
+    name: button5
+    x: 2
+    y: 6
+    w: 5
+    h: 2
+    text: '7'
+    command: '204'
+    scrollbar: false
+  - kind: button
+    name: button6
+    x: 7
+    y: 6
+    w: 5
+    h: 2
+    text: '8'
+    command: '205'
+    scrollbar: false
+  - kind: button
+    name: button7
+    x: 12
+    y: 6
+    w: 5
+    h: 2
+    text: '9'
+    command: '206'
+    scrollbar: false
+  - kind: button
+    name: button8
+    x: 17
+    y: 6
+    w: 5
+    h: 2
+    text: /
+    command: '207'
+    scrollbar: false
+  - kind: button
+    name: button9
+    x: 2
+    y: 8
+    w: 5
+    h: 2
+    text: '4'
+    command: '208'
+    scrollbar: false
+  - kind: button
+    name: button10
+    x: 7
+    y: 8
+    w: 5
+    h: 2
+    text: '5'
+    command: '209'
+    scrollbar: false
+  - kind: button
+    name: button11
+    x: 12
+    y: 8
+    w: 5
+    h: 2
+    text: '6'
+    command: '210'
+    scrollbar: false
+  - kind: button
+    name: button12
+    x: 17
+    y: 8
+    w: 5
+    h: 2
+    text: '*'
+    command: '211'
+    scrollbar: false
+  - kind: button
+    name: button13
+    x: 2
+    y: 10
+    w: 5
+    h: 2
+    text: '1'
+    command: '212'
+    scrollbar: false
+  - kind: button
+    name: button14
+    x: 7
+    y: 10
+    w: 5
+    h: 2
+    text: '2'
+    command: '213'
+    scrollbar: false
+  - kind: button
+    name: button15
+    x: 12
+    y: 10
+    w: 5
+    h: 2
+    text: '3'
+    command: '214'
+    scrollbar: false
+  - kind: button
+    name: button16
+    x: 17
+    y: 10
+    w: 5
+    h: 2
+    text: '-'
+    command: '215'
+    scrollbar: false
+  - kind: button
+    name: button17
+    x: 2
+    y: 12
+    w: 5
+    h: 2
+    text: '0'
+    command: '216'
+    scrollbar: false
+  - kind: button
+    name: button18
+    x: 7
+    y: 12
+    w: 5
+    h: 2
+    text: .
+    command: '217'
+    scrollbar: false
+  - kind: button
+    name: button19
+    x: 12
+    y: 12
+    w: 5
+    h: 2
+    text: '='
+    command: '218'
+    scrollbar: false
+  - kind: button
+    name: button20
+    x: 17
+    y: 12
+    w: 5
+    h: 2
+    text: +
+    command: '219'
+    scrollbar: false

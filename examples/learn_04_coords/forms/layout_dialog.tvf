@@ -1,97 +1,85 @@
-format = "tvstudio-form"
-version = 1
-name = "layout_dialog"
-title = "Разметка"
-x = 10
-y = 3
-w = 44
-h = 12
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "input_line"
-name = "field"
-x = 12
-y = 2
-w = 30
-h = 1
-max_len = 50
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "label1"
-x = 2
-y = 2
-w = 10
-h = 1
-text = "~И~мя:"
-link = "field"
-scrollbar = false
-
-[[controls]]
-kind = "input_line"
-name = "field2"
-x = 12
-y = 4
-w = 30
-h = 1
-max_len = 50
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "label2"
-x = 2
-y = 4
-w = 10
-h = 1
-text = "~Г~ород:"
-link = "field2"
-scrollbar = false
-
-[[controls]]
-kind = "input_line"
-name = "field3"
-x = 12
-y = 6
-w = 30
-h = 1
-max_len = 50
-scrollbar = false
-
-[[controls]]
-kind = "label"
-name = "label3"
-x = 2
-y = 6
-w = 10
-h = 1
-text = "~П~очта:"
-link = "field3"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 9
-y = 9
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 23
-y = 9
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: layout_dialog
+title: Разметка
+x: 10
+y: 3
+w: 44
+h: 12
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: input_line
+    name: field
+    x: 12
+    y: 2
+    w: 30
+    h: 1
+    max_len: 50
+    scrollbar: false
+  - kind: label
+    name: label1
+    x: 2
+    y: 2
+    w: 10
+    h: 1
+    text: '~И~мя:'
+    link: field
+    scrollbar: false
+  - kind: input_line
+    name: field2
+    x: 12
+    y: 4
+    w: 30
+    h: 1
+    max_len: 50
+    scrollbar: false
+  - kind: label
+    name: label2
+    x: 2
+    y: 4
+    w: 10
+    h: 1
+    text: '~Г~ород:'
+    link: field2
+    scrollbar: false
+  - kind: input_line
+    name: field3
+    x: 12
+    y: 6
+    w: 30
+    h: 1
+    max_len: 50
+    scrollbar: false
+  - kind: label
+    name: label3
+    x: 2
+    y: 6
+    w: 10
+    h: 1
+    text: '~П~очта:'
+    link: field3
+    scrollbar: false
+  - kind: button
+    name: button1
+    x: 9
+    y: 9
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 23
+    y: 9
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

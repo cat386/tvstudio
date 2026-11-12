@@ -1,54 +1,50 @@
-format = "tvstudio-form"
-version = 1
-name = "ch_background"
-title = ""
-x = 10
-y = 3
-w = 29
-h = 9
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "input_line"
-name = "input"
-x = 4
-y = 5
-w = 3
-h = 1
-max_len = 1
-scrollbar = false
-
-[[controls]]
-kind = "static_text"
-name = "text1"
-x = 2
-y = 2
-w = 25
-h = 1
-text = "Enter background pattern:"
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 16
-y = 4
-w = 10
-h = 2
-text = "~A~pply"
-command = "CM_APPLY_BACKGROUND"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 16
-y = 6
-w = 10
-h = 2
-text = "~C~lose"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: ch_background
+title: ''
+x: 10
+y: 3
+w: 29
+h: 9
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: input_line
+    name: input
+    x: 4
+    y: 5
+    w: 3
+    h: 1
+    max_len: 1
+    scrollbar: false
+  - kind: static_text
+    name: text1
+    x: 2
+    y: 2
+    w: 25
+    h: 1
+    text: 'Enter background pattern:'
+    scrollbar: false
+  - kind: button
+    name: button1
+    x: 16
+    y: 4
+    w: 10
+    h: 2
+    text: ~A~pply
+    command: CM_APPLY_BACKGROUND
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 16
+    y: 6
+    w: 10
+    h: 2
+    text: ~C~lose
+    command: cm::CANCEL
+    scrollbar: false

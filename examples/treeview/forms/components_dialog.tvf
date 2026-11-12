@@ -1,54 +1,50 @@
-format = "tvstudio-form"
-version = 1
-name = "components_dialog"
-title = "Компоненты"
-x = 10
-y = 3
-w = 52
-h = 18
-centered = true
-palette = "gray"
-help_ctx = 0
-
-[[controls]]
-kind = "static_text"
-name = "text1"
-x = 3
-y = 2
-w = 46
-h = 1
-text = "Пробел — отметить, Enter на листе — OK"
-scrollbar = false
-
-[[controls]]
-kind = "tree_view"
-name = "tid"
-x = 3
-y = 4
-w = 45
-h = 9
-scrollbar = true
-checks = true
-
-[[controls]]
-kind = "button"
-name = "button1"
-x = 12
-y = 14
-w = 12
-h = 2
-text = "O~K~"
-command = "cm::OK"
-default = true
-scrollbar = false
-
-[[controls]]
-kind = "button"
-name = "button2"
-x = 27
-y = 14
-w = 12
-h = 2
-text = "Отмена"
-command = "cm::CANCEL"
-scrollbar = false
+format: tvstudio-form
+version: 1
+name: components_dialog
+title: Компоненты
+x: 10
+y: 3
+w: 52
+h: 18
+centered: true
+palette: gray
+help_ctx: 0
+class: Dialog
+number: 0
+resizable: true
+controls:
+  - kind: static_text
+    name: text1
+    x: 3
+    y: 2
+    w: 46
+    h: 1
+    text: Пробел — отметить, Enter на листе — OK
+    scrollbar: false
+  - kind: tree_view
+    name: tid
+    x: 3
+    y: 4
+    w: 45
+    h: 9
+    scrollbar: true
+    checks: true
+  - kind: button
+    name: button1
+    x: 12
+    y: 14
+    w: 12
+    h: 2
+    text: O~K~
+    command: cm::OK
+    default: true
+    scrollbar: false
+  - kind: button
+    name: button2
+    x: 27
+    y: 14
+    w: 12
+    h: 2
+    text: Отмена
+    command: cm::CANCEL
+    scrollbar: false

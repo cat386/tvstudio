@@ -1,119 +1,82 @@
-format = "tvstudio-project"
-version = 1
-name = "table"
-forms = ["city"]
-open_files = ["src/main.rs"]
-
-[app]
-title = "table"
-russian = true
-startup_form = ""
-
-[[app.menu]]
-title = "~Т~аблицы"
-
-[[app.menu.items]]
-title = "~Б~ольшая таблица"
-command = "CM_BIG"
-key = "F2"
-help = 0
-
-[[app.menu.items]]
-title = "~С~клад"
-command = "CM_GOODS"
-key = "F3"
-help = 0
-
-[[app.menu.items]]
-title = "~В~ыбор города…"
-command = "CM_CITY"
-key = "F4"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "В~ы~ход"
-command = "cm::QUIT"
-key = "Alt+X"
-help = 0
-
-[[app.menu]]
-title = "~О~кна"
-
-[[app.menu.items]]
-title = "~С~ледующее"
-command = "cm::NEXT"
-key = "F6"
-help = 0
-
-[[app.menu.items]]
-title = "~Р~аспахнуть"
-command = "cm::ZOOM"
-key = "F5"
-help = 0
-
-[[app.menu.items]]
-title = "~З~акрыть"
-command = "cm::CLOSE"
-key = "Alt+F3"
-help = 0
-
-[[app.menu.items]]
-separator = true
-
-[[app.menu.items]]
-title = "~М~озаика"
-command = "cm::TILE"
-key = ""
-help = 0
-
-[[app.menu.items]]
-title = "~К~аскад"
-command = "cm::CASCADE"
-key = ""
-help = 0
-
-[[app.status]]
-text = "~Alt+X~ Выход"
-key = "Alt+X"
-command = "cm::QUIT"
-
-[[app.status]]
-text = "~F2~ Большая"
-key = "F2"
-command = "CM_BIG"
-
-[[app.status]]
-text = "~F3~ Склад"
-key = "F3"
-command = "CM_GOODS"
-
-[[app.status]]
-text = "~F4~ Город"
-key = "F4"
-command = "CM_CITY"
-
-[[app.status]]
-text = ""
-key = "F10"
-command = "cm::MENU"
-
-[[app.commands]]
-name = "CM_BIG"
-value = 100
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_GOODS"
-value = 101
-action = ""
-comment = ""
-
-[[app.commands]]
-name = "CM_CITY"
-value = 102
-action = ""
-comment = ""
+format: tvstudio-project
+version: 1
+name: table
+kind: tvision
+forms: [city]
+open_files: [src/main.rs]
+app:
+  title: table
+  russian: true
+  startup_form: ''
+  menu:
+    - title: ~Т~аблицы
+      items:
+        - title: ~Б~ольшая таблица
+          command: CM_BIG
+          key: F2
+          help: 0
+        - title: ~С~клад
+          command: CM_GOODS
+          key: F3
+          help: 0
+        - title: ~В~ыбор города…
+          command: CM_CITY
+          key: F4
+          help: 0
+        - separator: true
+        - title: В~ы~ход
+          command: cm::QUIT
+          key: Alt+X
+          help: 0
+    - title: ~О~кна
+      items:
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: ~Р~аспахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt+F3
+          help: 0
+        - separator: true
+        - title: ~М~озаика
+          command: cm::TILE
+          key: ''
+          help: 0
+        - title: ~К~аскад
+          command: cm::CASCADE
+          key: ''
+          help: 0
+  status:
+    - text: ~Alt+X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ~F2~ Большая
+      key: F2
+      command: CM_BIG
+    - text: ~F3~ Склад
+      key: F3
+      command: CM_GOODS
+    - text: ~F4~ Город
+      key: F4
+      command: CM_CITY
+    - text: ''
+      key: F10
+      command: cm::MENU
+  commands:
+    - name: CM_BIG
+      value: 100
+      action: ''
+      comment: ''
+    - name: CM_GOODS
+      value: 101
+      action: ''
+      comment: ''
+    - name: CM_CITY
+      value: 102
+      action: ''
+      comment: ''
