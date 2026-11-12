@@ -24,7 +24,7 @@ use crate::inspector::InspectorWindow;
 use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
-use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, ProjectWindow};
+use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, Problem, ProblemsWindow, ProjectWindow};
 
 mod lsp_glue;
 pub use lsp_glue::{LspState, Srv};
@@ -145,6 +145,8 @@ pub fn menu_bar() -> Menu {
                 .item("~Т~есты (cargo test)", CM_TEST)
                 .item("~О~чистить (cargo clean)", CM_CLEAN)
                 .separator()
+                .item_key("О~ш~ибки и предупреждения", CM_SHOW_PROBLEMS, kb::ctrl_f(8), "Ctrl+F8")
+                .separator()
                 .item("О~с~тановить", CM_STOP),
         )
         .submenu(
@@ -154,6 +156,7 @@ pub fn menu_bar() -> Menu {
                 .item_key("~И~нспектор", CM_SHOW_INSPECTOR, kb::f(11), "F11")
                 .item("П~р~оект", CM_SHOW_PROJECT)
                 .item("~С~ообщения", CM_SHOW_MESSAGES)
+                .item_key("О~ш~ибки и предупреждения", CM_SHOW_PROBLEMS, kb::ctrl_f(8), "Ctrl+F8")
                 .item("Р~а~складка по умолчанию", CM_LAYOUT)
                 .separator()
                 .item("~М~озаика", cm::TILE)
@@ -229,6 +232,17 @@ pub fn status_line() -> Vec<StatusDef> {
                 StatusItem::new("~F10~ Меню", kb::F10, cm::MENU),
             ]),
         ),
+        StatusDef::range(
+            HC_PROBLEMS,
+            HC_PROBLEMS,
+            with(vec![
+                hint_item("~Enter~ К месту"),
+                hint_item("~Tab~ Фильтр"),
+                StatusItem::new("~F9~ Собрать", kb::f(9), CM_BUILD),
+                StatusItem::new("~Alt+F9~ Проверить", kb::alt_f(9), CM_CHECK),
+                StatusItem::new("~Alt+F3~ Закрыть", kb::ALT_F3, cm::CLOSE),
+            ]),
+        ),
         StatusDef::all(with(vec![
             StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
             StatusItem::new("~F3~ Открыть", kb::f(3), cm::OPEN),
@@ -256,6 +270,12 @@ pub struct Ide {
     pub inspector: Option<ViewId>,
     pub project_win: Option<ViewId>,
     pub messages: Option<ViewId>,
+    /// Окно «Ошибки и предупреждения».
+    pub problems: Option<ViewId>,
+    /// Замечания с местом из вывода последней сборки.
+    build_diags: Vec<MsgEntry>,
+    /// Пора пересобрать список окна ошибок.
+    problems_dirty: bool,
     /// Пометки ошибок последней сборки по файлам.
     marks: HashMap<PathBuf, Vec<(usize, MsgKind)>>,
     win_no: i16,
@@ -283,6 +303,9 @@ impl Ide {
             inspector: None,
             project_win: None,
             messages: None,
+            problems: None,
+            build_diags: Vec::new(),
+            problems_dirty: true,
             marks: HashMap::new(),
             win_no: 0,
             tree_dirty: false,
@@ -793,6 +816,8 @@ impl Ide {
             return;
         }
         self.msgs(app).clear();
+        self.build_diags.clear();
+        self.problems_dirty = true;
         self.say(app, &format!("— {}: {} {}", what, self.cfg.cargo, args.join(" ")));
         match Job::start(&dir, &self.cfg.cargo.clone(), args, what, after) {
             Ok(j) => self.job = Some(j),
@@ -818,7 +843,11 @@ impl Ide {
             match m {
                 JobMsg::Line(l) => {
                     if !l.trim().is_empty() {
-                        self.msgs(app).push(parse_cargo_line(&l));
+                        let e = parse_cargo_line(&l);
+                        if e.loc.is_some() && matches!(e.kind, MsgKind::Error | MsgKind::Warning) {
+                            self.build_diags.push(e.clone());
+                        }
+                        self.msgs(app).push(e);
                     }
                 }
                 JobMsg::Done(c) => code_done = Some(c),
@@ -894,6 +923,59 @@ impl Ide {
         self.marks = marks;
         // Где есть свежая диагностика сервера — она важнее.
         self.lsp_state.diags_dirty = true;
+    }
+
+    /// Показать окно «Ошибки и предупреждения» (создать на месте окна сообщений).
+    fn show_problems(&mut self, app: &mut Program) {
+        if !Self::alive(app, self.problems) {
+            let l = self.layout(app);
+            self.problems = Some(dialogs::insert(app, ProblemsWindow::new(l[2])));
+            self.problems_dirty = true;
+            self.update_problems(app);
+        }
+        if let Some(id) = self.problems {
+            app.focus(id);
+        }
+    }
+
+    /// Обновить окно ошибок, если оно открыто и данные изменились.
+    fn update_problems(&mut self, app: &mut Program) {
+        if !self.problems_dirty || !Self::alive(app, self.problems) {
+            return;
+        }
+        self.problems_dirty = false;
+        let list = self.collect_problems(app);
+        if let Some(w) = self.problems.and_then(|id| app.find_mut::<ProblemsWindow>(id)) {
+            w.set_problems(list);
+        }
+    }
+
+    /// Замечания сборки — для файлов, о которых сервер LSP ещё не присылал диагностику.
+    fn build_problems(&self) -> Vec<Problem> {
+        let dir = self.base_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let mut v: Vec<Problem> = Vec::new();
+        for e in &self.build_diags {
+            let Some((f, l, c)) = &e.loc else { continue };
+            let path = resolve(&dir, f);
+            if self.lsp_state.diags.keys().any(|k| same_file(k, &path)) {
+                continue;
+            }
+            // Текст без «файл:строка:столбец: » в начале.
+            // «error[E0308]: текст» → «[E0308] текст»: вид замечания показывает значок.
+            let text = e.text.trim().strip_prefix(&format!("{}:{}:{}:", f, l, c)).unwrap_or(&e.text).trim();
+            let text = ["error", "warning"].iter().find_map(|w| text.strip_prefix(w)).unwrap_or(text);
+            let text = match text.split_once(':') {
+                Some((code, rest)) if code.is_empty() || (code.starts_with('[') && code.ends_with(']')) => {
+                    format!("{}{}{}", code, if code.is_empty() { "" } else { " " }, rest.trim())
+                }
+                _ => text.trim().to_string(),
+            };
+            let p = Problem { kind: e.kind, shown: f.clone(), path, line: *l, col: *c, text, source: "cargo" };
+            if !v.contains(&p) {
+                v.push(p);
+            }
+        }
+        v
     }
 
     /// Перейти к месту из строки сообщений.
@@ -1606,6 +1688,17 @@ impl Ide {
                     }
                 }
             }
+            CM_SHOW_PROBLEMS => self.show_problems(app),
+            CM_PROB_GOTO => {
+                let p = self.problems.and_then(|id| app.find::<ProblemsWindow>(id)).and_then(|w| w.current().cloned());
+                if let Some(p) = p {
+                    if !p.path.exists() {
+                        Self::error(app, &format!("Файл не найден: {}", p.path.display()));
+                        return true;
+                    }
+                    self.open_file(app, &p.path, Some((p.line, p.col)));
+                }
+            }
             CM_LAYOUT => self.apply_layout(app),
             CM_OPTIONS => self.options(app),
             CM_ABOUT => Self::about(app),
@@ -1713,6 +1806,7 @@ impl AppHandler for Ide {
         self.collect_fmt_errors(app);
         self.lsp_idle(app);
         self.sync_windows(app);
+        self.update_problems(app);
         self.update_commands(app);
     }
 }

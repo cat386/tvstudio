@@ -74,6 +74,8 @@ pub const CM_KEYS: u16 = 1110;
 pub const CM_IMPORT: u16 = 1111;
 /// Перезапустить сервер LSP.
 pub const CM_LSP_RESTART: u16 = 1112;
+/// Окно «Ошибки и предупреждения» (Ctrl+F8).
+pub const CM_SHOW_PROBLEMS: u16 = 1113;
 
 // --- Внутренние ---
 /// Сообщения: перейти к месту (Info::Id списка или Info::Int строки).
@@ -82,6 +84,8 @@ pub const CM_MSG_GOTO: u16 = 1120;
 pub const CM_PROJ_OPEN: u16 = 1121;
 /// Палитра: добавить выбранный компонент (Info::Id списка).
 pub const CM_PAL_INSERT: u16 = 1122;
+/// Окно ошибок: перейти к месту замечания под курсором.
+pub const CM_PROB_GOTO: u16 = 1123;
 /// Редактор списков (меню, строка состояния, команды).
 pub const CM_LE_ADD: u16 = 1200;
 pub const CM_LE_SUB: u16 = 1201;
@@ -105,3 +109,4 @@ pub const HC_MESSAGES: u16 = 1005;
 pub const HC_APP_MODEL: u16 = 1006;
 pub const HC_BUILD: u16 = 1007;
 pub const HC_KEYS: u16 = 1008;
+pub const HC_PROBLEMS: u16 = 1009;

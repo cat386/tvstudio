@@ -360,6 +360,20 @@ fn build_finds_error_and_jumps() {
     assert!(w.path().ends_with("src/main.rs"));
     assert_eq!(w.editor().fe.editor.cursor().line + 1, err_line);
     assert!(t.screen().contains('●'), "пометка ошибки в полосе номеров");
+    // Окно «Ошибки и предупреждения» (Ctrl+F8): ошибка сборки, Enter — к месту.
+    t.key(kb::ctrl_f(8));
+    let pid = t.ide.problems.expect("окно ошибок открыто");
+    let lines = t.app.find::<tvstudio::toolwins::ProblemsWindow>(pid).unwrap().lines();
+    let want = format!("■ src/main.rs:{}:", err_line);
+    assert!(lines.iter().any(|l| l.starts_with(&want) && l.ends_with("[cargo]")), "{:?}", lines);
+    assert!(t.screen().contains("Ошибки и предупреждения: ■"), "{}", t.screen());
+    let i = lines.iter().position(|l| l.starts_with(&want)).unwrap();
+    for _ in 0..i {
+        t.key(KeyEvent::new(Key::Down, Mods::NONE));
+    }
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    let cur = Ide::current_window(&t.app).and_then(|id| t.app.find::<CodeWindow>(id)).expect("Enter открыл файл");
+    assert_eq!(cur.editor().fe.editor.cursor().line + 1, err_line);
     // Исправляем и собираем снова — ошибок нет.
     std::fs::write(&main, src.replace("\"не число\"", "42")).unwrap();
     {
@@ -372,7 +386,17 @@ fn build_finds_error_and_jumps() {
         std::thread::sleep(std::time::Duration::from_millis(50));
         t.pump();
     }
-    assert!(t.screen().contains("завершена"), "{}", t.screen());
+    // Окно ошибок поверх сообщений — итог сборки смотрим в самих сообщениях.
+    let done = t
+        .ide
+        .messages
+        .and_then(|id| t.app.find::<tvstudio::toolwins::MessagesWindow>(id))
+        .map(|m| m.entries.iter().any(|e| e.text.contains("завершена")))
+        .unwrap_or(false);
+    assert!(done, "{}", t.screen());
+    // После исправления ошибок в окне больше нет.
+    let pw = t.app.find::<tvstudio::toolwins::ProblemsWindow>(pid).unwrap();
+    assert_eq!(pw.counts().0, 0, "{:?}", pw.lines());
 }
 
 #[test]

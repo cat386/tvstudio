@@ -458,9 +458,188 @@ impl View for MessagesWindow {
     }
 }
 
+// ======================================================================
+// Ошибки и предупреждения
+// ======================================================================
+
+/// Замечание компилятора или сервера LSP с местом в файле.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Problem {
+    pub kind: MsgKind,
+    /// Полный путь к файлу.
+    pub path: PathBuf,
+    /// Путь для показа (относительно проекта).
+    pub shown: String,
+    /// Строка и столбец (с 1).
+    pub line: usize,
+    pub col: usize,
+    pub text: String,
+    /// Откуда: «cargo» или «LSP».
+    pub source: &'static str,
+}
+
+/// Флажки фильтра окна ошибок.
+const PF_ERRORS: u32 = 1;
+const PF_WARNINGS: u32 = 2;
+
+/// Окно «Ошибки и предупреждения»: только замечания с местом — из
+/// последней сборки и от сервера LSP (для файла, о котором сервер уже
+/// прислал диагностику, она свежее сборки и заменяет её). Сначала
+/// ошибки, потом предупреждения; флажки сверху — что показывать.
+/// Enter или двойной щелчок — открыть файл на месте замечания.
+pub struct ProblemsWindow {
+    pub win: Window,
+    pub list_id: ViewId,
+    filter_id: ViewId,
+    filter: u32,
+    /// Все замечания (как передала среда).
+    pub all: Vec<Problem>,
+    /// Показанные строки — номера в `all`.
+    shown: Vec<usize>,
+}
+
+impl ProblemsWindow {
+    pub fn new(bounds: Rect) -> Self {
+        let mut win = Window::new(bounds, "Ошибки и предупреждения", 0);
+        win.palette = tool_palette();
+        win.group.vs.help_ctx = HC_PROBLEMS;
+        let r = win.interior();
+        // Список вставляется первым — он и получает фокус; Tab — к флажкам.
+        let vsb = win.standard_scroll_bar(true);
+        let mut list = ListBox::new(Rect::new(r.a.x, r.a.y + 1, r.b.x, r.b.y), 1, Some(vsb));
+        list.vs.grow_mode = gf::GROW_HI_X | gf::GROW_HI_Y;
+        list.vs.help_ctx = HC_PROBLEMS;
+        let list_id = win.add(list);
+        win.add(Relay::new(list_id, CM_PROB_GOTO));
+        let mut cb = CheckBoxes::check_boxes(Rect::new(r.a.x, r.a.y, r.b.x.min(r.a.x + 44), r.a.y + 1), &["~О~шибки", "~П~редупреждения"]);
+        cb.value = PF_ERRORS | PF_WARNINGS;
+        cb.vs.help_ctx = HC_PROBLEMS;
+        let filter_id = win.add(cb);
+        let mut w = ProblemsWindow { win, list_id, filter_id, filter: PF_ERRORS | PF_WARNINGS, all: Vec::new(), shown: Vec::new() };
+        w.refill();
+        w
+    }
+
+    /// Задать замечания (если они изменились).
+    pub fn set_problems(&mut self, mut v: Vec<Problem>) {
+        v.sort_by(|a, b| {
+            let rank = |k: MsgKind| if k == MsgKind::Error { 0 } else { 1 };
+            (rank(a.kind), &a.shown, a.line, a.col).cmp(&(rank(b.kind), &b.shown, b.line, b.col))
+        });
+        if v != self.all {
+            self.all = v;
+            self.refill();
+        }
+    }
+
+    /// Число ошибок и предупреждений (всех, без учёта фильтра).
+    pub fn counts(&self) -> (usize, usize) {
+        let e = self.all.iter().filter(|p| p.kind == MsgKind::Error).count();
+        (e, self.all.len() - e)
+    }
+
+    /// Показанные строки списка.
+    pub fn lines(&self) -> Vec<String> {
+        self.win.group.find::<ListBox>(self.list_id).map(|l| l.items.clone()).unwrap_or_default()
+    }
+
+    /// Замечание под курсором списка.
+    pub fn current(&self) -> Option<&Problem> {
+        let i = self.win.group.find::<ListBox>(self.list_id)?.focused;
+        self.all.get(*self.shown.get(i)?)
+    }
+
+    /// Задать фильтр (флажки «Ошибки», «Предупреждения» — биты 0 и 1).
+    pub fn set_filter(&mut self, f: u32) {
+        if let Some(c) = self.win.group.find_mut::<CheckBoxes>(self.filter_id) {
+            c.value = f;
+        }
+        self.filter = f;
+        self.refill();
+    }
+
+    /// Пересобрать список по фильтру (курсор остаётся на той же строке, если она есть).
+    fn refill(&mut self) {
+        let keep = self.current().cloned();
+        let want = |k: MsgKind| match k {
+            MsgKind::Error => self.filter & PF_ERRORS != 0,
+            _ => self.filter & PF_WARNINGS != 0,
+        };
+        self.shown = (0..self.all.len()).filter(|&i| want(self.all[i].kind)).collect();
+        let items: Vec<String> = if self.all.is_empty() {
+            vec!["  Ошибок и предупреждений нет".to_string()]
+        } else {
+            self.shown
+                .iter()
+                .map(|&i| {
+                    let p = &self.all[i];
+                    let icon = if p.kind == MsgKind::Error { '■' } else { '▲' };
+                    format!("{} {}:{}:{}  {}  [{}]", icon, p.shown, p.line, p.col, p.text, p.source)
+                })
+                .collect()
+        };
+        let pos = keep.and_then(|k| self.shown.iter().position(|&i| self.all[i] == k)).unwrap_or(0);
+        let (e, w) = self.counts();
+        self.win.title = format!("Ошибки и предупреждения: ■ {}  ▲ {}", e, w);
+        if let Some(l) = self.win.group.find_mut::<ListBox>(self.list_id) {
+            l.set_items(items);
+            l.focus_item(pos);
+        }
+    }
+}
+
+impl View for ProblemsWindow {
+    tool_window_view!();
+
+    fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
+        enter_to_command(&self.win, self.list_id, ev, ctx, CM_PROB_GOTO);
+        self.win.handle_window_event(ev, ctx);
+        let f = self.win.group.find::<CheckBoxes>(self.filter_id).map(|c| c.value).unwrap_or(self.filter);
+        if f != self.filter {
+            self.filter = f;
+            self.refill();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn problems_sorted_and_filtered() {
+        let mut w = ProblemsWindow::new(Rect::new(0, 0, 80, 10));
+        assert!(w.lines()[0].contains("нет"));
+        let p = |kind, f: &str, line, src| Problem {
+            kind,
+            path: PathBuf::from(f),
+            shown: f.into(),
+            line,
+            col: 1,
+            text: format!("t{}", line),
+            source: src,
+        };
+        w.set_problems(vec![
+            p(MsgKind::Warning, "src/a.rs", 3, "cargo"),
+            p(MsgKind::Error, "src/b.rs", 9, "LSP"),
+            p(MsgKind::Error, "src/a.rs", 7, "cargo"),
+        ]);
+        let l = w.lines();
+        assert_eq!(l.len(), 3);
+        assert!(l[0].starts_with("■ src/a.rs:7:1") && l[0].ends_with("[cargo]"), "{:?}", l);
+        assert!(l[1].starts_with("■ src/b.rs:9:1") && l[1].ends_with("[LSP]"));
+        assert!(l[2].starts_with("▲ src/a.rs:3:1"));
+        assert_eq!(w.counts(), (2, 1));
+        assert!(w.win.title.contains("■ 2") && w.win.title.contains("▲ 1"));
+        // Только предупреждения.
+        w.set_filter(PF_WARNINGS);
+        assert_eq!(w.lines().len(), 1);
+        assert_eq!(w.current().unwrap().line, 3);
+        // Только ошибки.
+        w.set_filter(PF_ERRORS);
+        assert_eq!(w.lines().len(), 2);
+        assert_eq!(w.current().unwrap().kind, MsgKind::Error);
+    }
 
     #[test]
     fn cargo_lines() {

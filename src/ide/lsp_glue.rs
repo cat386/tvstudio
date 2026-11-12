@@ -34,7 +34,7 @@ use crate::codeedit::{CodeWindow, Underline};
 use crate::lsp::{
     col_from_lsp, col_to_lsp, CodeAction, Diagnostic, Encoding, InlayHint, LPos, LRange, Location, LspClient, LspEvent, Severity, TextEdit,
 };
-use crate::toolwins::{MessagesWindow, MsgEntry, MsgKind};
+use crate::toolwins::{MessagesWindow, MsgEntry, MsgKind, Problem};
 
 /// Пауза после последней правки, через которую текст уходит серверу.
 pub const CHANGE_DELAY: Duration = Duration::from_millis(300);
@@ -621,6 +621,7 @@ impl Ide {
     /// пометки последней сборки (она свежее).
     pub fn apply_diags(&mut self, app: &mut Program) {
         self.lsp_state.diags_dirty = false;
+        self.problems_dirty = true;
         for id in Self::windows::<CodeWindow>(app) {
             let Some(path) = app.find::<CodeWindow>(id).map(|w| w.path()) else { continue };
             let enc = self.encoding_for(&path);
@@ -723,6 +724,31 @@ impl Ide {
         if let Some(id) = self.messages {
             app.focus(id);
         }
+    }
+
+    /// Все ошибки и предупреждения для окна «Ошибки и предупреждения»:
+    /// диагностика сервера LSP и (для остальных файлов) последней сборки.
+    pub(super) fn collect_problems(&self, app: &Program) -> Vec<Problem> {
+        let mut v = self.build_problems();
+        let base = self.base_dir();
+        for (p, list) in &self.lsp_state.diags {
+            let mut text_cache: HashMap<usize, String> = HashMap::new();
+            for d in list {
+                let kind = match d.severity {
+                    Severity::Error => MsgKind::Error,
+                    Severity::Warning => MsgKind::Warning,
+                    _ => continue,
+                };
+                let lt = text_cache.entry(d.range.start.line).or_insert_with(|| self.line_text(app, p, d.range.start.line));
+                let col = col_from_lsp(lt, d.range.start.col, self.encoding_for(p)) + 1;
+                let shown =
+                    base.as_ref().and_then(|b| p.strip_prefix(b).ok()).map(|r| r.display().to_string()).unwrap_or_else(|| p.display().to_string());
+                let code = if d.code.is_empty() { String::new() } else { format!("[{}] ", d.code) };
+                let msg = d.message.lines().next().unwrap_or("").to_string();
+                v.push(Problem { kind, path: p.clone(), shown, line: d.range.start.line + 1, col, text: format!("{}{}", code, msg), source: "LSP" });
+            }
+        }
+        v
     }
 
     /// Строка файла: из открытого редактора, иначе с диска.

@@ -149,6 +149,13 @@ fn diagnostics_follow_typing() {
     let locs = t.located();
     assert_eq!(locs.len(), 3, "{:?}", t.msgs().entries);
     assert_eq!((locs[0].1, locs[0].2), (2, 9));
+    // Окно «Ошибки и предупреждения»: те же замечания от сервера, ошибки — первыми.
+    t.cmd(CM_SHOW_PROBLEMS);
+    let pw = t.app.find::<tvstudio::toolwins::ProblemsWindow>(t.ide.problems.unwrap()).unwrap();
+    assert_eq!(pw.counts(), (2, 1), "{:?}", pw.lines());
+    let lines = pw.lines();
+    assert!(lines[0].starts_with("■ src/demo.rs:2:9") && lines[0].ends_with("[LSP]"), "{:?}", lines);
+    assert!(lines[2].starts_with("▲ src/demo.rs:10:"), "{:?}", lines);
 }
 
 #[test]
