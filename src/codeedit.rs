@@ -122,10 +122,44 @@ pub struct CodeEditor {
     pub hl_line: bool,
     /// Подсвечивать столбец курсора.
     pub hl_col: bool,
+    /// Закрывать скобки и кавычки: `(` `[` `{` `"` вставляют пару,
+    /// закрывающая перешагивает вставленную, Backspace в пустой паре удаляет
+    /// обе, Enter в `{}` — разносит по строкам.
+    pub auto_close: bool,
+    /// Закрывающие скобки, вставленные сами (строка, символ), — их можно
+    /// «перешагнуть», набрав ту же скобку. Сбрасываются при уходе со строки.
+    auto_closed: Vec<(usize, char)>,
     /// Форматировать перед сохранением этой командой (`None` — не форматировать).
     pub fmt_cmd: Option<String>,
     /// Ошибка последнего форматирования (среда забирает её в окно сообщений).
     pub fmt_error: Option<String>,
+}
+
+/// Курсор внутри строки (нечётное число неэкранированных `"` до него) или
+/// после комментария `//` (Rust) / `#` (TOML) — там скобки не закрываются.
+fn in_string_or_comment(before: &str, lang: Lang) -> bool {
+    let mut in_str = false;
+    let mut esc = false;
+    let chars: Vec<char> = before.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '/' if lang == Lang::Rust && chars.get(i + 1) == Some(&'/') => return true,
+            '#' if lang == Lang::Toml => return true,
+            _ => {}
+        }
+    }
+    in_str
 }
 
 impl CodeEditor {
@@ -141,6 +175,8 @@ impl CodeEditor {
             completion: None,
             hl_line: true,
             hl_col: true,
+            auto_close: true,
+            auto_closed: Vec::new(),
             fmt_cmd: None,
             fmt_error: None,
         }
@@ -312,6 +348,143 @@ impl CodeEditor {
     fn resync(&mut self, ctx: &mut Ctx) {
         let mut nothing = Event::Broadcast(Message::new(0xFFFE));
         self.fe.handle_event(&mut nothing, ctx);
+    }
+
+    /// Обработка скобок и кавычек; `true` — клавиша обработана здесь.
+    fn brackets(&mut self, key: Key, mods: Mods) -> bool {
+        if !self.auto_close || self.lang == Lang::Plain || mods.ctrl || mods.alt {
+            return false;
+        }
+        let e = &mut self.fe.editor;
+        let cur = e.cursor();
+        // Ушли с той строки — вставленные закрывающие уже не «свои».
+        self.auto_closed.retain(|(l, _)| *l == cur.line);
+        let line: Vec<char> = e.line(cur.line).chars().collect();
+        let prev = cur.col.checked_sub(1).and_then(|i| line.get(i)).copied();
+        let next = line.get(cur.col).copied();
+        let closer = |c: char| match c {
+            '(' => Some(')'),
+            '[' => Some(']'),
+            '{' => Some('}'),
+            _ => None,
+        };
+        match key {
+            Key::Char(c) if closer(c).is_some() => {
+                let close = closer(c).unwrap();
+                if let Some((a, b)) = e.selection() {
+                    // Выделение — в скобки; выделенным остаётся то же.
+                    let inner = e.selected_text();
+                    e.insert_text(&format!("{}{}{}", c, inner, close), false);
+                    let start = Pos::new(a.line, a.col + 1);
+                    let end = if a.line == b.line { Pos::new(b.line, b.col + 1) } else { b };
+                    e.set_select(start, end);
+                    e.track_cursor(false);
+                    return true;
+                }
+                let before: String = line[..cur.col.min(line.len())].iter().collect();
+                let free = next.map(|n| n.is_whitespace() || ")]},;:".contains(n)).unwrap_or(true);
+                if !free || in_string_or_comment(&before, self.lang) {
+                    return false;
+                }
+                e.insert_text(&format!("{}{}", c, close), false);
+                let at = Pos::new(cur.line, cur.col + 1);
+                e.set_select(at, at);
+                e.track_cursor(false);
+                self.auto_closed.push((cur.line, close));
+                true
+            }
+            Key::Char('"') => {
+                // Своя вставленная кавычка справа — перешагнуть.
+                if next == Some('"') && e.selection().is_none() {
+                    if let Some(i) = self.auto_closed.iter().rposition(|(_, ch)| *ch == '"') {
+                        self.auto_closed.remove(i);
+                        let at = Pos::new(cur.line, cur.col + 1);
+                        e.set_select(at, at);
+                        e.track_cursor(false);
+                        return true;
+                    }
+                }
+                if let Some((a, b)) = e.selection() {
+                    let inner = e.selected_text();
+                    e.insert_text(&format!("\"{}\"", inner), false);
+                    let start = Pos::new(a.line, a.col + 1);
+                    let end = if a.line == b.line { Pos::new(b.line, b.col + 1) } else { b };
+                    e.set_select(start, end);
+                    e.track_cursor(false);
+                    return true;
+                }
+                // Внутри строки кавычка закрывает её, в комментарии — просто символ.
+                let before: String = line[..cur.col.min(line.len())].iter().collect();
+                if in_string_or_comment(&before, self.lang) {
+                    return false;
+                }
+                // После слова — не начало строки (кроме r"…" и b"…" в Rust).
+                let word = |c: Option<char>| c.map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false);
+                let prev2 = cur.col.checked_sub(2).and_then(|i| line.get(i)).copied();
+                let raw = self.lang == Lang::Rust && matches!(prev, Some('r' | 'b')) && !word(prev2);
+                if word(prev) && !raw {
+                    return false;
+                }
+                let free = next.map(|n| n.is_whitespace() || ")]},;:".contains(n)).unwrap_or(true);
+                if !free {
+                    return false;
+                }
+                e.insert_text("\"\"", false);
+                let at = Pos::new(cur.line, cur.col + 1);
+                e.set_select(at, at);
+                e.track_cursor(false);
+                self.auto_closed.push((cur.line, '"'));
+                true
+            }
+            // Закрывающая перед своей же вставленной — перешагнуть.
+            Key::Char(c) if matches!(c, ')' | ']' | '}') => {
+                if next != Some(c) || e.selection().is_some() {
+                    return false;
+                }
+                let Some(i) = self.auto_closed.iter().rposition(|(_, ch)| *ch == c) else { return false };
+                self.auto_closed.remove(i);
+                let at = Pos::new(cur.line, cur.col + 1);
+                e.set_select(at, at);
+                e.track_cursor(false);
+                true
+            }
+            // Backspace в пустой паре — обе скобки (или кавычки).
+            Key::Backspace if e.selection().is_none() => {
+                let (Some(p), Some(n)) = (prev, next) else { return false };
+                // Пустые кавычки — только если левая открывает строку
+                // (в «"abc"|"def"» это конец одной строки и начало другой).
+                let empty_quotes = p == '"' && n == '"' && {
+                    let before: String = line[..cur.col - 1].iter().collect();
+                    !in_string_or_comment(&before, self.lang)
+                };
+                if closer(p) != Some(n) && !empty_quotes {
+                    return false;
+                }
+                e.set_select(Pos::new(cur.line, cur.col - 1), Pos::new(cur.line, cur.col + 1));
+                e.insert_text("", false);
+                e.track_cursor(false);
+                if let Some(i) = self.auto_closed.iter().rposition(|(_, ch)| *ch == n) {
+                    self.auto_closed.remove(i);
+                }
+                true
+            }
+            // Enter между { и } (или ( ), [ ]) — скобки на разных строках,
+            // курсор посередине с отступом на 4 больше.
+            Key::Enter if mods == Mods::NONE && e.selection().is_none() => {
+                let (Some(p), Some(n)) = (prev, next) else { return false };
+                if closer(p) != Some(n) {
+                    return false;
+                }
+                let indent: String = line.iter().take_while(|c| **c == ' ' || **c == '\t').collect();
+                e.insert_text(&format!("\n{}    \n{}", indent, indent), false);
+                let at = Pos::new(cur.line + 1, indent.chars().count() + 4);
+                e.set_select(at, at);
+                e.track_cursor(false);
+                self.auto_closed.clear();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// После набранного символа: `.` и `::` (Rust); в TOML — `.` (ключи
@@ -571,6 +744,14 @@ impl View for CodeEditor {
                         }
                         (Key::Esc, _) => self.completion = None,
                         _ => {
+                            // Скобка закрывает список и работает как обычно.
+                            if self.brackets(k.key, k.mods) {
+                                self.completion = None;
+                                ev.clear();
+                                self.resync(ctx);
+                                self.after_typing(k.key, ctx);
+                                return;
+                            }
                             // Остальное — в редактор, затем перефильтровать.
                             self.fe.handle_event(ev, ctx);
                             self.refilter();
@@ -596,6 +777,17 @@ impl View for CodeEditor {
             if focused && ((k.key == Key::Enter && k.mods.alt) || (k.key == Key::Char('.') && k.mods.ctrl)) {
                 ctx.post_command(CM_CODE_ACTIONS, Info::None);
                 ev.clear();
+                return;
+            }
+        }
+        // Скобки и кавычки: пара, перешагивание, удаление пары, Enter в {}.
+        if let Event::KeyDown(k) = ev {
+            let key = k.key;
+            if focused && self.brackets(k.key, k.mods) {
+                ev.clear();
+                self.resync(ctx);
+                // `serde = "` — автодополнение версий, как при обычном наборе.
+                self.after_typing(key, ctx);
                 return;
             }
         }

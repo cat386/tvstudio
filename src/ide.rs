@@ -429,6 +429,7 @@ impl Ide {
     fn editor_cfg(&self, e: &mut crate::codeedit::CodeEditor) {
         e.hl_line = self.cfg.hl_line;
         e.hl_col = self.cfg.hl_col;
+        e.auto_close = self.cfg.auto_close;
         e.fmt_cmd = if self.cfg.fmt_on_save { Some(self.cfg.rustfmt.clone()) } else { None };
     }
 

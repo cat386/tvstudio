@@ -190,12 +190,12 @@ fn completion_popup() {
     t.key(KeyEvent::new(Key::Enter, Mods::NONE));
     assert!(t.ed().completion.is_none());
     assert_eq!(t.ed().fe.editor.line(6), "    s.push_str(s)");
-    // Не идентификатор (скобка) закрывает список.
+    // Не идентификатор (скобка) закрывает список; скобка — парой.
     t.typed(".");
     assert!(t.wait(|t| t.ed().completion.is_some()));
     t.typed("(");
     assert!(t.ed().completion.is_none());
-    assert_eq!(t.ed().fe.editor.line(6), "    s.push_str(s).(");
+    assert_eq!(t.ed().fe.editor.line(6), "    s.push_str(s).()");
 }
 
 #[test]

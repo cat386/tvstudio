@@ -622,3 +622,97 @@ fn workspace_members_in_project_tree() {
     ide.shutdown(&mut app);
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// Скобки в редакторе кода: пара при вводе, перешагивание своей
+/// закрывающей, Backspace в пустой паре, Enter в {}, обёртка выделения;
+/// перед словом, в строке и в комментарии — без пары; выключается настройкой.
+#[test]
+fn editor_auto_closes_brackets() {
+    let mut t = T::new("brackets");
+    let f = t.dir.join("src").join("b.rs");
+    std::fs::write(&f, "").unwrap();
+    let id = t.ide.open_file(&mut t.app, &f, None).unwrap();
+    t.app.focus(id);
+    t.pump();
+    let text = |t: &T| t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.text();
+    let cur = |t: &T| t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.cursor();
+    let typed = |t: &mut T, s: &str| {
+        for c in s.chars() {
+            let k = if c == '\n' { KeyEvent::new(Key::Enter, Mods::NONE) } else { KeyEvent::new(Key::Char(c), Mods::NONE) };
+            t.key(k);
+        }
+    };
+
+    // Пара, набор внутри, перешагивание закрывающей.
+    typed(&mut t, "fn f(");
+    assert_eq!(text(&t), "fn f()");
+    assert_eq!(cur(&t).col, 5);
+    typed(&mut t, "x: [u8; 2]) ");
+    assert_eq!(text(&t), "fn f(x: [u8; 2]) ", "] и ) перешагнули вставленные");
+    // Enter внутри {} — по строкам с отступом.
+    typed(&mut t, "{\n");
+    assert_eq!(text(&t), "fn f(x: [u8; 2]) {\n    \n}");
+    assert_eq!((cur(&t).line, cur(&t).col), (1, 4));
+    // Backspace в пустой паре — обе.
+    typed(&mut t, "g(");
+    assert_eq!(text(&t), "fn f(x: [u8; 2]) {\n    g()\n}");
+    t.key(KeyEvent::new(Key::Backspace, Mods::NONE));
+    assert_eq!(text(&t), "fn f(x: [u8; 2]) {\n    g\n}");
+    // Перед словом — без пары; в строке и в комментарии — тоже.
+    t.key(KeyEvent::new(Key::Home, Mods::NONE));
+    t.key(KeyEvent::new(Key::End, Mods::NONE));
+    typed(&mut t, " \"a(\" // b(");
+    assert_eq!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.line(1), "    g \"a(\" // b(");
+    t.key(KeyEvent::new(Key::Home, Mods::NONE));
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    t.key(KeyEvent::new(Key::Right, Mods::NONE));
+    typed(&mut t, "(");
+    assert_eq!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.line(1), "    (g \"a(\" // b(", "перед словом — одна скобка");
+    // Закрывающая, которую никто не вставлял, — обычный ввод.
+    t.key(KeyEvent::new(Key::End, Mods::NONE));
+    typed(&mut t, ")");
+    assert!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.line(1).ends_with("b()"));
+    // Выделение — в скобки.
+    {
+        let w = t.app.find_mut::<CodeWindow>(id).unwrap();
+        let e = &mut w.editor_mut().fe.editor;
+        e.set_select(tvision::Pos::new(0, 3), tvision::Pos::new(0, 4));
+    }
+    typed(&mut t, "[");
+    assert!(text(&t).starts_with("fn [f](x"), "{}", text(&t));
+    // Кавычки: пара, перешагивание, Backspace в пустых; после слова — нет
+    // (кроме r"…" в Rust); между двумя строками Backspace стирает одну.
+    t.key(KeyEvent::new(Key::End, Mods::CTRL));
+    typed(&mut t, "\nlet s = \"ab\";");
+    let last = |t: &T| {
+        let e = &t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor;
+        e.line(e.line_count() - 1)
+    };
+    assert_eq!(last(&t), "let s = \"ab\";", "закрывающая кавычка перешагнула вставленную");
+    typed(&mut t, " f(\"");
+    assert_eq!(last(&t), "let s = \"ab\"; f(\"\")");
+    t.key(KeyEvent::new(Key::Backspace, Mods::NONE));
+    assert_eq!(last(&t), "let s = \"ab\"; f()");
+    typed(&mut t, "r\"");
+    assert_eq!(last(&t), "let s = \"ab\"; f(r\"\")", "r\"…\" — пара");
+    t.key(KeyEvent::new(Key::End, Mods::NONE));
+    typed(&mut t, " x\"");
+    assert_eq!(last(&t), "let s = \"ab\"; f(r\"\") x\"", "после слова — одна кавычка");
+    // «"a"|"b"»: Backspace стирает только закрывающую первой строки.
+    typed(&mut t, "\n");
+    {
+        let w = t.app.find_mut::<CodeWindow>(id).unwrap();
+        w.editor_mut().fe.editor.insert_text("\"a\"\"b\"", false);
+        let l = w.editor().fe.editor.cursor().line;
+        w.editor_mut().fe.editor.set_select(tvision::Pos::new(l, 3), tvision::Pos::new(l, 3));
+    }
+    t.key(KeyEvent::new(Key::Backspace, Mods::NONE));
+    assert_eq!(last(&t), "\"a\"b\"");
+    // Выключено настройкой — только то, что набрано.
+    t.app.find_mut::<CodeWindow>(id).unwrap().editor_mut().auto_close = false;
+    t.key(KeyEvent::new(Key::End, Mods::CTRL));
+    typed(&mut t, "\n(");
+    assert!(text(&t).ends_with("\"a\"b\"\n("), "{:?}", text(&t));
+}
