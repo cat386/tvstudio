@@ -12,6 +12,8 @@ pub const CM_TEST: u16 = 143;
 pub const CM_CLEAN: u16 = 144;
 pub const CM_STOP: u16 = 145;
 pub const CM_GENERATE: u16 = 146;
+/// Параметры сборки (профиль, features, платформа…) и сборка с ними.
+pub const CM_BUILD_OPTS: u16 = 147;
 
 // --- Формы ---
 pub const CM_NEW_FORM: u16 = 150;

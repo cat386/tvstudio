@@ -142,6 +142,7 @@ pub fn menu_bar() -> Menu {
                 .item_key("~П~роверить (cargo check)", CM_CHECK, kb::alt_f(9), "Alt+F9")
                 .item_key("~С~обрать (cargo build)", CM_BUILD, kb::f(9), "F9")
                 .item_key("~З~апустить (cargo run)", CM_RUN, kb::ctrl_f(9), "Ctrl+F9")
+                .item("Параметры с~б~орки...", CM_BUILD_OPTS)
                 .item("~Т~есты (cargo test)", CM_TEST)
                 .item("~О~чистить (cargo clean)", CM_CLEAN)
                 .separator()
@@ -815,11 +816,21 @@ impl Ide {
         if !self.generate(app, true) {
             return;
         }
+        // Параметры сборки проекта: профиль, платформа и пакет — для всех
+        // команд (и для clean), features и прочее — для check/build/test.
+        let opts = self.project.as_ref().map(|p| p.build.clone()).unwrap_or_default();
+        let mut all: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        match args.first() {
+            Some(&"clean") => all.extend(opts.profile_args()),
+            Some(_) => all.extend(opts.cargo_args()),
+            None => {}
+        }
+        let args: Vec<&str> = all.iter().map(|s| s.as_str()).collect();
         self.msgs(app).clear();
         self.build_diags.clear();
         self.problems_dirty = true;
-        self.say(app, &format!("— {}: {} {}", what, self.cfg.cargo, args.join(" ")));
-        match Job::start(&dir, &self.cfg.cargo.clone(), args, what, after) {
+        self.say(app, &format!("— {} ({}): {} {}", what, opts.profile_title(), self.cfg.cargo, args.join(" ")));
+        match Job::start(&dir, &self.cfg.cargo.clone(), &args, what, after) {
             Ok(j) => self.job = Some(j),
             Err(e) => {
                 self.say(app, &e);
@@ -881,12 +892,22 @@ impl Ide {
             if let Some(dir) = self.base_dir() {
                 let cargo = self.cfg.cargo.clone();
                 // Workspace: программа участника, в котором верхний открытый файл.
-                let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
-                let pkg = crate::model::cargo_layout(&dir).run_package(file.as_deref());
-                if let Some(p) = &pkg {
-                    self.say(app, &format!("— Запуск пакета {} (cargo run -p {})", p, p));
+                let opts = self.project.as_ref().map(|p| p.build.clone()).unwrap_or_default();
+                // Пакет из параметров сборки, иначе — участник с верхним открытым файлом.
+                let mut extra = opts.cargo_args();
+                if opts.package.trim().is_empty() {
+                    let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
+                    if let Some(p) = crate::model::cargo_layout(&dir).run_package(file.as_deref()) {
+                        self.say(app, &format!("— Запуск пакета {} (cargo run -p {})", p, p));
+                        extra.extend(["-p".to_string(), p]);
+                    }
                 }
-                let extra: Vec<&str> = pkg.as_deref().map(|p| vec!["-p", p]).unwrap_or_default();
+                let prog = opts.program_args();
+                if !prog.is_empty() {
+                    extra.push("--".into());
+                    extra.extend(prog);
+                }
+                let extra: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
                 let code = app.suspended(|| crate::runner::run_foreground(&dir, &cargo, &extra));
                 self.say(app, &format!("— Программа завершилась, код {}", code.map(|c| c.to_string()).unwrap_or("?".into())));
             }
@@ -1302,6 +1323,28 @@ impl Ide {
         let _ = p.save();
     }
 
+    /// «Параметры сборки»: «Собрать» — сохранить и собрать, «Сохранить» — только сохранить.
+    fn build_options(&mut self, app: &mut Program) {
+        let Some(p) = &self.project else { return };
+        let packages: Vec<String> = crate::model::cargo_layout(&p.dir).members.iter().map(|m| m.name.clone()).collect();
+        let (cmd, d) = dialogs::exec(app, dialogs::build_options_dialog(&p.build, &packages));
+        if cmd != cm::OK && cmd != cm::YES {
+            return;
+        }
+        let opts = match dialogs::read_build_options(&d.get_data()) {
+            Ok(o) => o,
+            Err(e) => return Self::error(app, &e),
+        };
+        let p = self.project.as_mut().unwrap();
+        p.build = opts;
+        if let Err(e) = p.save() {
+            return Self::error(app, &e);
+        }
+        if cmd == cm::OK {
+            self.cargo(app, &["build", "--message-format=short"], "Сборка", After::Nothing);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Запуск и завершение
     // ------------------------------------------------------------------
@@ -1404,7 +1447,7 @@ impl Ide {
         };
         // Формы и модель — только у проекта tvision-rs.
         let has_forms = self.project.as_ref().map(|p| p.has_forms()).unwrap_or(false);
-        for c in [CM_CHECK, CM_BUILD, CM_RUN, CM_TEST, CM_CLEAN] {
+        for c in [CM_CHECK, CM_BUILD, CM_RUN, CM_TEST, CM_CLEAN, CM_BUILD_OPTS] {
             set(app, c, has_p && !running);
         }
         set(app, CM_GENERATE, has_forms && !running);
@@ -1659,6 +1702,7 @@ impl Ide {
             CM_RUN => self.cargo(app, &["build", "--message-format=short"], "Сборка", After::Run),
             CM_TEST => self.cargo(app, &["test", "--message-format=short"], "Тесты", After::Nothing),
             CM_CLEAN => self.cargo(app, &["clean"], "Очистка", After::Nothing),
+            CM_BUILD_OPTS => self.build_options(app),
             CM_STOP => {
                 if let Some(j) = &self.job {
                     j.kill();

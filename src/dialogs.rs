@@ -7,7 +7,7 @@ use tvision::*;
 
 use crate::cmds::*;
 use crate::json::{self, Json};
-use crate::model::{is_crate_name, is_ident, AppModel, Dependency, Form, FormClass, Kind, ProjectKind};
+use crate::model::{is_crate_name, is_ident, AppModel, BuildOptions, Dependency, Form, FormClass, Kind, ProjectKind};
 use crate::props::{self, Prop};
 
 // ======================================================================
@@ -257,6 +257,88 @@ pub fn read_new_project(v: &Value, ask_kind: bool) -> Result<NewProject, String>
         ProjectKind::Tvision => Some(Dependency::detect(&s_at(&v, 2)).ok_or_else(|| "Укажите, откуда брать tvision-rs.".to_string())?),
     };
     Ok(NewProject { kind, name, parent, dep })
+}
+
+// ======================================================================
+// Параметры сборки
+// ======================================================================
+
+/// Частые целевые платформы для списка «Цель».
+const TARGETS: &[&str] = &[
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
+    "aarch64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+];
+
+/// Диалог «Параметры сборки»: OK — сохранить и собрать, `cm::YES` —
+/// только сохранить. `packages` — участники workspace (для списка «Пакет»).
+pub fn build_options_dialog(o: &BuildOptions, packages: &[String]) -> Dialog {
+    let mut d = Dialog::centered(70, 21, "Параметры сборки");
+    let x = 24;
+    let (sel, custom) = match o.profile.trim() {
+        "" | "dev" | "debug" => (0, ""),
+        "release" => (1, ""),
+        p => (2, p),
+    };
+    let mut rb = RadioButtons::radio_buttons(Rect::new(x, 2, x + 14, 5), &["~D~ebug", "~R~elease", "Сво~й~:"]);
+    rb.value = sel;
+    let prof = d.add(rb);
+    d.add(Label::new(Rect::new(1, 2, x, 3), "~П~рофиль", Some(prof)));
+    let mut il = InputLine::new(Rect::new(x + 14, 4, 68, 5), 64);
+    il.set_text(custom);
+    d.add(il);
+    field(&mut d, x, 6, "~F~eatures", &o.features, 44, None);
+    let mut cb = CheckBoxes::check_boxes(Rect::new(x, 7, 68, 9), &["~В~се features (--all-features)", "Без features по ~у~молчанию"]);
+    cb.value = o.all_features as u32 | (o.no_default_features as u32) << 1;
+    d.add(cb);
+    field(&mut d, x, 10, "~Ц~ель (--target)", &o.target, 44, Some(TARGETS));
+    let pk: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+    field(&mut d, x, 11, "П~а~кет (-p)", &o.package, 44, (!pk.is_empty()).then_some(&pk[..]));
+    field(&mut d, x, 13, "~Д~оп. аргументы cargo", &o.extra, 44, None);
+    field(&mut d, x, 14, "Ар~г~ументы программы", &o.run_args, 44, None);
+    d.add(StaticText::new(
+        Rect::new(2, 15, 68, 17),
+        "Для Alt+F9, F9, Ctrl+F9 и тестов; очистке — только профиль и цель.\nАргументы программы получает запуск: cargo run … -- аргументы.",
+    ));
+    let w = 70;
+    d.add(Button::new(Rect::new(w / 2 - 20, 18, w / 2 - 7, 20), "~С~обрать", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(w / 2 - 6, 18, w / 2 + 7, 20), "Со~х~ранить", cm::YES, bf::NORMAL));
+    d.add(Button::new(Rect::new(w / 2 + 8, 18, w / 2 + 20, 20), "Отмена", cm::CANCEL, bf::NORMAL));
+    d.select(prof);
+    d
+}
+
+/// Прочитать диалог «Параметры сборки».
+pub fn read_build_options(v: &Value) -> Result<BuildOptions, String> {
+    let v = strs(v);
+    let u = |i: usize| v.get(i).and_then(|x| x.as_u32()).unwrap_or(0);
+    let profile = match u(0) {
+        0 => String::new(),
+        1 => "release".into(),
+        _ => {
+            let p = s_at(&v, 1).trim().to_string();
+            if p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                return Err(format!("«{}» не годится как имя профиля: латинские буквы, цифры, - и _.", p));
+            }
+            p
+        }
+    };
+    let flags = u(3);
+    Ok(BuildOptions {
+        profile,
+        features: s_at(&v, 2).trim().to_string(),
+        all_features: flags & 1 != 0,
+        no_default_features: flags & 2 != 0,
+        target: s_at(&v, 4).trim().to_string(),
+        package: s_at(&v, 5).trim().to_string(),
+        extra: s_at(&v, 6).trim().to_string(),
+        run_args: s_at(&v, 7).trim().to_string(),
+    })
 }
 
 // ======================================================================
@@ -717,6 +799,32 @@ mod tests {
 
     /// «Новый проект»: тип читается первым; программе на Rust tvision-rs
     /// не нужен. Импорт (без вопроса о типе) — всегда tvision-rs.
+    #[test]
+    fn build_options_dialog_roundtrip() {
+        let o = BuildOptions {
+            profile: "bench-fast".into(),
+            features: "a, b".into(),
+            all_features: false,
+            no_default_features: true,
+            target: "x86_64-unknown-linux-musl".into(),
+            package: "app".into(),
+            extra: "--locked".into(),
+            run_args: "--x \"y z\"".into(),
+        };
+        let d = build_options_dialog(&o, &["app".into(), "lib".into()]);
+        let r = read_build_options(&d.get_data()).unwrap();
+        assert_eq!(r, BuildOptions { features: "a, b".into(), ..o.clone() });
+        // Release и Debug — переключателем; пустое имя своего профиля — ошибка.
+        let mut v = strs(&d.get_data());
+        v[0] = Value::U32(1);
+        assert_eq!(read_build_options(&Value::List(v.clone())).unwrap().profile, "release");
+        v[0] = Value::U32(0);
+        assert_eq!(read_build_options(&Value::List(v.clone())).unwrap().profile, "");
+        v[0] = Value::U32(2);
+        v[1] = Value::Str(String::new());
+        assert!(read_build_options(&Value::List(v)).is_err());
+    }
+
     #[test]
     fn new_project_dialog_kinds() {
         let cfg = Config { dep_value: String::new(), ..Config::default() };

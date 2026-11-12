@@ -1137,6 +1137,153 @@ pub struct Project {
     pub forms: Vec<String>,
     /// Файлы, открытые в редакторе при прошлом сохранении (относительные пути).
     pub open_files: Vec<String>,
+    /// Параметры сборки (профиль, features, платформа…).
+    pub build: BuildOptions,
+}
+
+// ======================================================================
+// Параметры сборки
+// ======================================================================
+
+/// Параметры cargo для проверки, сборки, запуска и тестов проекта.
+/// Хранятся в файле проекта (раздел `build`, только если что-то задано).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct BuildOptions {
+    /// Профиль: пусто — dev (Debug), `release` — `--release`, другое имя — `--profile имя`.
+    pub profile: String,
+    /// Features через запятую или пробел (`--features`).
+    pub features: String,
+    pub all_features: bool,
+    pub no_default_features: bool,
+    /// Целевая платформа (`--target`), пусто — своя.
+    pub target: String,
+    /// Пакет workspace (`-p`), пусто — как выберет среда.
+    pub package: String,
+    /// Дополнительные аргументы cargo (как в командной строке).
+    pub extra: String,
+    /// Аргументы программы при запуске (`cargo run … -- аргументы`).
+    pub run_args: String,
+}
+
+impl BuildOptions {
+    pub fn is_default(&self) -> bool {
+        *self == BuildOptions::default()
+    }
+
+    /// Профиль для показа: Debug, Release или имя своего профиля.
+    pub fn profile_title(&self) -> String {
+        match self.profile.trim() {
+            "" | "dev" | "debug" => "Debug".into(),
+            "release" => "Release".into(),
+            p => p.to_string(),
+        }
+    }
+
+    /// Аргументы профиля, платформы и пакета (годятся и для `cargo clean`).
+    pub fn profile_args(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        match self.profile.trim() {
+            "" | "dev" | "debug" => {}
+            "release" => v.push("--release".into()),
+            p => v.extend(["--profile".to_string(), p.to_string()]),
+        }
+        if !self.target.trim().is_empty() {
+            v.extend(["--target".to_string(), self.target.trim().to_string()]);
+        }
+        if !self.package.trim().is_empty() {
+            v.extend(["-p".to_string(), self.package.trim().to_string()]);
+        }
+        v
+    }
+
+    /// Все аргументы для `check` / `build` / `run` / `test`.
+    pub fn cargo_args(&self) -> Vec<String> {
+        let mut v = self.profile_args();
+        let feats: Vec<&str> = self.features.split([',', ' ']).map(|f| f.trim()).filter(|f| !f.is_empty()).collect();
+        if !feats.is_empty() {
+            v.extend(["--features".to_string(), feats.join(",")]);
+        }
+        if self.all_features {
+            v.push("--all-features".into());
+        }
+        if self.no_default_features {
+            v.push("--no-default-features".into());
+        }
+        v.extend(split_args(&self.extra));
+        v
+    }
+
+    /// Аргументы программы для `cargo run -- …`.
+    pub fn program_args(&self) -> Vec<String> {
+        split_args(&self.run_args)
+    }
+
+    pub fn to_json(&self) -> Json {
+        let mut v: Vec<(&str, Json)> = Vec::new();
+        let mut s = |k: &'static str, x: &str| {
+            if !x.trim().is_empty() {
+                v.push((k, Json::s(x.trim())));
+            }
+        };
+        s("profile", &self.profile);
+        s("features", &self.features);
+        s("target", &self.target);
+        s("package", &self.package);
+        s("extra", &self.extra);
+        s("run_args", &self.run_args);
+        if self.all_features {
+            v.push(("all_features", Json::Bool(true)));
+        }
+        if self.no_default_features {
+            v.push(("no_default_features", Json::Bool(true)));
+        }
+        Json::obj(v)
+    }
+
+    pub fn from_json(j: &Json) -> Self {
+        BuildOptions {
+            profile: j.str("profile"),
+            features: j.str("features"),
+            all_features: j.bool("all_features", false),
+            no_default_features: j.bool("no_default_features", false),
+            target: j.str("target"),
+            package: j.str("package"),
+            extra: j.str("extra"),
+            run_args: j.str("run_args"),
+        }
+    }
+}
+
+/// Разбить строку на аргументы как командная строка: пробелы разделяют,
+/// `"…"` и `'…'` объединяют (кавычки убираются), `\"` внутри `"…"` — кавычка.
+pub fn split_args(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut has = false;
+    let mut q: Option<char> = None;
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match q {
+            Some('"') if c == '\\' && matches!(it.peek(), Some('"') | Some('\\')) => cur.push(it.next().unwrap()),
+            Some(x) if c == x => q = None,
+            Some(_) => cur.push(c),
+            None if c == '"' || c == '\'' => {
+                q = Some(c);
+                has = true;
+            }
+            None if c.is_whitespace() => {
+                if has || !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                    has = false;
+                }
+            }
+            None => cur.push(c),
+        }
+    }
+    if has || !cur.is_empty() {
+        out.push(cur);
+    }
+    out
 }
 
 /// Расширение файла проекта.
@@ -1171,7 +1318,7 @@ impl Project {
     }
 
     pub fn to_json(&self) -> Json {
-        Json::obj(vec![
+        let mut j = Json::obj(vec![
             ("format", Json::s("tvstudio-project")),
             ("version", Json::i(1)),
             ("name", Json::s(&self.name)),
@@ -1179,7 +1326,13 @@ impl Project {
             ("forms", Json::from_strings(&self.forms)),
             ("open_files", Json::from_strings(&self.open_files)),
             ("app", self.app.to_json()),
-        ])
+        ]);
+        if !self.build.is_default() {
+            if let Json::Obj(v) = &mut j {
+                v.push(("build".into(), self.build.to_json()));
+            }
+        }
+        j
     }
 
     /// Загрузить проект из файла `*.tvsp` (YAML; файлы старых версий — TOML или JSON).
@@ -1199,6 +1352,7 @@ impl Project {
             app: AppModel::from_json(j.get("app").unwrap_or(&Json::Null)),
             forms: j.strings("forms"),
             open_files: j.strings("open_files"),
+            build: BuildOptions::from_json(j.get("build").unwrap_or(&Json::Null)),
         })
     }
 
@@ -1238,6 +1392,7 @@ impl Project {
             app: AppModel::starter(name),
             forms: vec![],
             open_files: vec!["src/main.rs".into()],
+            build: BuildOptions::default(),
         };
         p.save()?;
         Ok(p)
@@ -1265,7 +1420,15 @@ impl Project {
             .and_then(|f| f.strip_prefix(&dir).ok().map(|r| r.to_string_lossy().replace('\\', "/")))
             .map(|f| vec![f])
             .unwrap_or_default();
-        let p = Project { dir, name: name.clone(), kind: ProjectKind::Rust, app: AppModel::starter(&name), forms: vec![], open_files };
+        let p = Project {
+            dir,
+            name: name.clone(),
+            kind: ProjectKind::Rust,
+            app: AppModel::starter(&name),
+            forms: vec![],
+            open_files,
+            build: BuildOptions::default(),
+        };
         if p.file().exists() {
             return Err(format!("файл проекта {} уже есть", p.file().display()));
         }
@@ -1305,6 +1468,7 @@ impl Project {
             app: AppModel::starter(&title),
             forms: vec!["about".into()],
             open_files: vec![],
+            build: BuildOptions::default(),
         };
         write(dir.join("src").join("main.rs"), crate::codegen::main_rs(&p))?;
         about_form(&title).save(&p.form_path("about"))?;
@@ -1648,6 +1812,62 @@ mod tests {
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
         std::fs::write(p.file(), j.to_pretty()).unwrap();
         assert_eq!(Project::load(&p.file()).unwrap().kind, ProjectKind::Tvision);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn build_options_args() {
+        let d = BuildOptions::default();
+        assert!(d.cargo_args().is_empty() && d.is_default());
+        assert_eq!(d.profile_title(), "Debug");
+        let o = BuildOptions {
+            profile: "release".into(),
+            features: "serde, gui  log".into(),
+            all_features: false,
+            no_default_features: true,
+            target: "x86_64-unknown-linux-musl".into(),
+            package: "app".into(),
+            extra: "--locked -j 4".into(),
+            run_args: "--file \"мой файл.txt\" -v".into(),
+        };
+        assert_eq!(
+            o.cargo_args(),
+            [
+                "--release",
+                "--target",
+                "x86_64-unknown-linux-musl",
+                "-p",
+                "app",
+                "--features",
+                "serde,gui,log",
+                "--no-default-features",
+                "--locked",
+                "-j",
+                "4"
+            ]
+        );
+        assert_eq!(o.profile_args(), ["--release", "--target", "x86_64-unknown-linux-musl", "-p", "app"]);
+        assert_eq!(o.program_args(), ["--file", "мой файл.txt", "-v"]);
+        assert_eq!(o.profile_title(), "Release");
+        let c = BuildOptions { profile: "bench".into(), ..Default::default() };
+        assert_eq!((c.cargo_args(), c.profile_title()), (vec!["--profile".to_string(), "bench".into()], "bench".to_string()));
+        assert_eq!(BuildOptions::from_json(&o.to_json()), o);
+        assert_eq!(split_args(r#"a 'b c' "d \"e\"" "" f"#), ["a", "b c", "d \"e\"", "", "f"]);
+    }
+
+    /// Параметры сборки сохраняются в файле проекта (раздел build — только если задан).
+    #[test]
+    fn build_options_saved() {
+        let base = std::env::temp_dir().join(format!("tvs_buildopts_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let mut p = Project::create_rust(&base, "opts").unwrap();
+        assert!(!std::fs::read_to_string(p.file()).unwrap().contains("build:"));
+        p.build.profile = "release".into();
+        p.build.run_args = "-x".into();
+        p.save().unwrap();
+        let text = std::fs::read_to_string(p.file()).unwrap();
+        assert!(text.contains("build:\n  profile: release\n  run_args: '-x'\n"), "{}", text);
+        assert_eq!(Project::load(&p.file()).unwrap().build, p.build);
         let _ = std::fs::remove_dir_all(&base);
     }
 

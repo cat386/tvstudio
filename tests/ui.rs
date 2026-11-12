@@ -327,6 +327,25 @@ fn new_form_via_dialog() {
     assert!(t.screen().contains("settings"), "дерево проекта обновлено");
 }
 
+/// Параметры сборки: Release выбирается в диалоге, «Собрать» сохраняет
+/// их в проекте и запускает cargo build с --release.
+#[test]
+fn build_options_dialog_sets_release() {
+    let mut t = T::new("buildopts");
+    t.app.put_event(Event::command_event(CM_BUILD_OPTS));
+    // Переключатель профиля в фокусе: ↓ — Release; Enter — «Собрать».
+    t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Down, Mods::NONE)));
+    t.app.put_event(Event::KeyDown(kb::ENTER));
+    t.pump();
+    let p = t.ide.project.as_ref().unwrap();
+    assert_eq!(p.build.profile, "release");
+    assert!(std::fs::read_to_string(p.file()).unwrap().contains("profile: release"));
+    assert!(t.ide.job.is_some(), "сборка запущена");
+    let first = t.ide.messages.and_then(|id| t.app.find::<tvstudio::toolwins::MessagesWindow>(id)).map(|m| m.entries[0].text.clone()).unwrap();
+    assert!(first.contains("(Release)") && first.contains("build --message-format=short --release"), "{}", first);
+    t.cmd(CM_STOP);
+}
+
 /// Полный цикл: проект собирается cargo, ошибка в main.rs находится,
 /// F8 открывает файл на строке ошибки, в полосе номеров — пометка.
 #[test]
