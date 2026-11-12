@@ -95,6 +95,12 @@ pub enum Wait {
     Completion {
         win: ViewId,
         at: Pos,
+        /// Автопоказ при наборе: без сообщения «вариантов нет».
+        quiet: bool,
+    },
+    /// Догрузка правок выбранного варианта дополнения (`use` …).
+    Resolve {
+        win: ViewId,
     },
     Definition {
         from: (PathBuf, usize, usize),
@@ -294,6 +300,7 @@ impl Ide {
                 }
             }
         }
+        self.take_accepted_completions(app);
         self.sync_docs(app, false);
         self.request_hints(app);
         if self.lsp_state.diags_dirty {
@@ -459,9 +466,14 @@ impl Ide {
                     }
                 }
             }
-            LspEvent::Completion { id, items } => {
-                if let Some(Wait::Completion { win, at }) = self.lsp_state.wait.remove(&(srv, id)) {
-                    self.show_completion(app, srv, win, at, items);
+            LspEvent::Completion { id, items, incomplete } => {
+                if let Some(Wait::Completion { win, at, quiet }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    self.show_completion(app, srv, win, at, items, incomplete, quiet);
+                }
+            }
+            LspEvent::CompletionResolved { id, edits } => {
+                if let Some(Wait::Resolve { win }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    self.apply_completion_edits(app, srv, win, &edits);
                 }
             }
             LspEvent::Locations { id, items } => match self.lsp_state.wait.remove(&(srv, id)) {
@@ -765,16 +777,98 @@ impl Ide {
     }
 
     /// Запросить дополнение в позиции курсора.
-    pub fn lsp_complete(&mut self, app: &mut Program, trigger: Option<char>) {
-        let Some((id, path, pos, srv)) = self.lsp_target(app) else { return };
+    /// Дополнение в позиции курсора: от сервера LSP, а если его нет — из
+    /// словаря проекта (крейты, модули, имена из файлов). `quiet` —
+    /// автопоказ при наборе: без сообщений.
+    pub fn lsp_complete(&mut self, app: &mut Program, trigger: Option<char>, quiet: bool) {
+        let Some(id) = Self::current_window(app).filter(|&id| app.find::<CodeWindow>(id).is_some()) else { return };
+        let path = app.find::<CodeWindow>(id).map(|w| w.path()).unwrap_or_default();
+        let srv = Srv::for_path(&path).filter(|&s| self.client(s).is_some());
+        let Some(srv) = srv else {
+            // Без сервера — словарь (для файлов .rs; после «.» и «::» — тоже).
+            if path.extension().map(|x| x == "rs").unwrap_or(false) {
+                return self.word_complete(app, id, quiet);
+            }
+            if !quiet {
+                self.lsp_target(app);
+            }
+            return;
+        };
+        let Some((id, path, pos, srv)) = self.lsp_target(app).filter(|t| t.3 == srv) else { return };
         let lp = self.lsp_pos(app, srv, id, pos);
         let Some(rid) = self.client_mut(srv).map(|c| c.completion(&path, lp, trigger)) else { return };
         // Старые запросы дополнения больше не нужны.
         self.lsp_state.wait.retain(|_, w| !matches!(w, Wait::Completion { .. }));
-        self.lsp_state.wait.insert((srv, rid), Wait::Completion { win: id, at: pos });
+        self.lsp_state.wait.insert((srv, rid), Wait::Completion { win: id, at: pos, quiet });
     }
 
-    fn show_completion(&mut self, app: &mut Program, srv: Srv, win: ViewId, at: Pos, items: Vec<crate::lsp::CompletionItem>) {
+    /// Дополнение из словаря проекта (без сервера). Словарь файлов — из
+    /// кэша (обновляется не чаще раза в 15 с), слова открытого текста — свежие.
+    fn word_complete(&mut self, app: &mut Program, win: ViewId, quiet: bool) {
+        let Some(dir) = self.base_dir() else { return };
+        let fresh = self.words_cache.as_ref().map(|(t, d, _)| *d == dir && t.elapsed() < Duration::from_secs(15)).unwrap_or(false);
+        if !fresh {
+            self.words_cache = Some((Instant::now(), dir.clone(), crate::words::project_words(&dir)));
+        }
+        let mut words = self.words_cache.as_ref().map(|(_, _, w)| w.clone()).unwrap_or_default();
+        let Some(w) = app.find_mut::<CodeWindow>(win) else { return };
+        let ed = w.editor_mut();
+        crate::words::idents(&ed.fe.editor.text(), &mut words);
+        // Само недописанное слово — не вариант.
+        let start = ed.word_start();
+        let cur = ed.fe.editor.cursor();
+        let typed: String = ed.fe.editor.line(cur.line).chars().skip(start.col).take(cur.col - start.col).collect();
+        if words.get(&typed) == Some(&1) && !ed.fe.editor.text().matches(typed.as_str()).nth(1).is_some() {
+            words.remove(&typed);
+        }
+        ed.open_completion(crate::words::items(&words), start, false, quiet);
+        if ed.completion.is_none() && !quiet {
+            self.say(app, "Дополнение: подходящих вариантов нет (сервер LSP не запущен — варианты из файлов проекта).");
+        }
+    }
+
+    /// Выбран вариант дополнения с правками (`use` …): применить их сразу или
+    /// сначала догрузить у сервера (`completionItem/resolve`).
+    fn take_accepted_completions(&mut self, app: &mut Program) {
+        for id in Self::windows::<CodeWindow>(app) {
+            let Some(w) = app.find_mut::<CodeWindow>(id) else { continue };
+            let Some(item) = w.editor_mut().accepted.take() else { continue };
+            let path = w.path();
+            let Some(srv) = Srv::for_path(&path).filter(|&s| self.client(s).is_some()) else { continue };
+            if !item.edits.is_empty() {
+                self.apply_completion_edits(app, srv, id, &item.edits);
+            } else if let Some(raw) = &item.resolve {
+                self.sync_docs(app, true);
+                let Some(rid) = self.client_mut(srv).map(|c| c.resolve_completion(raw)) else { continue };
+                self.lsp_state.wait.insert((srv, rid), Wait::Resolve { win: id });
+            }
+        }
+    }
+
+    /// Дополнительные правки варианта (обычно `use` в начале файла); курсор
+    /// остаётся у вставленного слова.
+    fn apply_completion_edits(&mut self, app: &mut Program, srv: Srv, win: ViewId, edits: &[TextEdit]) {
+        if edits.is_empty() {
+            return;
+        }
+        let enc = self.encoding(srv);
+        let Some(w) = app.find_mut::<CodeWindow>(win) else { return };
+        apply_text_edits(&mut w.editor_mut().fe.editor, edits, enc);
+        app.put_event(Event::Broadcast(Message::new(0xFFFE)));
+        self.sync_docs(app, true);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn show_completion(
+        &mut self,
+        app: &mut Program,
+        srv: Srv,
+        win: ViewId,
+        at: Pos,
+        items: Vec<crate::lsp::CompletionItem>,
+        incomplete: bool,
+        quiet: bool,
+    ) {
         let enc = self.encoding(srv);
         let Some(w) = app.find_mut::<CodeWindow>(win) else { return };
         let ed = w.editor_mut();
@@ -793,8 +887,8 @@ impl Ide {
             .map(|r| Pos::new(cur.line, col_from_lsp(&line, r.start.col, enc)))
             .filter(|p| p.col <= cur.col && p.col >= ws.col.min(at.col))
             .unwrap_or(ws);
-        ed.open_completion(items, start);
-        if ed.completion.is_none() {
+        ed.open_completion(items, start, incomplete, quiet);
+        if ed.completion.is_none() && !quiet {
             self.say(app, "Дополнение: подходящих вариантов нет.");
         }
     }
@@ -897,7 +991,9 @@ impl Ide {
 
 /// Применить правки к тексту редактора. Диапазоны — в единицах сервера
 /// (`enc`) относительно исходного текста, поэтому правки идут с конца к
-/// началу: более ранние позиции от поздних правок не сдвигаются.
+/// началу: более ранние позиции от поздних правок не сдвигаются. Курсор
+/// остаётся на своём месте в тексте (сдвигается вместе с ним, если правка
+/// выше — например, добавленный `use`).
 pub fn apply_text_edits(e: &mut tvision::Editor, edits: &[TextEdit], enc: Encoding) {
     let mut list: Vec<&TextEdit> = edits.iter().collect();
     list.sort_by_key(|t| std::cmp::Reverse(t.range.start));
@@ -909,11 +1005,24 @@ pub fn apply_text_edits(e: &mut tvision::Editor, edits: &[TextEdit], enc: Encodi
         }
         Pos::new(p.line, col_from_lsp(&e.line(p.line), p.col, enc))
     };
+    let mut cur = e.cursor();
     for t in list {
         let a = to_pos(e, t.range.start);
         let b = to_pos(e, t.range.end).max(a);
         e.set_select(a, b);
         e.insert_text(&t.text, false);
+        // Правка до курсора — курсор едет вместе с текстом.
+        if b <= cur {
+            let nl = t.text.matches('\n').count();
+            let last_len = t.text.rsplit('\n').next().map(|l| l.chars().count()).unwrap_or(0);
+            cur = if b.line == cur.line {
+                let col = if nl == 0 { a.col + last_len } else { last_len };
+                Pos::new(a.line + nl, col + (cur.col - b.col))
+            } else {
+                Pos::new(cur.line + nl - (b.line - a.line), cur.col)
+            };
+        }
     }
+    e.set_select(cur, cur);
     e.track_cursor(false);
 }

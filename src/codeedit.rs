@@ -90,7 +90,20 @@ pub struct Completion {
     pub shown: Vec<usize>,
     pub sel: usize,
     pub top: usize,
+    /// Сервер прислал не всё (`isIncomplete`): при наборе — запросить заново.
+    pub incomplete: bool,
+    /// Открылся сам при наборе: только варианты, начинающиеся с набранного,
+    /// и Enter — перевод строки, пока вариант не выбран стрелками (выбор —
+    /// Tab). Иначе набранное слово и Enter в конце строки превращались бы
+    /// в первый попавшийся вариант.
+    pub auto: bool,
+    /// Вариант выбран стрелками.
+    pub navigated: bool,
 }
+
+/// `Info::Str` команды `CM_COMPLETE` при автопоказе (набор имени): тихо —
+/// без сообщения «вариантов нет».
+pub const AUTO_COMPLETE: &str = "auto";
 
 /// Наибольшая высота списка дополнения.
 pub const COMPLETION_ROWS: usize = 8;
@@ -126,6 +139,11 @@ pub struct CodeEditor {
     /// закрывающая перешагивает вставленную, Backspace в пустой паре удаляет
     /// обе, Enter в `{}` — разносит по строкам.
     pub auto_close: bool,
+    /// Список дополнения сам при наборе имени (от двух букв, файлы .rs).
+    pub auto_complete: bool,
+    /// Выбранный вариант с дополнительными правками (`use` …) — среда
+    /// забирает его и применяет правки (или сначала догружает их у сервера).
+    pub accepted: Option<CompletionItem>,
     /// Закрывающие скобки, вставленные сами (строка, символ), — их можно
     /// «перешагнуть», набрав ту же скобку. Сбрасываются при уходе со строки.
     auto_closed: Vec<(usize, char)>,
@@ -176,6 +194,8 @@ impl CodeEditor {
             hl_line: true,
             hl_col: true,
             auto_close: true,
+            auto_complete: true,
+            accepted: None,
             auto_closed: Vec::new(),
             fmt_cmd: None,
             fmt_error: None,
@@ -248,12 +268,14 @@ impl CodeEditor {
     }
 
     /// Открыть список дополнения.
-    pub fn open_completion(&mut self, items: Vec<CompletionItem>, start: Pos) {
+    pub fn open_completion(&mut self, items: Vec<CompletionItem>, start: Pos, incomplete: bool, auto: bool) {
         if items.is_empty() {
             self.completion = None;
             return;
         }
-        self.completion = Some(Completion { items, start, shown: Vec::new(), sel: 0, top: 0 });
+        // Новый ответ на тот же автопоказ — выбор стрелками не теряется.
+        let navigated = self.completion.as_ref().map(|c| c.auto && auto && c.navigated).unwrap_or(false);
+        self.completion = Some(Completion { items, start, shown: Vec::new(), sel: 0, top: 0, incomplete, auto, navigated });
         self.refilter();
     }
 
@@ -283,7 +305,10 @@ impl CodeEditor {
         let low = prefix.to_lowercase();
         // Сначала — начинающиеся с набранного, затем — содержащие его буквы по порядку.
         let mut shown: Vec<usize> = (0..c.items.len()).filter(|&i| c.items[i].filter.to_lowercase().starts_with(&low)).collect();
-        shown.extend((0..c.items.len()).filter(|&i| !c.items[i].filter.to_lowercase().starts_with(&low) && subsequence(&low, &c.items[i].filter)));
+        if !c.auto {
+            shown
+                .extend((0..c.items.len()).filter(|&i| !c.items[i].filter.to_lowercase().starts_with(&low) && subsequence(&low, &c.items[i].filter)));
+        }
         if shown.is_empty() {
             self.completion = None;
             return;
@@ -323,6 +348,11 @@ impl CodeEditor {
         }
         e.set_select(start, Pos::new(cur.line, end));
         e.insert_text(&item.insert, false);
+        // `use` и прочие правки — среде (ей известна кодировка сервера).
+        if !item.edits.is_empty() || item.resolve.is_some() {
+            self.accepted = Some(item.clone());
+        }
+        let e = &mut self.fe.editor;
         // Курсор — внутрь скобок, если вставлен вызов без аргументов «f()»…
         // нет: оставляем после вставки, как делает большинство редакторов
         // без поддержки сниппетов.
@@ -331,6 +361,7 @@ impl CodeEditor {
 
     fn move_completion(&mut self, delta: i32) {
         let Some(c) = &mut self.completion else { return };
+        c.navigated = true;
         let n = c.shown.len() as i32;
         let s = (c.sel as i32 + delta).rem_euclid(n.max(1));
         // PgUp/PgDn не «заворачиваются» через край.
@@ -492,6 +523,19 @@ impl CodeEditor {
     /// версии пакета от crates-lsp) сами открывают дополнение.
     fn after_typing(&mut self, key: Key, ctx: &mut Ctx) {
         let Key::Char(ch) = key else { return };
+        // Буква имени — список сам (или заново, если прежний был неполным).
+        if self.auto_complete && self.lang == Lang::Rust && is_ident_char(ch) {
+            if let Some(c) = &self.completion {
+                if c.incomplete {
+                    ctx.post_command(CM_COMPLETE, Info::Str(AUTO_COMPLETE.into()));
+                }
+                return;
+            }
+            if self.word_for_auto_complete() {
+                ctx.post_command(CM_COMPLETE, Info::Str(AUTO_COMPLETE.into()));
+            }
+            return;
+        }
         let wanted = match self.lang {
             Lang::Rust => ch == '.' || ch == ':',
             Lang::Toml => ch == '.' || ch == '"',
@@ -525,6 +569,28 @@ impl CodeEditor {
             _ => return,
         };
         ctx.post_command(CM_COMPLETE, Info::Str(trigger.into()));
+    }
+
+    /// Перед курсором имя от двух букв (не число, не время жизни `'a`), и
+    /// курсор не в строке и не в комментарии — пора показать варианты.
+    fn word_for_auto_complete(&self) -> bool {
+        let e = &self.fe.editor;
+        let cur = e.cursor();
+        let line: Vec<char> = e.line(cur.line).chars().collect();
+        let end = cur.col.min(line.len());
+        let mut start = end;
+        while start > 0 && is_ident_char(line[start - 1]) {
+            start -= 1;
+        }
+        if end - start < 2 || line[start].is_ascii_digit() || (start > 0 && line[start - 1] == '\'') {
+            return false;
+        }
+        // Справа — продолжение слова: правка внутри имени, не набор нового.
+        if line.get(end).map(|c| is_ident_char(*c)).unwrap_or(false) {
+            return false;
+        }
+        let before: String = line[..start].iter().collect();
+        !in_string_or_comment(&before, self.lang)
     }
 
     /// Строки списка дополнения: (строка экрана, столбец, текст, выбран ли).
@@ -733,34 +799,41 @@ impl View for CodeEditor {
                 Event::KeyDown(k) if focused => {
                     let k = *k;
                     let page = COMPLETION_ROWS as i32 - 1;
-                    match (k.key, k.mods) {
-                        (Key::Up, Mods::NONE) => self.move_completion(-1),
-                        (Key::Down, Mods::NONE) => self.move_completion(1),
-                        (Key::PgUp, Mods::NONE) => self.move_completion(-page),
-                        (Key::PgDn, Mods::NONE) => self.move_completion(page),
-                        (Key::Enter, Mods::NONE) | (Key::Tab, Mods::NONE) => {
-                            self.accept_completion();
-                            self.resync(ctx);
-                        }
-                        (Key::Esc, _) => self.completion = None,
-                        _ => {
-                            // Скобка закрывает список и работает как обычно.
-                            if self.brackets(k.key, k.mods) {
-                                self.completion = None;
-                                ev.clear();
+                    let auto_untouched = self.completion.as_ref().map(|c| c.auto && !c.navigated).unwrap_or(false);
+                    // Сам открывшийся список, вариант не выбран — Enter
+                    // закрывает его и дальше работает как обычно (перевод строки).
+                    if (k.key, k.mods) == (Key::Enter, Mods::NONE) && auto_untouched {
+                        self.completion = None;
+                    } else {
+                        match (k.key, k.mods) {
+                            (Key::Up, Mods::NONE) => self.move_completion(-1),
+                            (Key::Down, Mods::NONE) => self.move_completion(1),
+                            (Key::PgUp, Mods::NONE) => self.move_completion(-page),
+                            (Key::PgDn, Mods::NONE) => self.move_completion(page),
+                            (Key::Enter, Mods::NONE) | (Key::Tab, Mods::NONE) => {
+                                self.accept_completion();
                                 self.resync(ctx);
+                            }
+                            (Key::Esc, _) => self.completion = None,
+                            _ => {
+                                // Скобка закрывает список и работает как обычно.
+                                if self.brackets(k.key, k.mods) {
+                                    self.completion = None;
+                                    ev.clear();
+                                    self.resync(ctx);
+                                    self.after_typing(k.key, ctx);
+                                    return;
+                                }
+                                // Остальное — в редактор, затем перефильтровать.
+                                self.fe.handle_event(ev, ctx);
+                                self.refilter();
                                 self.after_typing(k.key, ctx);
                                 return;
                             }
-                            // Остальное — в редактор, затем перефильтровать.
-                            self.fe.handle_event(ev, ctx);
-                            self.refilter();
-                            self.after_typing(k.key, ctx);
-                            return;
                         }
+                        ev.clear();
+                        return;
                     }
-                    ev.clear();
-                    return;
                 }
                 Event::MouseDown(_) => self.completion = None,
                 _ => {}

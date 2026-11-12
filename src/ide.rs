@@ -264,6 +264,8 @@ pub struct Ide {
     pub last_error: Option<String>,
     /// Сервер LSP (rust-analyzer) открытого проекта.
     pub lsp: Option<LspClient>,
+    /// Словарь проекта для дополнения без сервера: (когда собран, каталог, слова).
+    pub words_cache: Option<(std::time::Instant, PathBuf, std::collections::BTreeMap<String, i64>)>,
     /// Сервер LSP для `.toml` (crates-lsp: версии и features зависимостей в Cargo.toml).
     pub lsp_toml: Option<LspClient>,
     pub lsp_state: LspState,
@@ -287,6 +289,7 @@ impl Ide {
             last_error: None,
             lsp: None,
             lsp_toml: None,
+            words_cache: None,
             lsp_state: LspState::default(),
         }
     }
@@ -430,6 +433,7 @@ impl Ide {
         e.hl_line = self.cfg.hl_line;
         e.hl_col = self.cfg.hl_col;
         e.auto_close = self.cfg.auto_close;
+        e.auto_complete = self.cfg.auto_complete;
         e.fmt_cmd = if self.cfg.fmt_on_save { Some(self.cfg.rustfmt.clone()) } else { None };
     }
 
@@ -1494,11 +1498,12 @@ impl Ide {
             }
             CM_FIND_FILES => self.find_in_files(app),
             CM_COMPLETE => {
+                let quiet = matches!(&info, Info::Str(s) if s == crate::codeedit::AUTO_COMPLETE);
                 let trigger = match info {
-                    Info::Str(s) => s.chars().last(),
+                    Info::Str(s) if !quiet => s.chars().last(),
                     _ => None,
                 };
-                self.lsp_complete(app, trigger);
+                self.lsp_complete(app, trigger, quiet);
             }
             CM_GOTO_DEF => self.lsp_goto_def(app),
             CM_FIND_REFS => self.lsp_find_refs(app),

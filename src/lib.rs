@@ -43,3 +43,4 @@ pub mod runner;
 pub mod rustfmt;
 pub mod toml;
 pub mod toolwins;
+pub mod words;

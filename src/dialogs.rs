@@ -382,6 +382,8 @@ pub struct Config {
     pub hl_col: bool,
     /// Закрывать скобки и кавычки в редакторе кода.
     pub auto_close: bool,
+    /// Список дополнения сам при наборе имени.
+    pub auto_complete: bool,
     /// Форматировать файлы .rs программой rustfmt при сохранении.
     pub fmt_on_save: bool,
     /// Команда rustfmt.
@@ -403,6 +405,7 @@ impl Default for Config {
             hl_line: true,
             hl_col: true,
             auto_close: true,
+            auto_complete: true,
             fmt_on_save: true,
             rustfmt: "rustfmt".into(),
         }
@@ -443,6 +446,7 @@ impl Config {
         c.hl_line = j.bool("hl_line", true);
         c.hl_col = j.bool("hl_col", true);
         c.auto_close = j.bool("auto_close", true);
+        c.auto_complete = j.bool("auto_complete", true);
         c.fmt_on_save = j.bool("fmt_on_save", true);
         c.rustfmt = Some(j.str("rustfmt")).filter(|s| !s.trim().is_empty()).unwrap_or(c.rustfmt);
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
@@ -473,6 +477,7 @@ impl Config {
             ("hl_line", Json::Bool(self.hl_line)),
             ("hl_col", Json::Bool(self.hl_col)),
             ("auto_close", Json::Bool(self.auto_close)),
+            ("auto_complete", Json::Bool(self.auto_complete)),
             ("fmt_on_save", Json::Bool(self.fmt_on_save)),
             ("rustfmt", Json::s(&self.rustfmt)),
         ]);
@@ -524,7 +529,7 @@ impl Config {
 }
 
 pub fn options_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(66, 27, "Параметры среды");
+    let mut d = Dialog::centered(66, 28, "Параметры среды");
     let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
     th.value = cfg.theme;
     let th = d.add(th);
@@ -541,13 +546,23 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
     field(&mut d, 18, 16, "Сервер Cargo.to~m~l", &cfg.toml_lsp_command, 44, None);
     d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install --locked crates-lsp"));
     let mut hl = CheckBoxes::check_boxes(
-        Rect::new(18, 19, 62, 23),
-        &["Подсвечивать ~с~троку курсора", "Подсвечивать с~т~олбец курсора", "~r~ustfmt при сохранении (.rs)", "~З~акрывать скобки и кавычки"],
+        Rect::new(18, 19, 62, 24),
+        &[
+            "Подсвечивать ~с~троку курсора",
+            "Подсвечивать с~т~олбец курсора",
+            "~r~ustfmt при сохранении (.rs)",
+            "~З~акрывать скобки и кавычки",
+            "~П~одсказки при наборе",
+        ],
     );
-    hl.value = u32::from(cfg.hl_line) | (u32::from(cfg.hl_col) << 1) | (u32::from(cfg.fmt_on_save) << 2) | (u32::from(cfg.auto_close) << 3);
+    hl.value = u32::from(cfg.hl_line)
+        | (u32::from(cfg.hl_col) << 1)
+        | (u32::from(cfg.fmt_on_save) << 2)
+        | (u32::from(cfg.auto_close) << 3)
+        | (u32::from(cfg.auto_complete) << 4);
     let hl = d.add(hl);
     d.add(Label::new(Rect::new(1, 19, 18, 20), "~Р~едактор", Some(hl)));
-    ok_cancel(&mut d, 24);
+    ok_cancel(&mut d, 25);
     d.select(th);
     d
 }
@@ -573,11 +588,12 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     }
     // Сервер Cargo.toml (crates-lsp): пустое поле — выключен.
     cfg.toml_lsp_command = s_at(&v, 5).trim().to_string();
-    let hl = v.get(6).and_then(|x| x.as_u32()).unwrap_or(15);
+    let hl = v.get(6).and_then(|x| x.as_u32()).unwrap_or(31);
     cfg.hl_line = hl & 1 != 0;
     cfg.hl_col = hl & 2 != 0;
     cfg.fmt_on_save = hl & 4 != 0;
     cfg.auto_close = hl & 8 != 0;
+    cfg.auto_complete = hl & 16 != 0;
 }
 
 // ======================================================================
@@ -683,8 +699,15 @@ mod tests {
     #[test]
     fn options_dialog_round_trip() {
         for toml in [TOML_LSP_DEFAULT, "/opt/bin/crates-lsp", ""] {
-            let cfg =
-                Config { toml_lsp_command: toml.into(), lsp_command: "ra".into(), hl_col: false, auto_close: false, theme: 1, ..Config::default() };
+            let cfg = Config {
+                toml_lsp_command: toml.into(),
+                lsp_command: "ra".into(),
+                hl_col: false,
+                auto_close: false,
+                auto_complete: false,
+                theme: 1,
+                ..Config::default()
+            };
             let d = options_dialog(&cfg);
             let mut back = Config::default();
             read_options(&mut back, &d.get_data());

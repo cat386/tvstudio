@@ -716,3 +716,42 @@ fn editor_auto_closes_brackets() {
     typed(&mut t, "\n(");
     assert!(text(&t).ends_with("\"a\"b\"\n("), "{:?}", text(&t));
 }
+
+/// Без сервера LSP подсказки при наборе — из словаря проекта: имена из
+/// файлов .rs и открытого текста, модули (имена файлов), крейты из
+/// Cargo.toml.
+#[test]
+fn completion_from_project_words_without_lsp() {
+    let mut t = T::new("words");
+    std::fs::write(t.dir.join("src").join("netcode.rs"), "pub fn send_packet_now() {}\n").unwrap();
+    let f = t.dir.join("src").join("w.rs");
+    std::fs::write(&f, "fn local_counter_value() {}\n").unwrap();
+    let id = t.ide.open_file(&mut t.app, &f, None).unwrap();
+    t.app.focus(id);
+    t.pump();
+    let ed = |t: &T| t.app.find::<CodeWindow>(id).unwrap().editor().completion.clone();
+    t.key(KeyEvent::new(Key::End, Mods::CTRL));
+    for c in "send".chars() {
+        t.key(KeyEvent::new(Key::Char(c), Mods::NONE));
+    }
+    let c = ed(&t).expect("список из файлов проекта");
+    let labels: Vec<String> = c.shown.iter().map(|&i| c.items[i].label.clone()).collect();
+    assert!(labels.contains(&"send_packet_now".to_string()), "{:?}", labels);
+    t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+    t.key(KeyEvent::new(Key::Char(' '), Mods::NONE));
+    for c in "netc".chars() {
+        t.key(KeyEvent::new(Key::Char(c), Mods::NONE));
+    }
+    let c = ed(&t).expect("модуль");
+    assert_eq!(c.items[c.shown[0]].label, "netcode");
+    assert_eq!(c.items[c.shown[0]].kind, 9);
+    t.key(KeyEvent::new(Key::Tab, Mods::NONE));
+    assert!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.text().ends_with("send netcode"));
+    // Имя из открытого текста.
+    t.key(KeyEvent::new(Key::Char(' '), Mods::NONE));
+    for c in "local_c".chars() {
+        t.key(KeyEvent::new(Key::Char(c), Mods::NONE));
+    }
+    let c = ed(&t).expect("из открытого текста");
+    assert_eq!(c.items[c.shown[0]].label, "local_counter_value");
+}

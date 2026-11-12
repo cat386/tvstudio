@@ -166,6 +166,12 @@ pub struct CompletionItem {
     /// По чему фильтровать.
     pub filter: String,
     pub sort: String,
+    /// Дополнительные правки при выборе (`additionalTextEdits`): например,
+    /// `use` для элемента из другого крейта или модуля.
+    pub edits: Vec<TextEdit>,
+    /// Исходный вариант — для догрузки правок (`completionItem/resolve`),
+    /// если сервер прислал их не сразу (есть `data`).
+    pub resolve: Option<Json>,
 }
 
 /// Подсказка в тексте (inlay hint): позиция и надпись.
@@ -207,6 +213,13 @@ pub enum LspEvent {
     Completion {
         id: i64,
         items: Vec<CompletionItem>,
+        /// Список неполный (`isIncomplete`): при наборе запрашивать заново.
+        incomplete: bool,
+    },
+    /// Догруженные правки выбранного варианта дополнения.
+    CompletionResolved {
+        id: i64,
+        edits: Vec<TextEdit>,
     },
     Locations {
         id: i64,
@@ -337,6 +350,8 @@ fn parse_completion(result: &Json) -> Vec<CompletionItem> {
                 .or_else(|| it.get("labelDetails").map(|d| format!("{}{}", d.str("detail"), d.str("description"))))
                 .unwrap_or_default();
             CompletionItem {
+                edits: parse_text_edits(it.arr("additionalTextEdits")),
+                resolve: it.get("data").map(|_| it.clone()),
                 filter: Some(it.str("filterText")).filter(|s| !s.is_empty()).unwrap_or_else(|| label.clone()),
                 sort: Some(it.str("sortText")).filter(|s| !s.is_empty()).unwrap_or_else(|| label.clone()),
                 label,
@@ -379,6 +394,11 @@ fn parse_inlay_hints(result: &Json) -> Vec<InlayHint> {
         })
         .filter(|h| !h.label.is_empty())
         .collect()
+}
+
+/// Список `TextEdit`.
+fn parse_text_edits(list: &[Json]) -> Vec<TextEdit> {
+    list.iter().map(|t| TextEdit { range: parse_range(t.get("range").unwrap_or(&Json::Null)), text: t.str("newText") }).collect()
 }
 
 /// Правки `WorkspaceEdit`: `changes` {uri: [TextEdit]} или `documentChanges`
@@ -454,6 +474,7 @@ fn parse_diagnostics(params: &Json) -> (PathBuf, Vec<Diagnostic>) {
 pub enum ReqKind {
     Initialize,
     Completion,
+    CompletionResolve,
     Definition,
     References,
     InlayHint,
@@ -576,7 +597,8 @@ impl LspClient {
             "textDocument": {
                 "synchronization": {"didSave": true, "dynamicRegistration": false},
                 "publishDiagnostics": {"relatedInformation": false},
-                "completion": {"completionItem": {"snippetSupport": true, "labelDetailsSupport": true}, "contextSupport": true},
+                "completion": {"completionItem": {"snippetSupport": true, "labelDetailsSupport": true,
+                    "resolveSupport": {"properties": ["additionalTextEdits", "detail", "documentation"]}}, "contextSupport": true},
                 "definition": {"linkSupport": true},
                 "references": {},
                 "inlayHint": {"dynamicRegistration": false},
@@ -697,6 +719,12 @@ impl LspClient {
             },
         ));
         self.request("textDocument/completion", Json::obj(v), ReqKind::Completion)
+    }
+
+    /// Догрузить вариант дополнения (`completionItem/resolve`) — ради
+    /// `additionalTextEdits` (например, `use` для элемента из другого крейта).
+    pub fn resolve_completion(&mut self, item: &Json) -> i64 {
+        self.request("completionItem/resolve", item.clone(), ReqKind::CompletionResolve)
     }
 
     pub fn definition(&mut self, p: &Path, pos: LPos) -> i64 {
@@ -849,7 +877,10 @@ impl LspClient {
                 let name = result.get("serverInfo").map(|s| format!("{} {}", s.str("name"), s.str("version"))).unwrap_or_default();
                 out.push(LspEvent::Ready { name: name.trim().to_string() });
             }
-            ReqKind::Completion => out.push(LspEvent::Completion { id, items: parse_completion(&result) }),
+            ReqKind::Completion => {
+                out.push(LspEvent::Completion { id, items: parse_completion(&result), incomplete: result.bool("isIncomplete", false) })
+            }
+            ReqKind::CompletionResolve => out.push(LspEvent::CompletionResolved { id, edits: parse_text_edits(result.arr("additionalTextEdits")) }),
             ReqKind::Definition | ReqKind::References => out.push(LspEvent::Locations { id, items: parse_locations(&result) }),
             ReqKind::InlayHint => out.push(LspEvent::InlayHints { id, items: parse_inlay_hints(&result) }),
             ReqKind::CodeAction => out.push(LspEvent::CodeActions { id, items: parse_code_actions(&result) }),

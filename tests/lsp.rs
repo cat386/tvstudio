@@ -137,6 +137,8 @@ fn diagnostics_follow_typing() {
     assert_eq!(*t.ide.lsp_state.hint.borrow(), "■ найдена ОШИБКА");
     assert!(t.app.screen_text().contains("найдена ОШИБКА"));
     // Дописали ещё одну ошибку — через паузу сервер видит новый текст.
+    // (Автопоказ дополнения отправил бы текст сразу — здесь он выключен.)
+    t.app.find_mut::<CodeWindow>(t.win).unwrap().editor_mut().auto_complete = false;
     t.goto(2, 6);
     t.typed(" + ОШИБКА");
     assert_eq!(t.ed().diags.len(), 2, "текст уходит не сразу, а после паузы");
@@ -441,4 +443,60 @@ fn cargo_toml_hints_and_quick_fixes() {
     assert_eq!(t.ed().fe.editor.line_count(), lines, "Alt+Enter не вставляет строку");
     t.ide.shutdown(&mut t.app);
     let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Подсказки при наборе: от двух букв имени список открывается сам (тихо —
+/// без «вариантов нет»); неполный список запрашивается заново с каждой
+/// буквой; выбор элемента из другого модуля догружает и дописывает `use`,
+/// курсор остаётся у слова; в комментарии и в строке — не открывается.
+#[test]
+fn completion_while_typing() {
+    let mut t = T::new("typing");
+    // Новая строка после «    s» (строка 7).
+    t.goto(7, 6);
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    t.typed("H");
+    t.pump();
+    assert!(t.ed().completion.is_none(), "одна буква — рано");
+    t.typed("a");
+    assert!(t.wait(|t| t.ed().completion.is_some()), "список не открылся сам");
+    let detail = |t: &T| t.ed().selected_completion().map(|c| (c.label.clone(), c.detail.clone()));
+    assert_eq!(detail(&t).unwrap().0, "HashMap");
+    let n0 = detail(&t).unwrap().1;
+    // Неполный список — новый запрос с каждой буквой (номер в подробностях растёт).
+    t.typed("s");
+    assert!(t.wait(|t| detail(t).map(|d| d.1 != n0).unwrap_or(false)), "неполный список не запрошен заново: {:?}", detail(&t));
+    // Выбор (Tab): слово вставлено, `use` догружен и дописан в начало, курсор — у слова.
+    t.key(KeyEvent::new(Key::Tab, Mods::NONE));
+    assert!(t.wait(|t| t.ed().fe.editor.line(0) == "use std::collections::HashMap;"), "нет use: {:?}", t.ed().fe.editor.line(0));
+    assert_eq!(t.ed().fe.editor.line(8), "    HashMap");
+    let cur = t.ed().fe.editor.cursor();
+    assert_eq!((cur.line, cur.col), (8, 11), "курсор — после вставленного слова");
+    // Сам открывшийся список: Enter без выбора стрелками — перевод строки.
+    t.typed(" he");
+    assert!(t.wait(|t| t.ed().completion.is_some()));
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    assert!(t.ed().completion.is_none());
+    assert_eq!(t.ed().fe.editor.line(8), "    HashMap he", "«he» не заменено вариантом");
+    assert_eq!(t.ed().fe.editor.cursor().line, 9, "Enter перевёл строку");
+    // …а после выбора стрелкой Enter выбирает.
+    t.typed("he");
+    assert!(t.wait(|t| t.ed().completion.is_some()));
+    t.key(KeyEvent::new(Key::Down, Mods::NONE));
+    t.key(KeyEvent::new(Key::Up, Mods::NONE));
+    t.key(KeyEvent::new(Key::Enter, Mods::NONE));
+    assert!(t.ed().fe.editor.line(9).ends_with("helper"), "{:?}", t.ed().fe.editor.line(9));
+    // Нет подходящих — тихо, без сообщения.
+    t.typed(" zq");
+    for _ in 0..30 {
+        t.app.pump(&mut t.ide);
+    }
+    assert!(!t.msgs().entries.iter().any(|e| e.text.contains("подходящих вариантов нет")), "{:?}", t.msgs().entries);
+    // Комментарий и строка — без списка.
+    t.key(KeyEvent::new(Key::Esc, Mods::NONE));
+    t.typed(" // abc");
+    for _ in 0..30 {
+        t.app.pump(&mut t.ide);
+    }
+    assert!(t.ed().completion.is_none(), "в комментарии");
 }

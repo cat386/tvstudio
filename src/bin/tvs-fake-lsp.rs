@@ -9,6 +9,10 @@
 //! * дополнение: всегда `push_str` (сниппет с textEdit), `len`, `capacity`;
 //! * определение: строка `fn <слово>` в любом открытом документе;
 //! * ссылки: все вхождения слова целиком во всех открытых документах;
+//! * дополнение вне «.» (набор имени): неполный список (`isIncomplete`) —
+//!   `helper` и `HashMap` с номером запроса в подробностях; у `HashMap` есть
+//!   `data`, а `use std::collections::HashMap;` приходит только в ответ на
+//!   `completionItem/resolve` (как flyimport у rust-analyzer);
 //! * подсказки в тексте: в конце каждой строки с `= "` — `✓ fake N`, где N —
 //!   номер запроса подсказок (строки со словом `old` — `❌` и версия
 //!   частями надписи, как у crates-lsp);
@@ -134,6 +138,7 @@ fn main() {
     let mut r = BufReader::new(std::io::stdin().lock());
     let mut next = 1000;
     let mut hint_no = 0;
+    let mut compl_no = 0;
     while let Some(m) = read(&mut r) {
         let method = m.str("method");
         let id = m.get("id").cloned();
@@ -190,6 +195,27 @@ fn main() {
                 while a > 0 && is_ident(l[a - 1]) {
                     a -= 1;
                 }
+                compl_no += 1;
+                // Не после «.» — имена из области видимости, список неполный.
+                if a == 0 || l[a - 1] != '.' {
+                    let items = Json::Arr(vec![
+                        Json::obj(vec![
+                            ("label", Json::s("helper")),
+                            ("kind", Json::i(3)),
+                            ("detail", Json::s(&format!("fn() -> i32 #{}", compl_no))),
+                            ("textEdit", Json::obj(vec![("range", range(at.0, a, at.1)), ("newText", Json::s("helper"))])),
+                        ]),
+                        Json::obj(vec![
+                            ("label", Json::s("HashMap")),
+                            ("kind", Json::i(22)),
+                            ("labelDetails", Json::obj(vec![("description", Json::s(&format!("std::collections #{}", compl_no)))])),
+                            ("textEdit", Json::obj(vec![("range", range(at.0, a, at.1)), ("newText", Json::s("HashMap"))])),
+                            ("data", Json::obj(vec![("import", Json::s("std::collections::HashMap"))])),
+                        ]),
+                    ]);
+                    reply(id.as_ref().unwrap(), Json::obj(vec![("isIncomplete", Json::Bool(true)), ("items", items)]));
+                    continue;
+                }
                 let items = Json::Arr(vec![
                     Json::obj(vec![
                         ("label", Json::s("push_str(…)")),
@@ -204,6 +230,15 @@ fn main() {
                     Json::obj(vec![("label", Json::s("capacity")), ("kind", Json::i(2)), ("sortText", Json::s("3"))]),
                 ]);
                 reply(id.as_ref().unwrap(), Json::obj(vec![("isIncomplete", Json::Bool(false)), ("items", items)]));
+            }
+            "completionItem/resolve" => {
+                // Вариант с data.import — тот же вариант с `use` в начале файла.
+                let mut item = p.clone();
+                if let (Some(imp), Json::Obj(fields)) = (p.get("data").map(|d| d.str("import")), &mut item) {
+                    let edit = Json::obj(vec![("range", range(0, 0, 0)), ("newText", Json::s(&format!("use {};\n", imp)))]);
+                    fields.push(("additionalTextEdits".into(), Json::Arr(vec![edit])));
+                }
+                reply(id.as_ref().unwrap(), item);
             }
             "textDocument/definition" => {
                 let text = docs.get(&doc_uri).cloned().unwrap_or_default();
