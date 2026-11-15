@@ -97,6 +97,31 @@ fn mouse(x: i32, y: i32) -> MouseEvent {
 }
 
 #[test]
+fn unreadable_form_aborts_generation_without_changing_code() {
+    let mut t = T::new("generation_error");
+    assert!(t.ide.generate(&mut t.app, true));
+    let paths = ["src/ui.rs", "src/forms/mod.rs", "src/forms/about.rs"];
+    let before: Vec<_> = paths.iter().map(|p| std::fs::read(t.dir.join(p)).unwrap()).collect();
+    let form = t.dir.join("forms/about.tvf");
+    let original = std::fs::read(&form).unwrap();
+    for corrupt in [false, true] {
+        if corrupt {
+            std::fs::write(&form, "{ broken json").unwrap();
+        } else {
+            std::fs::remove_file(&form).unwrap();
+        }
+        // Закрыть сообщение об ошибке чтения.
+        t.app.put_event(Event::KeyDown(KeyEvent::new(Key::Enter, Mods::NONE)));
+        assert!(!t.ide.generate(&mut t.app, true));
+        for (p, expected) in paths.iter().zip(&before) {
+            assert_eq!(&std::fs::read(t.dir.join(p)).unwrap(), expected, "{p}");
+        }
+    }
+    std::fs::write(form, original).unwrap();
+    assert!(t.ide.generate(&mut t.app, true), "после исправления формы генерация снова работает");
+}
+
+#[test]
 fn startup_shows_tools_and_project() {
     let t = T::new("start");
     let s = t.screen();
@@ -320,7 +345,7 @@ fn new_form_via_dialog() {
     t.app.put_event(Event::KeyDown(kb::ENTER));
     t.pump();
     let p = t.ide.project.as_ref().unwrap();
-    assert!(p.forms.contains(&"settings".to_string()), "{:?}", p.forms);
+    assert!(p.forms.iter().any(|name| name == "settings"), "{:?}", p.forms);
     assert!(p.form_path("settings").exists());
     let d = Ide::top_doc(&t.app).unwrap();
     assert_eq!(d.borrow().form.name, "settings");
@@ -779,7 +804,7 @@ fn completion_from_project_words_without_lsp() {
     }
     let c = ed(&t).expect("список из файлов проекта");
     let labels: Vec<String> = c.shown.iter().map(|&i| c.items[i].label.clone()).collect();
-    assert!(labels.contains(&"send_packet_now".to_string()), "{:?}", labels);
+    assert!(labels.iter().any(|label| label == "send_packet_now"), "{:?}", labels);
     t.key(KeyEvent::new(Key::Esc, Mods::NONE));
     t.key(KeyEvent::new(Key::Char(' '), Mods::NONE));
     for c in "netc".chars() {

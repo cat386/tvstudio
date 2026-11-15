@@ -652,7 +652,7 @@ fn write_if_changed(path: &PathBuf, text: &str) -> Result<bool, String> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("{}: {}", d.display(), e))?;
     }
-    std::fs::write(path, text).map_err(|e| format!("{}: {}", path.display(), e))?;
+    crate::fileio::write_atomic(path, text).map_err(|e| format!("{}: {}", path.display(), e))?;
     Ok(true)
 }
 

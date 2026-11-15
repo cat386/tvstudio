@@ -30,6 +30,7 @@ pub mod codeedit;
 pub mod codegen;
 pub mod designer;
 pub mod dialogs;
+mod fileio;
 pub mod formextract;
 pub mod highlight;
 pub mod ide;

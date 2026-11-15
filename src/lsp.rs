@@ -19,8 +19,8 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{channel, Receiver};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TrySendError};
 use std::time::{Duration, Instant};
 
 use crate::json::{self, Json};
@@ -486,7 +486,10 @@ pub enum ReqKind {
 /// Клиент LSP: процесс сервера и состояние обмена.
 pub struct LspClient {
     child: Child,
-    stdin: ChildStdin,
+    writer: SyncSender<String>,
+    write_errors: Receiver<String>,
+    transport_error: Option<String>,
+    transport_failed: bool,
     rx: Receiver<Option<Json>>,
     next_id: i64,
     pending: HashMap<i64, ReqKind>,
@@ -507,6 +510,64 @@ pub struct LspClient {
     pub has_inlay_hints: bool,
     /// Сервер умеет быстрые исправления (`codeActionProvider`).
     pub has_code_actions: bool,
+}
+
+// Один поток владеет stdin: порядок сообщений сохраняется, интерфейс
+// не ждёт заполненную трубу. Очередь ограничена, переполнение — ошибка.
+fn start_writer<W: Write + Send + 'static>(mut stdin: W) -> (SyncSender<String>, Receiver<String>) {
+    let (tx, rx) = sync_channel::<String>(256);
+    let (errors, error_rx) = channel();
+    std::thread::spawn(move || {
+        while let Ok(body) = rx.recv() {
+            if let Err(e) = write!(stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body).and_then(|_| stdin.flush()) {
+                let _ = errors.send(format!("ошибка записи в сервер LSP: {}", e));
+                break;
+            }
+        }
+    });
+    (tx, error_rx)
+}
+
+/// Кавычки группируют путь/аргументы; обратные слеши Windows сохраняются.
+fn command_parts(command: &str) -> Result<Vec<String>, String> {
+    let command = command.trim();
+    if Path::new(command).is_file() {
+        return Ok(vec![command.into()]);
+    }
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    let mut quote = None;
+    let mut started = false;
+    for c in command.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => part.push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                started = true;
+            }
+            None if c.is_whitespace() => {
+                if started {
+                    parts.push(std::mem::take(&mut part));
+                    started = false;
+                }
+            }
+            None => {
+                started = true;
+                part.push(c);
+            }
+        }
+    }
+    if quote.is_some() {
+        return Err("незакрытая кавычка в команде сервера LSP".into());
+    }
+    if started {
+        parts.push(part);
+    }
+    if parts.first().map(|p| p.is_empty()).unwrap_or(true) {
+        return Err("не задана программа сервера".into());
+    }
+    Ok(parts)
 }
 
 fn read_message<R: BufRead>(r: &mut R) -> Option<Json> {
@@ -535,10 +596,9 @@ impl LspClient {
     /// `crates-lsp`) для проекта `root`; `language` — `languageId`
     /// документов, которые ему показываются.
     pub fn start(command: &str, root: &Path, language: &str) -> Result<LspClient, String> {
-        let mut parts = command.split_whitespace();
-        let prog = parts.next().ok_or("не задана программа сервера")?;
-        let mut child = Command::new(prog)
-            .args(parts)
+        let parts = command_parts(command)?;
+        let mut child = Command::new(&parts[0])
+            .args(&parts[1..])
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -546,6 +606,7 @@ impl LspClient {
             .spawn()
             .map_err(|e| format!("не удалось запустить «{}»: {}", command, e))?;
         let stdin = child.stdin.take().ok_or("нет stdin")?;
+        let (writer, write_errors) = start_writer(stdin);
         let stdout = child.stdout.take().ok_or("нет stdout")?;
         let stderr = child.stderr.take();
         let (tx, rx) = channel();
@@ -573,7 +634,10 @@ impl LspClient {
         }
         let mut c = LspClient {
             child,
-            stdin,
+            writer,
+            write_errors,
+            transport_error: None,
+            transport_failed: false,
             rx,
             next_id: 1,
             pending: HashMap::new(),
@@ -623,9 +687,15 @@ impl LspClient {
     }
 
     fn send(&mut self, msg: &Json) {
-        let body = msg.to_compact();
-        let _ = write!(self.stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body);
-        let _ = self.stdin.flush();
+        if self.transport_failed || self.transport_error.is_some() {
+            return;
+        }
+        if let Err(e) = self.writer.try_send(msg.to_compact()) {
+            self.transport_error = Some(match e {
+                TrySendError::Full(_) => "сервер LSP не успевает читать сообщения: очередь отправки заполнена".into(),
+                TrySendError::Disconnected(_) => "канал отправки в сервер LSP закрыт".into(),
+            });
+        }
     }
 
     /// Отправить (или отложить до готовности сервера).
@@ -775,6 +845,19 @@ impl LspClient {
     /// Забрать события от сервера.
     pub fn poll(&mut self) -> Vec<LspEvent> {
         let mut out = Vec::new();
+        if self.transport_failed {
+            return out;
+        }
+        if let Some(error) = self.transport_error.take().or_else(|| self.write_errors.try_recv().ok()) {
+            self.transport_failed = true;
+            self.ready = false;
+            self.pending.clear();
+            self.queued.clear();
+            let _ = self.child.kill();
+            out.push(LspEvent::Message(error));
+            out.push(LspEvent::Exited);
+            return out;
+        }
         while let Ok(m) = self.rx.try_recv() {
             let Some(m) = m else {
                 out.push(LspEvent::Exited);
@@ -931,6 +1014,32 @@ impl LspClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_quotes_preserve_windows_paths_and_arguments() {
+        assert_eq!(
+            command_parts(r#""C:\Program Files\Rust\rust-analyzer.exe" --log-file "C:\My Logs\ra.log" """#).unwrap(),
+            vec![r"C:\Program Files\Rust\rust-analyzer.exe", "--log-file", r"C:\My Logs\ra.log", ""]
+        );
+        assert!(command_parts("\"unfinished").is_err());
+        assert!(command_parts("  ").is_err());
+    }
+
+    #[test]
+    fn writer_reports_io_errors() {
+        struct Broken;
+        impl Write for Broken {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "closed"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let (writer, errors) = start_writer(Broken);
+        writer.try_send("{}".into()).unwrap();
+        assert!(errors.recv_timeout(Duration::from_secs(2)).unwrap().contains("closed"));
+    }
 
     #[test]
     fn uris() {

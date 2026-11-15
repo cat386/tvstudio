@@ -29,6 +29,50 @@ fn main() {
 }
 ";
 
+#[test]
+fn server_path_with_spaces_starts() {
+    use tvstudio::lsp::LspClient;
+    let dir = std::env::temp_dir().join(format!("tvs server path {}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = PathBuf::from(env!("CARGO_BIN_EXE_tvs-fake-lsp"));
+    let path = dir.join(source.file_name().unwrap());
+    std::fs::copy(source, &path).unwrap();
+    for command in [path.display().to_string(), format!("\"{}\"", path.display())] {
+        let mut client = LspClient::start(&command, &dir, "rust").unwrap();
+        let start = Instant::now();
+        while !client.ready && start.elapsed() < Duration::from_secs(5) {
+            client.poll();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let ready = client.ready;
+        client.stop();
+        assert!(ready, "сервер по пути с пробелами отвечает на initialize");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stalled_server_does_not_block_and_queue_overflow_is_reported() {
+    use tvstudio::lsp::{LspClient, LspEvent};
+    let root = std::env::current_dir().unwrap();
+    let command = format!("\"{}\" --stall-stdin", env!("CARGO_BIN_EXE_tvs-fake-lsp"));
+    let mut client = LspClient::start(&command, &root, "rust").unwrap();
+    client.ready = true;
+    let file = root.join("stalled.rs");
+    let large = "x".repeat(2 * 1024 * 1024);
+    let start = Instant::now();
+    client.did_open(&file, &large);
+    for _ in 0..300 {
+        client.did_change(&file, "x");
+    }
+    let elapsed = start.elapsed();
+    let events = client.poll();
+    client.stop();
+    assert!(elapsed < Duration::from_secs(2), "отправка заблокировала интерфейс: {elapsed:?}");
+    assert!(events.iter().any(|e| matches!(e, LspEvent::Message(s) if s.contains("очередь"))), "{events:?}");
+    assert!(events.contains(&LspEvent::Exited));
+}
+
 struct T {
     app: Program,
     ide: Ide,

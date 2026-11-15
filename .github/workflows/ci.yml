@@ -29,6 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: cat386/tvision-rs
+          ref: 74a4365a2236e8d74abb69c717aa3ef00ff32263
           path: tvision-rs
       - uses: dtolnay/rust-toolchain@stable
         with:

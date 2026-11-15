@@ -133,6 +133,10 @@ fn publish(uri: &str, text: &str, lang: &str) {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--stall-stdin") {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        return;
+    }
     let mut docs: HashMap<String, String> = HashMap::new();
     let mut langs: HashMap<String, String> = HashMap::new();
     let mut r = BufReader::new(std::io::stdin().lock());

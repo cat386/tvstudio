@@ -725,7 +725,7 @@ impl Form {
             let _ = std::fs::create_dir_all(d);
         }
         let text = crate::yaml::to_string(&self.to_json());
-        std::fs::write(path, text).map_err(|e| format!("{}: {}", path.display(), e))
+        crate::fileio::write_atomic(path, &text).map_err(|e| format!("{}: {}", path.display(), e))
     }
 }
 
@@ -1360,7 +1360,7 @@ impl Project {
     pub fn save(&self) -> Result<(), String> {
         let p = self.file();
         let text = crate::yaml::to_string(&self.to_json());
-        std::fs::write(&p, text).map_err(|e| format!("{}: {}", p.display(), e))
+        crate::fileio::write_atomic(&p, &text).map_err(|e| format!("{}: {}", p.display(), e))
     }
 
     /// Каталог нового проекта `parent/name` (имя и отсутствие проекта проверены).

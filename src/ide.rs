@@ -663,8 +663,7 @@ impl Ide {
         match Project::create(&np.parent, &np.name, &dep) {
             Ok(p) => {
                 // Сразу генерируем код — проект собирается «из коробки».
-                let forms = self.load_forms(app, &p);
-                if let Err(e) = codegen::generate_all(&p, &forms) {
+                if let Err(e) = self.load_forms(app, &p).and_then(|forms| codegen::generate_all(&p, &forms)) {
                     Self::error(app, &e);
                 }
                 let file = p.file();
@@ -739,17 +738,17 @@ impl Ide {
     }
 
     /// Формы проекта: открытые — из дизайнеров (свежие), остальные — с диска.
-    fn load_forms(&self, app: &Program, p: &Project) -> Vec<Form> {
+    fn load_forms(&self, app: &Program, p: &Project) -> Result<Vec<Form>, String> {
         let open: Vec<DocRef> =
             Self::windows::<DesignWindow>(app).into_iter().filter_map(|id| app.find::<DesignWindow>(id).map(|w| w.doc.clone())).collect();
         p.forms
             .iter()
-            .filter_map(|name| {
+            .map(|name| {
                 let path = p.form_path(name);
                 if let Some(d) = open.iter().find(|d| same_file(&d.borrow().path, &path)) {
-                    return Some(d.borrow().form.clone());
+                    return Ok(d.borrow().form.clone());
                 }
-                Form::load(&path).ok()
+                Form::load(&path)
             })
             .collect()
     }
@@ -764,7 +763,13 @@ impl Ide {
             }
             return true;
         }
-        let forms = self.load_forms(app, &p);
+        let forms = match self.load_forms(app, &p) {
+            Ok(forms) => forms,
+            Err(e) => {
+                Self::error(app, &e);
+                return false;
+            }
+        };
         let warnings = codegen::check_project(&p, &forms);
         for w in &warnings {
             self.msgs(app).push(MsgEntry { text: format!("модель: {}", w), kind: MsgKind::Warning, loc: None });
