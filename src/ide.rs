@@ -26,6 +26,7 @@ use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
 use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, Problem, ProblemsWindow, ProjectWindow};
 
+mod git_glue;
 mod lsp_glue;
 pub use lsp_glue::{LspState, Srv};
 
@@ -56,6 +57,7 @@ pub fn menu_bar() -> Menu {
             Menu::new()
                 .item("~Н~овый проект...", CM_NEW_PROJECT)
                 .item("~О~ткрыть проект...", CM_OPEN_PROJECT)
+                .item("~К~лонировать репозиторий...", CM_GIT_CLONE)
                 .item("Н~е~давние проекты...", CM_RECENT)
                 .item("~И~мпорт программы...", CM_IMPORT)
                 .item("~З~акрыть проект", CM_CLOSE_PROJECT)
@@ -136,6 +138,7 @@ pub fn menu_bar() -> Menu {
                 .item("~Г~енерировать код", CM_GENERATE)
                 .item("~Д~ерево проекта", CM_SHOW_PROJECT),
         )
+        .submenu("~G~it", git_glue::menu())
         .submenu(
             "~С~борка",
             Menu::new()
@@ -264,6 +267,7 @@ pub struct Ide {
     pub project: Option<Project>,
     pub cfg: Config,
     pub job: Option<Job>,
+    git: git_glue::State,
     pub help: Rc<HelpFile>,
     /// Тестовый режим: не сохранять настройки, не запускать программу в терминале.
     pub headless: bool,
@@ -299,6 +303,7 @@ impl Ide {
             project: None,
             cfg,
             job: None,
+            git: git_glue::State::default(),
             help: Rc::new(help),
             headless,
             inspector: None,
@@ -598,6 +603,7 @@ impl Ide {
         }
         self.lsp_stop(app);
         self.project = None;
+        self.git.reset_panel(app);
         self.marks.clear();
         self.tree_dirty = true;
         true
@@ -613,6 +619,7 @@ impl Ide {
                 let f = p.file().display().to_string();
                 let files: Vec<PathBuf> = p.open_files.iter().map(|r| p.dir.join(r)).collect();
                 let name = p.name.clone();
+                self.git.reset_panel(app);
                 self.project = Some(p);
                 self.cfg.add_recent(&f);
                 if !self.headless {
@@ -1572,6 +1579,9 @@ impl Ide {
 
     /// Обработать команду. `true` — команда наша.
     fn command(&mut self, app: &mut Program, c: u16, info: &Info) -> bool {
+        if self.git_command(app, c) {
+            return true;
+        }
         match c {
             CM_NEW_PROJECT => self.new_project(app),
             CM_OPEN_PROJECT => self.choose_project_file(app),
@@ -1852,6 +1862,7 @@ impl AppHandler for Ide {
 
     fn idle(&mut self, app: &mut Program) {
         self.poll_job(app);
+        self.poll_git(app);
         self.collect_fmt_errors(app);
         self.lsp_idle(app);
         self.sync_windows(app);

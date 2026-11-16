@@ -447,6 +447,7 @@ pub struct Config {
     pub autosave: bool,
     /// Программа cargo.
     pub cargo: String,
+    pub git: String,
     /// tvision-rs для новых проектов: git (иначе путь).
     pub dep_git: bool,
     pub dep_value: String,
@@ -478,6 +479,7 @@ impl Default for Config {
             theme: 0,
             autosave: true,
             cargo: "cargo".into(),
+            git: "git".into(),
             dep_git: true,
             dep_value: "https://github.com/cat386/tvision-rs".into(),
             recent: Vec::new(),
@@ -521,6 +523,7 @@ impl Config {
         c.theme = j.int("theme", 0).clamp(0, 2) as u32;
         c.autosave = j.bool("autosave", true);
         c.cargo = Some(j.str("cargo")).filter(|s| !s.is_empty()).unwrap_or(c.cargo);
+        c.git = Some(j.str("git")).filter(|s| !s.trim().is_empty()).unwrap_or(c.git);
         c.dep_git = j.bool("dep_git", true);
         c.dep_value = Some(j.str("dep_value")).filter(|s| !s.is_empty()).unwrap_or(c.dep_value);
         c.recent = j.strings("recent");
@@ -550,6 +553,7 @@ impl Config {
             ("theme", Json::i(self.theme as i64)),
             ("autosave", Json::Bool(self.autosave)),
             ("cargo", Json::s(&self.cargo)),
+            ("git", Json::s(&self.git)),
             ("dep_git", Json::Bool(self.dep_git)),
             ("dep_value", Json::s(&self.dep_value)),
             ("recent", Json::from_strings(&self.recent)),

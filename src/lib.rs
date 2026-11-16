@@ -32,6 +32,8 @@ pub mod designer;
 pub mod dialogs;
 mod fileio;
 pub mod formextract;
+pub mod git;
+mod git_ui;
 pub mod highlight;
 pub mod ide;
 pub mod importer;
