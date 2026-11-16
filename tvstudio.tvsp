@@ -1,0 +1,57 @@
+format: tvstudio-project
+version: 1
+name: tvstudio
+kind: rust
+forms: []
+open_files: [src/main.rs, src/ide.rs, src/cmds.rs, src/toolwins.rs]
+app:
+  title: tvstudio
+  russian: true
+  startup_form: ''
+  menu:
+    - title: ~Ф~айл
+      items:
+        - title: ~О~ программе...
+          command: ABOUT
+          key: ''
+          help: 0
+        - separator: true
+        - title: ~В~ыход
+          command: cm::QUIT
+          key: Alt+X
+          help: 0
+    - title: ~О~кно
+      items:
+        - title: ~С~ледующее
+          command: cm::NEXT
+          key: F6
+          help: 0
+        - title: Р~а~спахнуть
+          command: cm::ZOOM
+          key: F5
+          help: 0
+        - title: ~З~акрыть
+          command: cm::CLOSE
+          key: Alt+F3
+          help: 0
+  status:
+    - text: ~Alt+X~ Выход
+      key: Alt+X
+      command: cm::QUIT
+    - text: ~F10~ Меню
+      key: F10
+      command: cm::MENU
+    - text: ''
+      key: Alt+F3
+      command: cm::CLOSE
+    - text: ''
+      key: F6
+      command: cm::NEXT
+    - text: ''
+      key: F5
+      command: cm::ZOOM
+  commands:
+    - name: ABOUT
+      value: 100
+      action: form:about
+      comment: окно «О программе»

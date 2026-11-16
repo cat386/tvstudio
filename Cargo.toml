@@ -8,8 +8,9 @@ license = "MIT"
 # Единственная зависимость — сама библиотека tvision-rs (лежит рядом).
 # Можно заменить на git-зависимость:
 # tvision-rs = { git = "https://github.com/cat386/tvision-rs" }
+# tvision-rs = { path = "../tvision-rs" }
 [dependencies]
-tvision-rs = { path = "../tvision-rs" }
+tvision-rs = { git = "https://github.com/cat386/tvision-rs" }
 
 [lib]
 name = "tvstudio"
