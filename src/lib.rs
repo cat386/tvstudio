@@ -39,6 +39,7 @@ pub mod ide;
 pub mod importer;
 pub mod inspector;
 pub mod json;
+mod keyboard_layout;
 pub mod lsp;
 pub mod model;
 pub mod props;

@@ -1,6 +1,7 @@
 //! Окна-инструменты среды: палитра компонентов, дерево проекта,
 //! сообщения сборки — и маленький «ретранслятор» сообщений.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use tvision::*;
@@ -8,6 +9,62 @@ use tvision::*;
 use crate::cmds::*;
 use crate::inspector::tool_palette;
 use crate::model::{cargo_layout, Kind, Project};
+
+/// Часы в свободной правой части строки меню.
+pub(crate) struct MenuClock {
+    vs: ViewState,
+    menu_end: i32,
+    keyboard: RefCell<crate::keyboard_layout::KeyboardLayout>,
+}
+
+impl MenuClock {
+    const CLOCK_WIDTH: i32 = 9; // ЧЧ:ММ:СС и один пробел у края.
+    const LAYOUT_WIDTH: i32 = 5; // До трёх букв и два пробела.
+    const WIDTH: i32 = Self::CLOCK_WIDTH + Self::LAYOUT_WIDTH;
+
+    pub(crate) fn install(app: &mut Program) {
+        let Some(bar) = app.menu_bar_id.and_then(|id| app.find::<MenuBar>(id)) else { return };
+        let menu_end = bar.menu.bar_positions().last().map_or(0, |(x, width)| x + width);
+        let width = bar.vs.size.x;
+        let mut vs = ViewState::new(Rect::new(width - Self::WIDTH, 0, width, 1));
+        vs.grow_mode = gf::GROW_LO_X | gf::GROW_HI_X;
+        app.group.add(Self { vs, menu_end, keyboard: RefCell::new(crate::keyboard_layout::KeyboardLayout::new()) });
+    }
+}
+
+impl View for MenuClock {
+    tvision::impl_view_basics!();
+
+    fn palette(&self) -> &'static [u8] {
+        color::palettes::MENU_VIEW
+    }
+
+    fn draw(&self, dc: &mut DrawCtx) {
+        // На узком терминале приоритет у пунктов меню. Положение
+        // представления меняется вместе с правым краем экрана.
+        let clock_x = self.vs.origin.x + Self::LAYOUT_WIDTH;
+        if clock_x < self.menu_end {
+            return;
+        }
+        // Цикл tvision-rs перерисовывает экран и в простое, поэтому часы
+        // обновляются без отдельного таймера или фонового потока.
+        let now = platform::time::now();
+        let text = format!("{:02}:{:02}:{:02} ", now.hour, now.minute, now.second);
+        let attr = dc.color(1);
+        let mut row = DrawBuffer::new(Self::CLOCK_WIDTH as usize);
+        row.move_str(0, &text, attr);
+        dc.write_line(Self::LAYOUT_WIDTH, 0, Self::CLOCK_WIDTH, 1, &row);
+
+        if self.vs.origin.x >= self.menu_end {
+            let mut keyboard = self.keyboard.borrow_mut();
+            if let Some(label) = keyboard.label() {
+                let mut row = DrawBuffer::new(Self::LAYOUT_WIDTH as usize);
+                row.move_str(0, &format!("{label:>3}  "), attr);
+                dc.write_line(0, 0, Self::LAYOUT_WIDTH, 1, &row);
+            }
+        }
+    }
+}
 
 // ======================================================================
 // Ретранслятор
@@ -654,5 +711,47 @@ mod tests {
         assert!(e.loc.is_none());
         let e = parse_cargo_line("   Compiling app v0.1.0 (/x)");
         assert_eq!(e.kind, MsgKind::Info);
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+    use tvision::platform::{HeadlessBackend, RawEvent};
+    use tvision::program::NoHandler;
+
+    fn clock_at_right(program: &Program) -> bool {
+        let text = program.screen_text();
+        let row: Vec<_> = text.lines().next().unwrap().chars().collect();
+        let end = &row[row.len() - 9..];
+        end[2] == ':' && end[5] == ':' && end[8] == ' ' && [0, 1, 3, 4, 6, 7].into_iter().all(|i| end[i].is_ascii_digit())
+    }
+
+    #[test]
+    fn menu_clock_follows_resize_without_covering_items() {
+        let menu = crate::ide::menu_bar();
+        let (x, length) = *menu.bar_positions().last().unwrap();
+        let mut backend = HeadlessBackend::new(110, 25);
+        backend.input.push_back(RawEvent::Resize(Point::new(x + length + MenuClock::CLOCK_WIDTH + 2, 25)));
+        backend.input.push_back(RawEvent::Resize(Point::new(x + length + 4, 25)));
+        backend.input.push_back(RawEvent::Resize(Point::new(125, 25)));
+        let mut app = Program::new(Box::new(backend), Some(menu), None);
+        MenuClock::install(&mut app);
+        let clock = app.group.children.iter_mut().find_map(|view| view.as_any_mut().downcast_mut::<MenuClock>()).unwrap();
+        clock.keyboard.get_mut().set_test_label("РУС");
+        app.redraw();
+        assert!(clock_at_right(&app));
+        assert!(app.screen_text().lines().next().unwrap().contains("РУС  "));
+        app.step(&mut NoHandler {});
+        app.redraw();
+        assert!(clock_at_right(&app));
+        assert!(!app.screen_text().lines().next().unwrap().contains("РУС"));
+        app.step(&mut NoHandler {});
+        app.redraw();
+        assert!(!clock_at_right(&app));
+        assert!(app.screen_text().lines().next().unwrap().contains("Справка"));
+        app.step(&mut NoHandler {});
+        app.redraw();
+        assert!(clock_at_right(&app));
     }
 }

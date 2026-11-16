@@ -24,7 +24,7 @@ use crate::inspector::InspectorWindow;
 use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
-use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgEntry, MsgKind, Problem, ProblemsWindow, ProjectWindow};
+use crate::toolwins::{parse_cargo_line, MenuClock, MessagesWindow, MsgEntry, MsgKind, Problem, ProblemsWindow, ProjectWindow};
 
 mod git_glue;
 mod lsp_glue;
@@ -1364,6 +1364,7 @@ impl Ide {
     /// Начало работы: окна-инструменты, проект или файлы из командной строки.
     pub fn startup(&mut self, app: &mut Program, args: Vec<String>) {
         app.palette = self.cfg.palette();
+        MenuClock::install(app);
         let diag_hint = self.lsp_state.hint.clone();
         let hint: Box<dyn Fn(u16) -> String> = Box::new(move |ctx| match ctx {
             HC_DESIGNER => "Стрелки — сдвиг, Shift — размер".into(),
