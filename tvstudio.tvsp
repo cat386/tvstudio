@@ -3,7 +3,7 @@ version: 1
 name: tvstudio
 kind: rust
 forms: []
-open_files: [src/main.rs, src/ide.rs, src/cmds.rs, src/toolwins.rs]
+open_files: [src/main.rs, src/ide.rs, src/cmds.rs, src/toolwins.rs, src/ide/git_glue.rs, src/git.rs, Cargo.toml]
 app:
   title: tvstudio
   russian: true
@@ -55,3 +55,5 @@ app:
       value: 100
       action: form:about
       comment: окно «О программе»
+build:
+  profile: release

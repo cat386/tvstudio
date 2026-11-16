@@ -77,10 +77,10 @@ pub fn menu_bar() -> Menu {
                 .item_key("~О~тменить", cm::UNDO, kb::ctrl('Z'), "Ctrl+Z")
                 .item("~П~овторить", cm::REDO)
                 .separator()
-                .item_key("~В~ырезать", cm::CUT, k(Key::Del, Mods::SHIFT), "Shift+Del")
-                .item_key("~К~опировать", cm::COPY, k(Key::Ins, Mods::CTRL), "Ctrl+Ins")
-                .item_key("Вст~а~вить", cm::PASTE, k(Key::Ins, Mods::SHIFT), "Shift+Ins")
-                .item_key("~У~далить", cm::CLEAR, k(Key::Del, Mods::CTRL), "Ctrl+Del")
+                .item_key("~В~ырезать", cm::CUT, kb::ctrl('X'), "Ctrl+X")
+                .item_key("~К~опировать", cm::COPY, kb::ctrl('C'), "Ctrl+C") // Ctrl+Ins
+                .item_key("Вст~а~вить", cm::PASTE, kb::ctrl('V'), "Ctrl+V") // SHIFT+Ins
+                .item_key("~У~далить", cm::CLEAR, kb::ctrl('D'), "Ctrl+D") // CTRL+Del
                 .item_key("Выделить ~в~сё", cm::SELECT_ALL, kb::ctrl('A'), "Ctrl+A"),
         )
         .submenu(
