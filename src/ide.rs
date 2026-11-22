@@ -63,7 +63,7 @@ pub fn menu_bar() -> Menu {
                 .item("~З~акрыть проект", CM_CLOSE_PROJECT)
                 .separator()
                 .item("Новый ~ф~айл", cm::NEW)
-                .item_key("Открыть фа~й~л...", cm::OPEN, kb::f(3), "F3")
+                .item_key("Открыть фа~й~л...", cm::OPEN, kb::ctrl('O'), "Ctrl+O")
                 .item_key("~С~охранить", cm::SAVE, kb::f(2), "F2")
                 .item("Сохранить ~к~ак...", cm::SAVE_AS)
                 .item_key("Сохранить ~в~сё", cm::SAVE_ALL, kb::shift_f(2), "Shift+F2")
@@ -87,7 +87,7 @@ pub fn menu_bar() -> Menu {
             "По~и~ск",
             Menu::new()
                 .item_key("~Н~айти...", cm::FIND, kb::f(3), "F3")
-                .item("~З~аменить...", cm::REPLACE)
+                .item_key("~З~аменить...", cm::REPLACE, kb::ALT_F3, "Alt+F3")
                 .item_key("~И~скать дальше", cm::SEARCH_AGAIN, kb::ctrl('L'), "Ctrl+L")
                 .separator()
                 .item_key("~П~ерейти к строке...", CM_GOTO, kb::alt('G'), "Alt+G")
@@ -189,7 +189,7 @@ pub fn status_line() -> Vec<StatusDef> {
     let hidden = || {
         vec![
             StatusItem::new("", kb::F10, cm::MENU),
-            StatusItem::new("", kb::ALT_F3, cm::CLOSE),
+            //StatusItem::new("", kb::ALT_F3, cm::CLOSE),
             StatusItem::new("", kb::F5, cm::ZOOM),
             StatusItem::new("", kb::F6, cm::NEXT),
             StatusItem::new("", kb::SHIFT_F6, cm::PREV),
@@ -252,7 +252,7 @@ pub fn status_line() -> Vec<StatusDef> {
         ),
         StatusDef::all(with(vec![
             StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
-            StatusItem::new("~F3~ Открыть", kb::f(3), cm::OPEN),
+            //StatusItem::new("~F3~ Открыть", kb::f(3), cm::OPEN),
             StatusItem::new("~F9~ Собрать", kb::f(9), CM_BUILD),
             StatusItem::new("~Ctrl+F9~ Запуск", kb::ctrl_f(9), CM_RUN),
             StatusItem::new("~F10~ Меню", kb::F10, cm::MENU),
