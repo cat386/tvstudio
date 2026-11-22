@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use emojis_rs::{EMOJI_FOLDER, EMOJI_RUST};
+use emojis_rs::{EMOJI_FILE, EMOJI_FOLDER, EMOJI_RUST};
 use tvision::*;
 
 use crate::cmds::*;
@@ -270,7 +270,8 @@ impl ProjectWindow {
 /// Узел каталога с файлами `.rs` (рекурсивно, каталоги вперёд).
 /// Лист дерева — файл.
 fn file_leaf(name: &str, path: &Path) -> TreeNode {
-    TreeNode::new(&format!("{EMOJI_RUST} {name}")).data(&format!("file:{}", path.display()))
+    let icon = if path.extension().is_some_and(|ext| ext == "rs") { EMOJI_RUST } else { EMOJI_FILE };
+    TreeNode::new(&format!("{icon} {name}")).data(&format!("file:{}", path.display()))
 }
 
 /// Содержимое пакета Cargo в каталоге `dir`: свёрнутые каталоги и `build.rs`.

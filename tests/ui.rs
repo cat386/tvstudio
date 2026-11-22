@@ -685,7 +685,7 @@ fn workspace_members_in_project_tree() {
     let s = app.screen_text();
     assert!(s.contains("📁 ws-app") && s.contains("📁 ws-core"), "участники в дереве:\n{}", s);
     assert!(!s.contains("ws-skip"), "exclude:\n{}", s);
-    for label in ["📁 src", "🦀 build.rs", "🦀 Cargo.toml"] {
+    for label in ["📁 src", "🦀 build.rs", "📄 Cargo.toml"] {
         assert!(s.contains(label), "нет {label}:\n{s}");
     }
     assert!(s.find("📁 ws-core").unwrap() < s.find("🦀 build.rs").unwrap(), "{}", s);
