@@ -86,7 +86,7 @@ pub fn menu_bar() -> Menu {
         .submenu(
             "По~и~ск",
             Menu::new()
-                .item("~Н~айти...", cm::FIND)
+                .item_key("~Н~айти...", cm::FIND, kb::f(3), "F3")
                 .item("~З~аменить...", cm::REPLACE)
                 .item_key("~И~скать дальше", cm::SEARCH_AGAIN, kb::ctrl('L'), "Ctrl+L")
                 .separator()
@@ -94,8 +94,11 @@ pub fn menu_bar() -> Menu {
                 .item("Найти в ~ф~айлах...", CM_FIND_FILES)
                 .separator()
                 .item_key("~С~ледующая ошибка", CM_NEXT_ERR, kb::f(8), "F8")
-                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8")
-                .separator()
+                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8"),
+        )
+        .submenu(
+            "~L~SP",
+            Menu::new()
                 .item_key("~Д~ополнить", CM_COMPLETE, k(Key::Char(' '), Mods::CTRL), "Ctrl+Space")
                 .item_key("К ~о~пределению", CM_GOTO_DEF, kb::f(12), "F12")
                 .item_key("Найти сс~ы~лки", CM_FIND_REFS, kb::shift_f(12), "Shift+F12")
