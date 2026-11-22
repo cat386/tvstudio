@@ -557,44 +557,7 @@ pub fn clone_destination(parent: &Path, url: &str) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod clone_tests {
-    use super::*;
-
-    #[test]
-    fn clone_destination_names_repository_folder() {
-        let parent = Path::new("workspace");
-        for url in [
-            "https://example.test/team/project.git",
-            "ssh://git@example.test:2222/team/project",
-            "git@example.test:team/project.git",
-            "D:\\repos\\project.git",
-            "/home/user/project/.git",
-        ] {
-            assert_eq!(clone_destination(parent, url).unwrap(), parent.join("project"), "{url}");
-        }
-        assert!(clone_destination(parent, "https://user:secret@example.test/project.git").is_err());
-        assert!(clone_destination(parent, "https://example.test/..").is_err());
-    }
-}
+mod clone_tests;
 
 #[cfg(test)]
-mod timeout_tests {
-    use super::*;
-
-    #[test]
-    fn silent_git_process_returns_timeout() {
-        let mut process = Command::new(std::env::current_exe().unwrap());
-        process.args(["--exact", "git::timeout_tests::silent_child", "--nocapture"]).env("TVSTUDIO_TEST_SILENT_GIT", "1");
-        let start = Instant::now();
-        let result = run_with_idle_timeout(process, Duration::from_secs(1));
-        assert!(result.unwrap_err().contains("Git не прислал данных за 1 сек."));
-        assert!(start.elapsed() < Duration::from_secs(8));
-    }
-
-    #[test]
-    fn silent_child() {
-        if std::env::var_os("TVSTUDIO_TEST_SILENT_GIT").is_some() {
-            thread::sleep(Duration::from_secs(30));
-        }
-    }
-}
+mod timeout_tests;
