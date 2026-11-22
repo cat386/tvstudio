@@ -13,6 +13,7 @@ use tvstudio::dialogs::Config;
 use tvstudio::ide::{menu_bar, status_line, Ide};
 use tvstudio::inspector::InspectorWindow;
 use tvstudio::model::{Dependency, Kind, MenuNode, Project, ProjectKind};
+use tvstudio::toolwins::ProjectWindow;
 
 struct T {
     app: Program,
@@ -667,6 +668,9 @@ fn workspace_members_in_project_tree() {
         std::fs::write(d.join("Cargo.toml"), format!("[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n", name)).unwrap();
         std::fs::write(d.join("src").join(file), "fn main() {}\n").unwrap();
     }
+    std::fs::create_dir_all(ws.join("src/nested")).unwrap();
+    std::fs::write(ws.join("src/nested/item.rs"), "").unwrap();
+    std::fs::write(ws.join("build.rs"), "fn main() {}\n").unwrap();
     std::fs::create_dir_all(ws.join("crates/app/tests")).unwrap();
     std::fs::write(ws.join("crates/app/tests/it.rs"), "#[test]\nfn t() {}\n").unwrap();
     std::fs::write(ws.join("Cargo.toml"), "[workspace]\nresolver = \"2\"\nmembers = [\"crates/*\"]\nexclude = [\"crates/skip\"]\n").unwrap();
@@ -679,9 +683,29 @@ fn workspace_members_in_project_tree() {
     app.pump(&mut ide);
     app.pump(&mut ide);
     let s = app.screen_text();
-    assert!(s.contains("◇ ws-app") && s.contains("◇ ws-core"), "участники в дереве:\n{}", s);
+    assert!(s.contains("📁 ws-app") && s.contains("📁 ws-core"), "участники в дереве:\n{}", s);
     assert!(!s.contains("ws-skip"), "exclude:\n{}", s);
-    assert!(s.contains("Cargo.toml"), "{}", s);
+    for label in ["📁 src", "🦀 build.rs", "🦀 Cargo.toml"] {
+        assert!(s.contains(label), "нет {label}:\n{s}");
+    }
+    assert!(s.find("📁 ws-core").unwrap() < s.find("🦀 build.rs").unwrap(), "{}", s);
+    assert!(!s.contains("📁 nested") && !s.contains("🦀 item.rs"), "{s}");
+
+    let project_id = Ide::windows::<ProjectWindow>(&app)[0];
+    let project_window = app.find_mut::<ProjectWindow>(project_id).unwrap();
+    let tree = project_window.win.group.find_mut::<TreeView>(project_window.tree_id).unwrap();
+    tree.for_each(|path, node| {
+        if node.data.starts_with("dir:") {
+            assert!(!node.expanded, "{}", node.text);
+        }
+        if path == [0] {
+            assert!(node.expanded);
+        }
+    });
+    tree.expand(&[0, 0]);
+    app.pump(&mut ide);
+    let s = app.screen_text();
+    assert!(s.contains("📁 nested") && !s.contains("🦀 item.rs"), "{s}");
     let main = ws.join("crates/app/src/main.rs");
     assert!(
         Ide::windows::<CodeWindow>(&app).iter().any(|&id| tvstudio::ide::same_file(&app.find::<CodeWindow>(id).unwrap().path(), &main)),

@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
+use emojis_rs::EMOJI_BALLOT_X;
 use tvstudio::importer::{import_program, relative_path};
 use tvstudio::model::Dependency;
 
@@ -32,7 +33,7 @@ fn import_one(main: &Path, parent: &Path, name: &str, dep: &Dependency) -> bool 
             true
         }
         Err(e) => {
-            eprintln!("✗ {}: {}", name, e);
+            eprintln!("{EMOJI_BALLOT_X} {}: {}", name, e);
             false
         }
     }
@@ -73,14 +74,14 @@ fn main() {
                 .ok()
                 .and_then(|rd| rd.flatten().map(|e| e.path()).find(|p| p.extension().map(|x| x == "tvsp").unwrap_or(false)));
             let Some(file) = file else {
-                eprintln!("✗ {}: нет файла проекта .tvsp", dir.display());
+                eprintln!("{EMOJI_BALLOT_X} {}: нет файла проекта .tvsp", dir.display());
                 ok = false;
                 continue;
             };
             match tvstudio::model::Project::load(&file).and_then(|mut p| tvstudio::formextract::extract_into_project(&mut p).map(|r| (p, r))) {
                 Ok((p, r)) => println!("✓ {:<16} {}", p.name, r.summary().replace('\n', "\n  ")),
                 Err(e) => {
-                    eprintln!("✗ {}: {}", dir.display(), e);
+                    eprintln!("{EMOJI_BALLOT_X} {}: {}", dir.display(), e);
                     ok = false;
                 }
             }

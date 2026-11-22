@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
+use emojis_rs::{EMOJI_FOLDER, EMOJI_RUST};
 use tvision::*;
 
 use crate::cmds::*;
@@ -214,21 +215,21 @@ impl ProjectWindow {
                 let root = TreeNode::new(&p.name).icon('◘').expanded(true).data("project");
                 // У программы на Rust нет ни форм, ни модели — только файлы.
                 let mut root = if p.has_forms() { root.child(forms).child(model) } else { root };
-                // Файлы своего пакета (src, tests, examples, benches, build.rs),
-                // затем участники workspace — каждый своим узлом, затем Cargo.toml.
+                // Узлы пакета и участников workspace, затем файлы корня.
                 let layout = cargo_layout(&p.dir);
                 for n in crate_children(&p.dir) {
                     root = root.child(n);
                 }
                 for m in &layout.members {
                     // Имя пакета (путь к нему — в заголовке окна открытого файла).
-                    let mut node = TreeNode::new(&m.name).icon('◇').expanded(layout.members.len() == 1).data(&format!("dir:{}", m.dir.display()));
+                    let mut node = TreeNode::new(&format!("{EMOJI_FOLDER} {}", m.name)).data(&format!("dir:{}", m.dir.display()));
                     for n in crate_children(&m.dir) {
                         node = node.child(n);
                     }
                     node = node.child(file_leaf("Cargo.toml", &m.dir.join("Cargo.toml")));
                     root = root.child(node);
                 }
+                root.children.sort_by_key(|node| node.data.starts_with("file:"));
                 vec![root.child(file_leaf("Cargo.toml", &p.dir.join("Cargo.toml")))]
             }
         };
@@ -269,19 +270,16 @@ impl ProjectWindow {
 /// Узел каталога с файлами `.rs` (рекурсивно, каталоги вперёд).
 /// Лист дерева — файл.
 fn file_leaf(name: &str, path: &Path) -> TreeNode {
-    TreeNode::new(name).data(&format!("file:{}", path.display()))
+    TreeNode::new(&format!("{EMOJI_RUST} {name}")).data(&format!("file:{}", path.display()))
 }
 
-/// Содержимое пакета Cargo в каталоге `dir`: `src` (раскрыт), `tests`,
-/// `examples`, `benches` (свёрнуты) — те, что есть, и `build.rs`.
+/// Содержимое пакета Cargo в каталоге `dir`: свёрнутые каталоги и `build.rs`.
 fn crate_children(dir: &Path) -> Vec<TreeNode> {
     let mut v = Vec::new();
-    for (sub, open) in [("src", true), ("tests", false), ("examples", false), ("benches", false)] {
+    for sub in ["src", "tests", "examples", "benches"] {
         let d = dir.join(sub);
         if d.is_dir() {
-            let mut n = dir_node(sub, &d);
-            n.expanded = open;
-            v.push(n);
+            v.push(dir_node(sub, &d));
         }
     }
     if dir.join("build.rs").is_file() {
@@ -291,7 +289,7 @@ fn crate_children(dir: &Path) -> Vec<TreeNode> {
 }
 
 fn dir_node(name: &str, dir: &Path) -> TreeNode {
-    let mut node = TreeNode::new(name).icon('▸').expanded(true).data(&format!("dir:{}", dir.display()));
+    let mut node = TreeNode::new(&format!("{EMOJI_FOLDER} {name}")).data(&format!("dir:{}", dir.display()));
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
@@ -313,7 +311,7 @@ fn dir_node(name: &str, dir: &Path) -> TreeNode {
     for f in files {
         let n = f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let generated = std::fs::read_to_string(&f).map(|t| t.starts_with(crate::codegen::GENERATED_MARK)).unwrap_or(false);
-        let mut leaf = TreeNode::new(&n).data(&format!("file:{}", f.display()));
+        let mut leaf = file_leaf(&n, &f);
         if generated {
             leaf = leaf.icon('⚙');
         }
