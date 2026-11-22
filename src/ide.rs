@@ -91,10 +91,7 @@ pub fn menu_bar() -> Menu {
                 .item_key("~И~скать дальше", cm::SEARCH_AGAIN, kb::ctrl('L'), "Ctrl+L")
                 .separator()
                 .item_key("~П~ерейти к строке...", CM_GOTO, kb::alt('G'), "Alt+G")
-                .item("Найти в ~ф~айлах...", CM_FIND_FILES)
-                .separator()
-                .item_key("~С~ледующая ошибка", CM_NEXT_ERR, kb::f(8), "F8")
-                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8"),
+                .item("Найти в ~ф~айлах...", CM_FIND_FILES),
         )
         .submenu(
             "~L~SP",
@@ -105,7 +102,10 @@ pub fn menu_bar() -> Menu {
                 .item_key("Н~а~зад", CM_NAV_BACK, k(Key::Left, Mods::ALT), "Alt+←")
                 .item_key("~Б~ыстрые исправления", CM_CODE_ACTIONS, k(Key::Enter, Mods::ALT), "Alt+Enter")
                 .item("Д~и~агностика LSP", CM_DIAGNOSTICS)
-                .item("Перезапустить сервер ~L~SP", CM_LSP_RESTART),
+                .item("Перезапустить сервер ~L~SP", CM_LSP_RESTART)
+                .separator()
+                .item_key("~С~ледующая ошибка", CM_NEXT_ERR, kb::f(8), "F8")
+                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8"),
         )
         .submenu(
             "Фо~р~ма",
