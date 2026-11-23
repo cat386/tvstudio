@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use emojis_rs::{EMOJI_FILE, EMOJI_FOLDER, EMOJI_RUST};
+use emojis_rs::{EMOJI_CROSS, EMOJI_FILE, EMOJI_FOLDER, EMOJI_INFO, EMOJI_RUST, EMOJI_WARNING};
 use tvision::*;
 
 use crate::cmds::*;
@@ -445,10 +445,10 @@ impl MessagesWindow {
     /// Добавить строку (и показать её — список прокручивается вниз).
     pub fn push(&mut self, e: MsgEntry) {
         let shown = match e.kind {
-            MsgKind::Error => format!("■ {}", e.text),
-            MsgKind::Warning => format!("▲ {}", e.text),
+            MsgKind::Error => format!("{EMOJI_CROSS}  {}", e.text),
+            MsgKind::Warning => format!("{EMOJI_WARNING}  {}", e.text),
             MsgKind::Note => format!("  {}", e.text),
-            MsgKind::Info => format!("  {}", e.text),
+            MsgKind::Info => format!("{EMOJI_INFO}  {}", e.text),
         };
         self.entries.push(e);
         let n = self.entries.len();
