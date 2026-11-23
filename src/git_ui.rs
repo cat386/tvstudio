@@ -17,9 +17,18 @@ impl Panel {
     pub fn open(app: &mut Program) -> Self {
         let extent = app.desktop().group.vs.extent();
         let mut window = Window::new(extent.grown(-1, -1), "Git", 0);
-        let scroll = window.standard_scroll_bar(true);
-        let list_view = window.add(ListBox::new(Rect::default(), 1, Some(scroll)));
+
+        //let scroll = window.standard_scroll_bar(true);
+        //let scroll = window.standard_scroll_bar(true);
+
+        let scroll1 = window.add(ScrollBar::new(Rect::default()));
+
+        let list_view = window.add(ListBox::new(Rect::default(), 1, Some(scroll1)));
+
+        let line = window.add(Line::new(Rect::default()).to_frame());
+
         window.add(Relay::new(list_view, CM_GIT_DIFF));
+
         let refresh = button(&mut window, "~О~бновить", CM_GIT_REFRESH);
         let diff = button(&mut window, "~D~iff", CM_GIT_DIFF);
         let staged = button(&mut window, "Diff ~и~ндекса", CM_GIT_DIFF_STAGED);
@@ -27,10 +36,13 @@ impl Panel {
         let remove = button(&mut window, "~-~ Индекс", CM_GIT_UNSTAGE);
         let commit = button(&mut window, "~К~оммит", CM_GIT_COMMIT);
         let branch = button(&mut window, "~В~етка...", CM_GIT_BRANCH);
+        // Добавляем кнопки
         window.set_layout(
             VBox::new()
                 .add(item(list_view).expand().stretch(1))
+                .add(scroll1)
                 .space(1)
+                .add(line)
                 .add(HBox::new().spacing(1).add(refresh).add(diff).add(staged))
                 .add(HBox::new().spacing(1).add(add).add(remove).add(commit).add(branch)),
         );
