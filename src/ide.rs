@@ -78,9 +78,9 @@ pub fn menu_bar() -> Menu {
                 .item("~П~овторить", cm::REDO)
                 .separator()
                 .item_key("~В~ырезать", cm::CUT, kb::ctrl('X'), "Ctrl+X")
-                .item_key("~К~опировать", cm::COPY, kb::ctrl('C'), "Ctrl+C") // Ctrl+Ins
-                .item_key("Вст~а~вить", cm::PASTE, kb::ctrl('V'), "Ctrl+V") // SHIFT+Ins
-                .item_key("~У~далить", cm::CLEAR, kb::ctrl('D'), "Ctrl+D") // CTRL+Del
+                .item_key("~К~опировать", cm::COPY, kb::ctrl('C'), "Ctrl+C")
+                .item_key("Вст~а~вить", cm::PASTE, kb::ctrl('V'), "Ctrl+V")
+                .item_key("~У~далить", cm::CLEAR, kb::ctrl('D'), "Ctrl+D")
                 .item_key("Выделить ~в~сё", cm::SELECT_ALL, kb::ctrl('A'), "Ctrl+A"),
         )
         .submenu(
@@ -1548,10 +1548,15 @@ impl Ide {
 
     fn show_help(&mut self, app: &mut Program, ctx: u16) {
         let ctx = if self.help.topic_for_context(ctx).is_some() { ctx } else { 0 };
+
         let mut w = HelpWindow::new(self.help.clone(), ctx);
+
         let s = app.desktop().group.vs.size;
+
         let r = Rect::new(0, 0, (s.x - 4).min(76), (s.y - 2).min(22));
+
         w.win.group.change_bounds(r);
+
         dialogs::insert(app, w);
     }
 
