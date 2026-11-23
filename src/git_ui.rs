@@ -18,10 +18,7 @@ impl Panel {
         let extent = app.desktop().group.vs.extent();
         let mut window = Window::new(extent.grown(-1, -1), "Git", 0);
 
-        //let scroll = window.standard_scroll_bar(true);
-        //let scroll = window.standard_scroll_bar(true);
-
-        let scroll1 = window.add(ScrollBar::new(Rect::default()));
+        let scroll1 = window.add(ScrollBar::new(Rect::new(0, 0, 1, 10)));
 
         let list_view = window.add(ListBox::new(Rect::default(), 1, Some(scroll1)));
 
@@ -39,8 +36,7 @@ impl Panel {
         // Добавляем кнопки
         window.set_layout(
             VBox::new()
-                .add(item(list_view).expand().stretch(1))
-                .add(scroll1)
+                .add(HBox::new().add(item(list_view).expand().stretch(1)).add(scroll1))
                 .space(1)
                 .add(line)
                 .add(HBox::new().spacing(1).add(refresh).add(diff).add(staged))
