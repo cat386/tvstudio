@@ -27,10 +27,10 @@ impl Panel {
         window.add(Relay::new(list_view, CM_GIT_DIFF));
 
         let refresh = button(&mut window, "~О~бновить", CM_GIT_REFRESH);
-        let diff = button(&mut window, "~D~iff", CM_GIT_DIFF);
-        let staged = button(&mut window, "Diff ~и~ндекса", CM_GIT_DIFF_STAGED);
-        let add = button(&mut window, "~+~ Индекс", CM_GIT_STAGE);
-        let remove = button(&mut window, "~-~ Индекс", CM_GIT_UNSTAGE);
+        let diff = button(&mut window, "~И~зменения", CM_GIT_DIFF);
+        let staged = button(&mut window, "Изменения и~н~декса", CM_GIT_DIFF_STAGED);
+        let add = button(&mut window, "~+~ В индекс", CM_GIT_STAGE);
+        let remove = button(&mut window, "~-~ Из индекса", CM_GIT_UNSTAGE);
         let commit = button(&mut window, "~К~оммит", CM_GIT_COMMIT);
         let branch = button(&mut window, "~В~етка...", CM_GIT_BRANCH);
         // Добавляем кнопки

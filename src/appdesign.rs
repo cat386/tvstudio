@@ -156,8 +156,8 @@ impl ListEditor {
             d.add(button(x, y, 9, "~←~", CM_LE_LEFT));
             d.add(button(x + 9, y, 9, "~→~", CM_LE_RIGHT));
         }
-        d.add(Button::new(Rect::new(x, 19, x + 9, 21), "O~K~", cm::OK, bf::DEFAULT));
-        d.add(Button::new(Rect::new(x + 9, 19, x + 18, 21), "Отмена", cm::CANCEL, bf::NORMAL));
+        d.add(Button::new(Rect::new(22, 19, 38, 21), "~П~рименить", cm::OK, bf::DEFAULT));
+        d.add(Button::new(Rect::new(40, 19, 54, 21), "Отмена", cm::CANCEL, bf::NORMAL));
         d.add(Relay::new(list_id, CM_LE_EDIT));
         d.select(list_id);
         let mut rows = Vec::new();

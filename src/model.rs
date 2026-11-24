@@ -1100,8 +1100,8 @@ impl ProjectKind {
     /// Надпись в диалоге «Новый проект».
     pub fn title(self) -> &'static str {
         match self {
-            ProjectKind::Tvision => "Приложение на tvision-rs (формы, модель, код)",
-            ProjectKind::Rust => "Программа на Rust (только код)",
+            ProjectKind::Tvision => "Приложение с формами (tvision-rs)",
+            ProjectKind::Rust => "Обычная программа Rust",
         }
     }
 

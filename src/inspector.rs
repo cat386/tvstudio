@@ -106,7 +106,18 @@ pub struct InspectorWindow {
     target: Rc<RefCell<Option<DocRef>>>,
     /// Что показано сейчас: (адрес документа, ревизия, основной элемент).
     shown: (usize, u64, Option<usize>),
+    pending_choice: Option<ChoiceEdit>,
 }
+
+struct ChoiceEdit {
+    doc: DocRef,
+    selection: Option<usize>,
+    prop: Prop,
+    values: Vec<String>,
+    list: ViewId,
+}
+
+const CHOOSE_PROPERTY: u16 = 1362;
 
 /// Палитра окон-инструментов (бирюзовые, как окно Message в Turbo Pascal):
 /// внутри работают элементы диалогов.
@@ -122,10 +133,12 @@ impl InspectorWindow {
         // Компоненты: заголовок и список фиксированной высоты (все виды, если
         // помещаются, но не больше ~40% окна — остальное свойствам).
         let lh = Self::palette_rows(s.y);
-        let mut ph = StaticText::new(Rect::new(1, 1, s.x - 1, 2), "Компоненты");
+        let mut ph = StaticText::new(Rect::new(1, 1, s.x - 1, 2), &format!("Компоненты ({})", Kind::ALL.len()));
         ph.vs.grow_mode = gf::GROW_HI_X;
         win.add(ph);
-        let mut list = ListBox::new(Rect::new(1, 2, s.x - 1, 2 + lh), 1, None);
+        let palette_scroll = win.add(ScrollBar::new(Rect::new(s.x - 1, 2, s.x, 2 + lh)));
+        win.group.view_mut(palette_scroll).unwrap().vs_mut().grow_mode = gf::GROW_LO_X | gf::GROW_HI_X;
+        let mut list = ListBox::new(Rect::new(1, 2, s.x - 1, 2 + lh), 1, Some(palette_scroll));
         list.vs.grow_mode = gf::GROW_HI_X;
         list.vs.help_ctx = HC_PALETTE;
         list.set_items(Kind::ALL.iter().map(|k| format!("{} {}", icon(*k), k.title())).collect());
@@ -153,7 +166,7 @@ impl InspectorWindow {
         let hint_id = win.add(hint);
         win.group.vs.help_ctx = HC_INSPECTOR;
         win.select(table_id);
-        InspectorWindow { win, list_id, table_id, head_id, hint_id, target, shown: (0, 0, None) }
+        InspectorWindow { win, list_id, table_id, head_id, hint_id, target, shown: (0, 0, None), pending_choice: None }
     }
 
     /// Высота списка компонентов для окна высотой `h`.
@@ -240,19 +253,16 @@ impl InspectorWindow {
     fn toggle_bool(&mut self) -> bool {
         let Some(p) = self.current_prop() else { return false };
         // Класс формы (Dialog ↔ Window) тоже переключается пробелом.
-        if !p.is_bool() && p != Prop::FormClass {
+        if !p.is_bool() && !matches!(p, Prop::FormClass | Prop::FormPalette) {
             return false;
         }
         let Some(doc) = self.target.borrow().clone() else { return false };
         let mut d = doc.borrow_mut();
         let sel = d.primary();
         let now = props::get(&d.form, sel, p);
-        let next = if p == Prop::FormClass {
-            if now == "Dialog" {
-                "Window"
-            } else {
-                "Dialog"
-            }
+        let choices = props::choices(&d.form, p);
+        let next = if !choices.is_empty() {
+            choices[(choices.iter().position(|value| *value == now).unwrap_or(0) + 1) % choices.len()].as_str()
         } else if props::parse_bool(&now).unwrap_or(false) {
             "нет"
         } else {
@@ -263,6 +273,38 @@ impl InspectorWindow {
             d.push_undo(before);
             d.changed();
         }
+        true
+    }
+
+    fn choose_value(&mut self, ctx: &mut Ctx) -> bool {
+        let Some(prop) = self.current_prop() else { return false };
+        if prop.is_bool() {
+            return self.toggle_bool();
+        }
+        let Some(doc) = self.target.borrow().clone() else { return false };
+        let d = doc.borrow();
+        let selection = d.primary();
+        let mut values = props::choices(&d.form, prop);
+        if values.is_empty() {
+            return false;
+        }
+        let current = props::get(&d.form, selection, prop);
+        if !values.contains(&current) {
+            values.push(current.clone());
+        }
+        let rows = (values.len() as i32).clamp(3, 12);
+        let mut dialog = Dialog::centered(54, rows + 7, "Выбрать значение свойства");
+        let scroll = dialog.add(ScrollBar::new(Rect::new(51, 2, 52, 2 + rows)));
+        let mut list = ListBox::new(Rect::new(2, 2, 51, 2 + rows), 1, Some(scroll));
+        list.set_items(values.iter().map(|v| if v.is_empty() { "(нет)".into() } else { v.clone() }).collect());
+        list.focus_item(values.iter().position(|v| *v == current).unwrap_or(0));
+        let list = dialog.add(list);
+        dialog.add(Relay::new(list, cm::OK));
+        crate::dialogs::action_cancel(&mut dialog, rows + 4, "~В~ыбрать");
+        dialog.select(list);
+        drop(d);
+        self.pending_choice = Some(ChoiceEdit { doc, selection, prop, values, list });
+        ctx.exec(Box::new(crate::dialogs::flat(dialog)), Some(self.win.id()), CHOOSE_PROPERTY);
         true
     }
 }
@@ -294,6 +336,10 @@ impl View for InspectorWindow {
             let table_focused = self.win.group.current_view().map(|v| v.vs().id) == Some(self.table_id);
             if table_focused && !editing && k.mods == Mods::NONE {
                 if k.key == Key::Enter {
+                    if self.choose_value(ctx) {
+                        ev.clear();
+                        return;
+                    }
                     // Enter начинает правку значения (как F2).
                     *ev = Event::KeyDown(kb::f(2));
                     if let Some(t) = self.win.group.find_mut::<Table>(self.table_id) {
@@ -312,6 +358,28 @@ impl View for InspectorWindow {
 
     fn valid(&mut self, command: u16, ctx: &mut Ctx) -> bool {
         self.win.group.valid(command, ctx)
+    }
+
+    fn exec_result(&mut self, tag: u16, command: u16, view: Box<dyn View>, _ctx: &mut Ctx) {
+        if tag != CHOOSE_PROPERTY {
+            return;
+        }
+        let Some(pending) = self.pending_choice.take() else { return };
+        if command != cm::OK {
+            return;
+        }
+        let Some(dialog) = view.as_any().downcast_ref::<Dialog>() else { return };
+        let Some(value) = dialog.win.group.find::<ListBox>(pending.list).and_then(|l| pending.values.get(l.focused)) else { return };
+        let mut doc = pending.doc.borrow_mut();
+        let before = (doc.form.clone(), doc.sel.clone());
+        match props::set(&mut doc.form, pending.selection, pending.prop, value) {
+            Ok(()) if doc.form != before.0 => {
+                doc.push_undo(before);
+                doc.changed();
+            }
+            Err(error) => doc.error = Some(error),
+            _ => {}
+        }
     }
 
     fn size_limits(&self, owner_size: Point) -> (Point, Point) {

@@ -34,6 +34,7 @@ use crate::cmds::*;
 use crate::dialogs::build_message_box;
 use crate::json::{self, Json};
 use crate::model::{build_order, Control, Form, Kind};
+use crate::ui_commands::MenuCommands;
 
 /// Общий документ формы.
 pub type DocRef = Rc<RefCell<FormDoc>>;
@@ -494,18 +495,18 @@ impl Canvas {
             .item_key("~С~войства...", CM_DS_PROPS, kb::ENTER, "Enter")
             .submenu("~Д~обавить", add)
             .separator()
-            .item_key("~В~ырезать", cm::CUT, kb::ctrl('X'), "Ctrl+X")
-            .item_key("~К~опировать", cm::COPY, kb::ctrl('C'), "Ctrl+C")
-            .item_key("Вст~а~вить", cm::PASTE, kb::ctrl('V'), "Ctrl+V")
-            .item_key("Д~у~блировать", CM_DS_DUP, kb::ctrl('D'), "Ctrl+D")
-            .item_key("~У~далить", cm::CLEAR, kb::key(Key::Del), "Del")
+            .command(cm::CUT)
+            .command(cm::COPY)
+            .command(cm::PASTE)
+            .command(CM_DS_DUP)
+            .command(cm::CLEAR)
             .separator()
             .submenu("В~ы~ровнять", al)
             .item_key("Раньше в порядке Tab", CM_DS_BACKWARD, KeyEvent::new(Key::PgUp, Mods::CTRL), "Ctrl+PgUp")
             .item_key("Позже в порядке Tab", CM_DS_FORWARD, KeyEvent::new(Key::PgDn, Mods::CTRL), "Ctrl+PgDn")
             .separator()
-            .item_key("~П~роверить форму", CM_FORM_TEST, kb::ctrl_f(9), "Ctrl+F9")
-            .item_key("Ко~д~ формы", CM_FORM_CODE, kb::f(12), "F12")
+            .command(CM_FORM_TEST)
+            .command(CM_FORM_CODE)
     }
 
     /// Показать контекстное меню в точке `local` (координаты окна).

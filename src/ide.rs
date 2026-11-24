@@ -25,6 +25,7 @@ use crate::lsp::LspClient;
 use crate::model::{Action, Form, Kind, Project, FORM_EXT, PROJECT_EXT};
 use crate::runner::{After, Job, JobMsg};
 use crate::toolwins::{parse_cargo_line, MenuClock, MessagesWindow, MsgEntry, MsgKind, Problem, ProblemsWindow, ProjectWindow};
+use crate::ui_commands::MenuCommands;
 
 mod git_glue;
 mod lsp_glue;
@@ -63,119 +64,116 @@ pub fn menu_bar() -> Menu {
                 .item("~З~акрыть проект", CM_CLOSE_PROJECT)
                 .separator()
                 .item("Новый ~ф~айл", cm::NEW)
-                .item_key("Открыть фа~й~л...", cm::OPEN, kb::ctrl('O'), "Ctrl+O")
-                .item_key("~С~охранить", cm::SAVE, kb::f(2), "F2")
-                .item("Сохранить ~к~ак...", cm::SAVE_AS)
-                .item_key("Сохранить ~в~сё", cm::SAVE_ALL, kb::shift_f(2), "Shift+F2")
+                .command(cm::OPEN)
+                .command(cm::SAVE)
+                .item("Сохранить к~а~к...", cm::SAVE_AS)
+                .command(cm::SAVE_ALL)
                 .separator()
-                .item("~О~болочка ОС", cm::DOS_SHELL)
+                .item("~Т~ерминал", cm::DOS_SHELL)
+                .item("~П~араметры среды...", CM_OPTIONS)
                 .item_key("В~ы~ход", cm::QUIT, kb::ALT_X, "Alt+X"),
         )
         .submenu(
             "~П~равка",
             Menu::new()
-                .item_key("~О~тменить", cm::UNDO, kb::ctrl('Z'), "Ctrl+Z")
-                .item("~П~овторить", cm::REDO)
+                .command(cm::UNDO)
+                .command(cm::REDO)
                 .separator()
-                .item_key("~В~ырезать", cm::CUT, kb::ctrl('X'), "Ctrl+X")
-                .item_key("~К~опировать", cm::COPY, kb::ctrl('C'), "Ctrl+C")
-                .item_key("Вст~а~вить", cm::PASTE, kb::ctrl('V'), "Ctrl+V")
-                .item_key("~У~далить", cm::CLEAR, kb::ctrl('D'), "Ctrl+D")
-                .item_key("Выделить ~в~сё", cm::SELECT_ALL, kb::ctrl('A'), "Ctrl+A"),
+                .command(cm::CUT)
+                .command(cm::COPY)
+                .command(cm::PASTE)
+                .command(cm::CLEAR)
+                .command(cm::SELECT_ALL),
         )
         .submenu(
-            "По~и~ск",
+            "~К~од",
             Menu::new()
-                .item_key("~Н~айти...", cm::FIND, kb::f(3), "F3")
-                .item_key("~З~аменить...", cm::REPLACE, kb::ALT_F3, "Alt+F3")
-                .item_key("~И~скать дальше", cm::SEARCH_AGAIN, kb::ctrl('L'), "Ctrl+L")
+                .command(cm::FIND)
+                .command(cm::REPLACE)
+                .command(cm::SEARCH_AGAIN)
                 .separator()
-                .item_key("~П~ерейти к строке...", CM_GOTO, kb::alt('G'), "Alt+G")
-                .item("Найти в ~ф~айлах...", CM_FIND_FILES),
-        )
-        .submenu(
-            "~L~SP",
-            Menu::new()
-                .item_key("~Д~ополнить", CM_COMPLETE, k(Key::Char(' '), Mods::CTRL), "Ctrl+Space")
-                .item_key("К ~о~пределению", CM_GOTO_DEF, kb::f(12), "F12")
-                .item_key("Найти сс~ы~лки", CM_FIND_REFS, kb::shift_f(12), "Shift+F12")
-                .item_key("Н~а~зад", CM_NAV_BACK, k(Key::Left, Mods::ALT), "Alt+←")
-                .item_key("~Б~ыстрые исправления", CM_CODE_ACTIONS, k(Key::Enter, Mods::ALT), "Alt+Enter")
-                .item("Д~и~агностика LSP", CM_DIAGNOSTICS)
-                .item("Перезапустить сервер ~L~SP", CM_LSP_RESTART)
+                .command(CM_GOTO)
+                .item("Найти в ~ф~айлах...", CM_FIND_FILES)
                 .separator()
-                .item_key("~С~ледующая ошибка", CM_NEXT_ERR, kb::f(8), "F8")
-                .item_key("П~р~едыдущая ошибка", CM_PREV_ERR, kb::shift_f(8), "Shift+F8"),
+                .command(CM_COMPLETE)
+                .command(CM_GOTO_DEF)
+                .command(CM_FIND_REFS)
+                .command(CM_NAV_BACK)
+                .command(CM_CODE_ACTIONS)
+                .submenu("Серверы ~я~зыка", Menu::new().item("~Д~иагностика", CM_DIAGNOSTICS).item("~П~ерезапустить серверы", CM_LSP_RESTART))
+                .separator()
+                .command(CM_NEXT_ERR)
+                .command(CM_PREV_ERR),
         )
         .submenu(
             "Фо~р~ма",
             Menu::new()
                 .item("~Н~овая форма...", CM_NEW_FORM)
                 .item("~О~ткрыть форму...", CM_OPEN_FORM)
-                .item("~У~далить форму из проекта", CM_REMOVE_FORM)
+                .item("~У~далить форму и файл...", CM_REMOVE_FORM)
                 .separator()
                 .submenu("~Д~обавить элемент", add)
-                .item_key("~С~войства элемента...", CM_DS_PROPS, kb::ctrl_f(2), "Ctrl+F2")
+                .command(CM_DS_PROPS)
                 .submenu("~В~ыровнять", align)
                 .item("Раньше в порядке ~T~ab", CM_DS_BACKWARD)
                 .item("Позже в порядке T~a~b", CM_DS_FORWARD)
                 .item("В начало порядка", CM_DS_BACK)
                 .item("В конец порядка", CM_DS_FRONT)
-                .item("Д~у~блировать", CM_DS_DUP)
+                .command(CM_DS_DUP)
                 .separator()
                 .item("Се~т~ка", CM_GRID)
-                .item("~Н~омера Tab", CM_TABNUM)
+                .item("Номера Ta~b~", CM_TABNUM)
                 .separator()
-                .item_key("~П~роверить форму", CM_FORM_TEST, kb::shift_f(9), "Shift+F9")
-                .item_key("~К~од формы", CM_FORM_CODE, kb::f(12), "F12"),
+                .command(CM_FORM_TEST)
+                .command(CM_FORM_CODE),
         )
         .submenu(
-            "Пр~о~ект",
+            "Про~е~кт",
             Menu::new()
-                .item("~С~трока меню...", CM_EDIT_MENU)
+                .item("Строка ~м~еню...", CM_EDIT_MENU)
                 .item("Строка ~с~остояния...", CM_EDIT_STATUS)
                 .item("~К~оманды...", CM_EDIT_COMMANDS)
                 .item("~П~араметры программы...", CM_APP_OPTIONS)
                 .separator()
                 .item("~Ф~ормы из кода", CM_EXTRACT_FORMS)
                 .item("~Г~енерировать код", CM_GENERATE)
-                .item("~Д~ерево проекта", CM_SHOW_PROJECT),
+                .item("~Д~ерево проекта", CM_SHOW_PROJECT)
+                .separator()
+                .submenu("~G~it", git_glue::menu()),
         )
-        .submenu("~G~it", git_glue::menu())
         .submenu(
             "~С~борка",
             Menu::new()
-                .item_key("~П~роверить (cargo check)", CM_CHECK, kb::alt_f(9), "Alt+F9")
-                .item_key("~С~обрать (cargo build)", CM_BUILD, kb::f(9), "F9")
-                .item_key("~З~апустить (cargo run)", CM_RUN, kb::ctrl_f(9), "Ctrl+F9")
+                .command(CM_CHECK)
+                .command(CM_BUILD)
+                .command(CM_RUN)
                 .item("Параметры с~б~орки...", CM_BUILD_OPTS)
-                .item("~Т~есты (cargo test)", CM_TEST)
-                .item("~О~чистить (cargo clean)", CM_CLEAN)
+                .item("~Т~есты", CM_TEST)
+                .item("~О~чистить сборку", CM_CLEAN)
                 .separator()
-                .item_key("О~ш~ибки и предупреждения", CM_SHOW_PROBLEMS, kb::ctrl_f(8), "Ctrl+F8")
+                .command(CM_SHOW_PROBLEMS)
                 .separator()
-                .item("О~с~тановить", CM_STOP),
+                .item("Остано~в~ить", CM_STOP),
         )
         .submenu(
             "~О~кно",
             Menu::new()
                 .item("Компо~н~енты", CM_SHOW_PALETTE)
-                .item_key("~И~нспектор", CM_SHOW_INSPECTOR, kb::f(11), "F11")
+                .command(CM_SHOW_INSPECTOR)
                 .item("П~р~оект", CM_SHOW_PROJECT)
                 .item("~С~ообщения", CM_SHOW_MESSAGES)
-                .item_key("О~ш~ибки и предупреждения", CM_SHOW_PROBLEMS, kb::ctrl_f(8), "Ctrl+F8")
-                .item("Р~а~складка по умолчанию", CM_LAYOUT)
+                .command(CM_SHOW_PROBLEMS)
+                .item("Раскладка по ~у~молчанию", CM_LAYOUT)
                 .separator()
                 .item("~М~озаика", cm::TILE)
                 .item("~К~аскад", cm::CASCADE)
                 .item_key("Сле~д~ующее", cm::NEXT, kb::F6, "F6")
                 .item_key("Пр~е~дыдущее", cm::PREV, kb::SHIFT_F6, "Shift+F6")
-                .item_key("Ра~з~мер/перемещение", cm::RESIZE, kb::CTRL_F5, "Ctrl+F5")
-                .item_key("Распа~х~нуть", cm::ZOOM, kb::F5, "F5")
-                .item_key("~З~акрыть", cm::CLOSE, kb::ALT_F3, "Alt+F3")
-                .item("Закрыть ~в~се", cm::CLOSE_ALL),
+                .item_key("Размер/переме~щ~ение", cm::RESIZE, kb::CTRL_F5, "Ctrl+F5")
+                .item_key("Р~а~звернуть", cm::ZOOM, kb::F5, "F5")
+                .command(cm::CLOSE)
+                .item("Закрыть ~в~се окна", cm::CLOSE_ALL),
         )
-        .submenu("~Н~астройки", Menu::new().item("~П~араметры среды...", CM_OPTIONS))
         .submenu("Спр~а~вка", Menu::new().item_key("~С~одержание", cm::HELP, kb::F1, "F1").item("~К~лавиши", CM_KEYS).item("~О~ TV Studio", CM_ABOUT))
 }
 
@@ -189,7 +187,7 @@ pub fn status_line() -> Vec<StatusDef> {
     let hidden = || {
         vec![
             StatusItem::new("", kb::F10, cm::MENU),
-            //StatusItem::new("", kb::ALT_F3, cm::CLOSE),
+            StatusItem::new("", crate::ui_commands::spec(cm::CLOSE).key, cm::CLOSE),
             StatusItem::new("", kb::F5, cm::ZOOM),
             StatusItem::new("", kb::F6, cm::NEXT),
             StatusItem::new("", kb::SHIFT_F6, cm::PREV),
@@ -207,22 +205,19 @@ pub fn status_line() -> Vec<StatusDef> {
             HC_DESIGNER,
             with(vec![
                 StatusItem::new("~Enter~ Свойства", kb::ENTER, CM_DS_PROPS),
-                hint_item("~Ins~ Добавить"),
-                hint_item("~Del~ Удалить"),
-                StatusItem::new("~Shift+F9~ Проверить", kb::shift_f(9), CM_FORM_TEST),
-                StatusItem::new("~F12~ Код", kb::f(12), CM_FORM_CODE),
-                StatusItem::new("~F2~ Сохр.", kb::F2, cm::SAVE),
-                StatusItem::new("~F11~ Инспектор", kb::f(11), CM_SHOW_INSPECTOR),
+                crate::ui_commands::status(cm::SAVE),
+                crate::ui_commands::status(CM_FORM_TEST),
+                crate::ui_commands::status(CM_FORM_CODE),
             ]),
         ),
         StatusDef::range(
             HC_EDITOR,
             HC_EDITOR,
             with(vec![
-                StatusItem::new("~F2~ Сохр.", kb::F2, cm::SAVE),
-                StatusItem::new("~F9~ Сборка", kb::f(9), CM_BUILD),
-                StatusItem::new("~F12~ Опред.", kb::f(12), CM_GOTO_DEF),
-                StatusItem::new("~Shift+F12~ Ссылки", kb::shift_f(12), CM_FIND_REFS),
+                crate::ui_commands::status(cm::SAVE),
+                crate::ui_commands::status(CM_BUILD),
+                crate::ui_commands::status(CM_GOTO_DEF),
+                StatusItem::new("", crate::ui_commands::spec(CM_FIND_REFS).key, CM_FIND_REFS),
                 StatusItem::new("", k(Key::Left, Mods::ALT), CM_NAV_BACK),
                 StatusItem::new("", kb::ctrl_f(9), CM_RUN),
                 StatusItem::new("", kb::alt('G'), CM_GOTO),
@@ -254,7 +249,7 @@ pub fn status_line() -> Vec<StatusDef> {
             StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
             //StatusItem::new("~F3~ Открыть", kb::f(3), cm::OPEN),
             StatusItem::new("~F9~ Собрать", kb::f(9), CM_BUILD),
-            StatusItem::new("~Ctrl+F9~ Запуск", kb::ctrl_f(9), CM_RUN),
+            StatusItem::new("~Ctrl+F9~ Запустить", kb::ctrl_f(9), CM_RUN),
             StatusItem::new("~F10~ Меню", kb::F10, cm::MENU),
             StatusItem::new("~Alt+X~ Выход", kb::ALT_X, cm::QUIT),
         ])),
@@ -267,6 +262,7 @@ pub fn status_line() -> Vec<StatusDef> {
 
 /// Обработчик среды.
 pub struct Ide {
+    start_page: Option<ViewId>,
     pub project: Option<Project>,
     pub cfg: Config,
     pub job: Option<Job>,
@@ -301,8 +297,10 @@ pub struct Ide {
 
 impl Ide {
     pub fn new(cfg: Config, headless: bool) -> Self {
-        let help = HelpFile::parse(HELP_SOURCE).unwrap_or_else(|_| HelpFile::parse(".topic Nocontext=0\nСправка недоступна.\n").unwrap());
+        let help = HelpFile::parse(&HELP_SOURCE.replace("{{COMMAND_KEYS}}", &crate::ui_commands::help_keys()))
+            .unwrap_or_else(|_| HelpFile::parse(".topic Nocontext=0\nСправка недоступна.\n").unwrap());
         Ide {
+            start_page: None,
             project: None,
             cfg,
             job: None,
@@ -333,7 +331,21 @@ impl Ide {
     /// Нужно ли окно «Инспектор» (компоненты и свойства): нет проекта или
     /// проект tvision-rs. У программы на Rust форм нет — и этого окна тоже.
     pub fn form_tools(&self) -> bool {
-        self.project.as_ref().map(|p| p.has_forms()).unwrap_or(true)
+        self.project.as_ref().map(|p| p.has_forms()).unwrap_or(false)
+    }
+
+    fn dismiss_start(&mut self, app: &mut Program) {
+        if let Some(id) = self.start_page.take() {
+            app.desktop_mut().group.remove(id);
+        }
+    }
+
+    fn show_start(&mut self, app: &mut Program) {
+        self.dismiss_start(app);
+        for id in [self.project_win.take(), self.inspector.take(), self.messages.take()].into_iter().flatten() {
+            app.desktop_mut().group.remove(id);
+        }
+        self.start_page = Some(dialogs::insert(app, crate::start_page::StartPage::new(&self.cfg.recent)));
     }
 
     /// Раскладка окон-инструментов по размеру рабочего стола: дерево
@@ -499,6 +511,10 @@ impl Ide {
 
     /// Открыть файл в редакторе кода (или переключиться на открытый).
     pub fn open_file(&mut self, app: &mut Program, path: &Path, at: Option<(usize, usize)>) -> Option<ViewId> {
+        if self.start_page.is_some() {
+            self.dismiss_start(app);
+            self.ensure_tools(app);
+        }
         let abs = if path.as_os_str().is_empty() { PathBuf::new() } else { tvision::widgets::editor::absolute(path) };
         let existing = Self::windows::<CodeWindow>(app)
             .into_iter()
@@ -619,6 +635,7 @@ impl Ide {
         }
         match Project::load(file) {
             Ok(p) => {
+                self.dismiss_start(app);
                 let f = p.file().display().to_string();
                 let files: Vec<PathBuf> = p.open_files.iter().map(|r| p.dir.join(r)).collect();
                 let name = p.name.clone();
@@ -1145,11 +1162,14 @@ impl Ide {
     fn remove_form(&mut self, app: &mut Program) {
         let Some(doc) = Self::top_doc(app) else { return };
         let name = doc.borrow().form.name.clone();
-        let r = message_box(
-            app,
-            &format!("\x03Удалить форму «{}» из проекта?\n\x03Файл формы тоже будет удалён.", name),
-            mf::CONFIRMATION | mf::YES_BUTTON | mf::NO_BUTTON,
-        );
+        let path = doc.borrow().path.clone();
+        let mut confirmation = Dialog::centered(66, 11, "Удалить форму и файл");
+        confirmation
+            .add(StaticText::new(Rect::new(2, 2, 64, 6), &format!("Форма: {}\nФайл: {}\nФайл формы будет удалён с диска.", name, path.display())));
+        let cancel = confirmation.add(Button::new(Rect::new(34, 8, 48, 10), "~О~тмена", cm::CANCEL, bf::DEFAULT));
+        confirmation.add(Button::new(Rect::new(18, 8, 32, 10), "~У~далить", cm::YES, bf::NORMAL));
+        confirmation.select(cancel);
+        let r = dialogs::exec(app, confirmation).0;
         if r != cm::YES {
             return;
         }
@@ -1419,9 +1439,8 @@ impl Ide {
                 opened = true;
             }
         }
-        if !opened {
-            self.say(app, "Добро пожаловать в TV Studio — среду визуальной разработки на tvision-rs.");
-            self.say(app, "Файл → Новый проект — начать; F1 — справка; F10 — меню.");
+        if !opened && args.is_empty() {
+            self.show_start(app);
         }
         self.idle(app);
     }
@@ -1474,8 +1493,9 @@ impl Ide {
         for c in [CM_CLOSE_PROJECT, CM_FIND_FILES] {
             set(app, c, has_p);
         }
-        // CM_SHOW_PALETTE / CM_SHOW_INSPECTOR (номера > 255) выключить нельзя;
-        // в проекте на Rust они просто ничего не показывают (см. ensure_tools).
+        for c in [CM_SHOW_PALETTE, CM_SHOW_INSPECTOR] {
+            set(app, c, has_forms);
+        }
         for c in [CM_DS_PROPS, CM_FORM_TEST, CM_DS_DUP, CM_GRID, CM_TABNUM, CM_DS_FRONT, CM_DS_BACK, CM_DS_FORWARD, CM_DS_BACKWARD] {
             set(app, c, has_d);
         }
@@ -1488,6 +1508,7 @@ impl Ide {
             set(app, CM_INS_BASE + i, has_d);
         }
         let code = Self::current_window(app).map(|id| app.find::<CodeWindow>(id).is_some()).unwrap_or(false);
+        set(app, CM_DS_DUP, has_d && !code);
         set(app, CM_GOTO, code);
         for c in [CM_COMPLETE, CM_GOTO_DEF, CM_FIND_REFS, CM_CODE_ACTIONS] {
             set(app, c, code && self.any_lsp());
@@ -1592,12 +1613,19 @@ impl Ide {
             return true;
         }
         match c {
+            crate::start_page::OPEN_RECENT => {
+                if let Info::Str(path) = info {
+                    self.open_project(app, Path::new(path));
+                }
+            }
             CM_NEW_PROJECT => self.new_project(app),
             CM_OPEN_PROJECT => self.choose_project_file(app),
             CM_RECENT => self.recent(app),
             CM_IMPORT => self.import(app),
             CM_CLOSE_PROJECT => {
-                self.close_project(app);
+                if self.close_project(app) {
+                    self.show_start(app);
+                }
             }
             cm::NEW => {
                 self.open_file(app, Path::new(""), None);

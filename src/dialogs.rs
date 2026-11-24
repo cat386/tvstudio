@@ -10,6 +10,11 @@ use crate::json::{self, Json};
 use crate::model::{is_crate_name, is_ident, AppModel, BuildOptions, Dependency, Form, FormClass, Kind, ProjectKind};
 use crate::props::{self, Prop};
 
+mod pages;
+pub use pages::PagedDialog;
+mod project;
+pub use project::ProjectDialog;
+
 // ======================================================================
 // Окна без тени
 // ======================================================================
@@ -108,8 +113,12 @@ pub fn field(d: &mut Dialog, x: i32, y: i32, label: &str, text: &str, w: i32, co
 
 /// Кнопки OK и «Отмена» по центру строки `y`.
 pub fn ok_cancel(d: &mut Dialog, y: i32) {
+    action_cancel(d, y, "O~K~");
+}
+
+pub fn action_cancel(d: &mut Dialog, y: i32, action: &str) {
     let w = d.win.group.vs.size.x;
-    d.add(Button::new(Rect::new(w / 2 - 13, y, w / 2 - 2, y + 2), "O~K~", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(w / 2 - 14, y, w / 2, y + 2), action, cm::OK, bf::DEFAULT));
     d.add(Button::new(Rect::new(w / 2 + 1, y, w / 2 + 12, y + 2), "Отмена", cm::CANCEL, bf::NORMAL));
 }
 
@@ -135,21 +144,27 @@ fn is_multi(p: Prop, kind: Option<Kind>) -> bool {
 }
 
 /// Диалог всех свойств выделенного элемента (или формы).
-pub fn props_dialog(form: &Form, sel: Option<usize>) -> (Dialog, Vec<Prop>) {
+pub fn props_dialog(form: &Form, sel: Option<usize>) -> (PagedDialog, Vec<Prop>) {
     let kind = sel.and_then(|i| form.controls.get(i)).map(|c| c.kind);
     let list = props::props_for(form, sel);
-    let lines: i32 = list.iter().map(|p| if is_multi(*p, kind) { 4 } else { 1 }).sum();
-    let h = (lines + 6).min(23);
     let title = match sel.and_then(|i| form.controls.get(i)) {
         Some(c) => format!("Свойства: {} ({})", c.name, c.kind.title()),
         None => format!("Свойства формы {}", form.name),
     };
-    let mut d = Dialog::centered(66, h, &title);
+    let mut d = Dialog::centered(66, 22, &title);
     d.win.group.vs.help_ctx = HC_INSPECTOR;
-    let mut y = 1;
+    let mut y = 4;
     let x = 16;
     let mut first = None;
+    let mut pages = Vec::new();
+    let mut start = d.win.group.children.len();
     for p in &list {
+        let rows = if is_multi(*p, kind) { 4 } else { 1 };
+        if y + rows > 17 {
+            pages.push(pages::ids_since(&d, start));
+            start = d.win.group.children.len();
+            y = 4;
+        }
         if is_multi(*p, kind) {
             let sb = d.add(ScrollBar::new(Rect::new(x + 47, y, x + 48, y + 4)));
             let mut m = Memo::new(Rect::new(x, y, x + 47, y + 4), None, Some(sb));
@@ -159,8 +174,17 @@ pub fn props_dialog(form: &Form, sel: Option<usize>) -> (Dialog, Vec<Prop>) {
             d.add(Label::new(Rect::new(1, y, x, y + 1), p.label(kind), Some(id)));
             first.get_or_insert(id);
             y += 4;
+        } else if p.is_bool() {
+            let mut checkbox = CheckBoxes::check_boxes(Rect::new(x, y, x + 48, y + 1), &[""]);
+            checkbox.value = u32::from(props::parse_bool(&props::get(form, sel, *p)).unwrap_or(false));
+            let id = d.add(checkbox);
+            d.add(Label::new(Rect::new(1, y, x, y + 1), p.label(kind), Some(id)));
+            first.get_or_insert(id);
+            y += 1;
         } else {
-            let id = field(&mut d, x, y, p.label(kind), &props::get(form, sel, *p), 48, None);
+            let choices = props::choices(form, *p);
+            let choices: Vec<&str> = choices.iter().map(String::as_str).collect();
+            let id = field(&mut d, x, y, p.label(kind), &props::get(form, sel, *p), 48, (!choices.is_empty()).then_some(choices.as_slice()));
             first.get_or_insert(id);
             y += 1;
         }
@@ -170,12 +194,15 @@ pub fn props_dialog(form: &Form, sel: Option<usize>) -> (Dialog, Vec<Prop>) {
     } else {
         "Класс: Dialog / Window. Цвет: серый, синий, бирюзовый. Да / нет."
     };
-    d.add(StaticText::new(Rect::new(2, y + 1, 64, y + 2), hint));
-    ok_cancel(&mut d, y + 2);
+    pages.push(pages::ids_since(&d, start));
+    d.add(StaticText::new(Rect::new(2, 17, 64, 19), &format!("{}\nCtrl+PgUp/PgDn — страницы", hint)));
+    action_cancel(&mut d, 19, "~П~рименить");
     if let Some(f) = first {
         d.select(f);
     }
-    (d, list)
+    let titles: Vec<String> = (1..=pages.len()).map(|i| format!("~{}~", i)).collect();
+    let pages = titles.iter().zip(pages).map(|(title, ids)| (title.as_str(), ids)).collect();
+    (PagedDialog::new(d, pages), list)
 }
 
 /// Применить данные диалога свойств. При ошибке форма не меняется.
@@ -184,7 +211,10 @@ pub fn apply_props(form: &mut Form, sel: Option<usize>, list: &[Prop], data: &Va
     let vals = strs(data);
     let mut f = form.clone();
     for (i, p) in list.iter().enumerate() {
-        let v = s_at(&vals, i);
+        let v = match vals.get(i) {
+            Some(Value::U32(value)) if p.is_bool() => if *value == 0 { "нет" } else { "да" }.to_string(),
+            _ => s_at(&vals, i),
+        };
         if is_multi(*p, kind) {
             if v != props::get_full(&f, sel, *p) {
                 props::set_full(&mut f, sel, *p, &v).map_err(|e| format!("{}: {}", p.label(kind), e))?;
@@ -213,7 +243,7 @@ pub struct NewProject {
 
 /// Диалог «Новый проект». `ask_kind` — спросить тип проекта (tvision-rs или
 /// просто Rust); без него (импорт) проект всегда на tvision-rs.
-pub fn new_project_dialog(cfg: &Config, name: &str, title: &str, ask_kind: bool) -> Dialog {
+pub fn new_project_dialog(cfg: &Config, name: &str, title: &str, ask_kind: bool) -> ProjectDialog {
     let dy = if ask_kind { 3 } else { 0 };
     let mut d = Dialog::centered(72, 16 + dy, title);
     let kind = ask_kind.then(|| {
@@ -224,17 +254,19 @@ pub fn new_project_dialog(cfg: &Config, name: &str, title: &str, ask_kind: bool)
     });
     let first = field(&mut d, 16, 2 + dy, "~И~мя", name, 30, None);
     field(&mut d, 16, 4 + dy, "~К~аталог", &cfg.default_parent().display().to_string(), 54, None);
+    let dependency_start = d.win.group.children.len();
     field(&mut d, 16, 6 + dy, "~t~vision-rs", &cfg.dep_value, 54, None);
     d.add(StaticText::new(Rect::new(2, 7 + dy, 70, 8 + dy), "  ссылка git (https://…) или путь к каталогу tvision-rs на диске"));
+    let dependency = pages::ids_since(&d, dependency_start);
     let about = if ask_kind {
-        "Будет создан каталог «Каталог/Имя»: Cargo.toml, src/main.rs, файл\nпроекта .tvsp, а у приложения tvision-rs — и форма «О программе».\nПрограмме на Rust строка tvision-rs не нужна."
+        "Будет создан каталог «Каталог/Имя»: Cargo.toml, src/main.rs, файл\nпроекта .tvsp, а у приложения с формами — и форма «О программе»."
     } else {
         "Будет создан каталог «Каталог/Имя» с Cargo.toml, src/main.rs,\nфайлом проекта .tvsp и формой «О программе»."
     };
     d.add(StaticText::new(Rect::new(2, 9 + dy, 70, 12 + dy), about));
-    ok_cancel(&mut d, 13 + dy);
+    action_cancel(&mut d, 13 + dy, "~С~оздать");
     d.select(kind.unwrap_or(first));
-    d
+    ProjectDialog::new(d, kind, dependency)
 }
 
 /// Прочитать диалог «Новый проект» (`ask_kind` — как при его создании).
@@ -305,10 +337,9 @@ pub fn build_options_dialog(o: &BuildOptions, packages: &[String]) -> Dialog {
         Rect::new(2, 15, 68, 17),
         "Для Alt+F9, F9, Ctrl+F9 и тестов; очистке — только профиль и цель.\nАргументы программы получает запуск: cargo run … -- аргументы.",
     ));
-    let w = 70;
-    d.add(Button::new(Rect::new(w / 2 - 20, 18, w / 2 - 7, 20), "~С~обрать", cm::OK, bf::DEFAULT));
-    d.add(Button::new(Rect::new(w / 2 - 6, 18, w / 2 + 7, 20), "Со~х~ранить", cm::YES, bf::NORMAL));
-    d.add(Button::new(Rect::new(w / 2 + 8, 18, w / 2 + 20, 20), "Отмена", cm::CANCEL, bf::NORMAL));
+    d.add(Button::new(Rect::new(5, 18, 30, 20), "Сохранить и ~с~обрать", cm::OK, bf::DEFAULT));
+    d.add(Button::new(Rect::new(31, 18, 47, 20), "Со~х~ранить", cm::YES, bf::NORMAL));
+    d.add(Button::new(Rect::new(48, 18, 63, 20), "Отмена", cm::CANCEL, bf::NORMAL));
     d.select(prof);
     d
 }
@@ -359,7 +390,7 @@ pub fn new_form_dialog(existing: &[String]) -> Dialog {
         Rect::new(2, 11, 56, 13),
         "Имя — модуль forms::имя (латиница, цифры, _).\nDialog — run() ждёт OK/Отмены; Window — open() и дальше.",
     ));
-    ok_cancel(&mut d, 14);
+    action_cancel(&mut d, 14, "~С~оздать");
     d.select(first);
     d
 }
@@ -413,7 +444,7 @@ pub fn app_options_dialog(app: &AppModel, forms: &[String]) -> Dialog {
     d.add(Label::new(Rect::new(1, 4, 18, 5), "~Я~зык", Some(cb)));
     let items: Vec<&str> = forms.iter().map(|s| s.as_str()).collect();
     field(&mut d, 18, 6, "~С~тартовая форма", &app.startup_form, 30, Some(&items));
-    ok_cancel(&mut d, 9);
+    action_cancel(&mut d, 9, "~П~рименить");
     d.select(first);
     d
 }
@@ -614,25 +645,43 @@ impl Config {
     }
 }
 
-pub fn options_dialog(cfg: &Config) -> Dialog {
-    let mut d = Dialog::centered(66, 28, "Параметры среды");
-    let mut th = RadioButtons::radio_buttons(Rect::new(18, 2, 50, 5), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
+pub fn options_dialog(cfg: &Config) -> PagedDialog {
+    let mut d = Dialog::centered(66, 22, "Параметры среды");
+    let mut groups = Vec::new();
+    let start = d.win.group.children.len();
+    let mut th = RadioButtons::radio_buttons(Rect::new(18, 4, 62, 7), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
     th.value = cfg.theme;
     let th = d.add(th);
-    d.add(Label::new(Rect::new(1, 2, 18, 3), "~Т~ема", Some(th)));
-    let mut cb = CheckBoxes::check_boxes(Rect::new(18, 6, 62, 8), &["~С~охранять всё перед сборкой", "Сервер ~L~SP в редакторе кода"]);
-    cb.value = u32::from(cfg.autosave) | (u32::from(cfg.lsp_enabled) << 1);
-    let cb = d.add(cb);
-    d.add(Label::new(Rect::new(1, 6, 18, 7), "Сб~о~рка", Some(cb)));
-    field(&mut d, 18, 9, "~c~argo", &cfg.cargo, 44, None);
-    field(&mut d, 18, 11, "t~v~ision-rs", &cfg.dep_value, 44, None);
-    d.add(StaticText::new(Rect::new(18, 12, 64, 13), "ссылка git или путь для новых проектов"));
-    field(&mut d, 18, 14, "Сервер L~S~P", &cfg.lsp_command, 44, None);
-    d.add(StaticText::new(Rect::new(18, 15, 64, 16), "rustup component add rust-analyzer"));
-    field(&mut d, 18, 16, "Сервер Cargo.to~m~l", &cfg.toml_lsp_command, 44, None);
-    d.add(StaticText::new(Rect::new(18, 17, 64, 18), "cargo install --locked crates-lsp"));
-    let mut hl = CheckBoxes::check_boxes(
-        Rect::new(18, 19, 62, 24),
+    d.add(Label::new(Rect::new(2, 4, 18, 5), "~Т~ема", Some(th)));
+    let mut autosave = CheckBoxes::check_boxes(Rect::new(2, 9, 63, 10), &["~С~охранять всё перед сборкой"]);
+    autosave.value = u32::from(cfg.autosave);
+    d.add(autosave);
+    groups.push(pages::ids_since(&d, start));
+
+    let start = d.win.group.children.len();
+    field(&mut d, 18, 4, "~c~argo", &cfg.cargo, 44, None);
+    field(&mut d, 18, 7, "t~v~ision-rs", &cfg.dep_value, 44, None);
+    d.add(StaticText::new(
+        Rect::new(2, 9, 63, 12),
+        "tvision-rs: Git-адрес или каталог библиотеки\nдля новых приложений с формами.\nКоманды установки инструментов — в справке F1.",
+    ));
+    groups.push(pages::ids_since(&d, start));
+
+    let start = d.win.group.children.len();
+    let mut enabled = CheckBoxes::check_boxes(Rect::new(2, 4, 63, 5), &["Включить серверы ~я~зыка"]);
+    enabled.value = u32::from(cfg.lsp_enabled);
+    d.add(enabled);
+    field(&mut d, 18, 7, "Сервер ~R~ust", &cfg.lsp_command, 44, None);
+    field(&mut d, 18, 10, "Сервер ~T~OML", &cfg.toml_lsp_command, 44, None);
+    d.add(StaticText::new(
+        Rect::new(2, 12, 63, 15),
+        "Rust: rust-analyzer. TOML: crates-lsp.\nПустой сервер TOML — выключен.\nДиагностика — Код → Серверы языка.",
+    ));
+    groups.push(pages::ids_since(&d, start));
+
+    let start = d.win.group.children.len();
+    let mut editor = CheckBoxes::check_boxes(
+        Rect::new(2, 4, 63, 9),
         &[
             "Подсвечивать ~с~троку курсора",
             "Подсвечивать с~т~олбец курсора",
@@ -641,24 +690,24 @@ pub fn options_dialog(cfg: &Config) -> Dialog {
             "~П~одсказки при наборе",
         ],
     );
-    hl.value = u32::from(cfg.hl_line)
+    editor.value = u32::from(cfg.hl_line)
         | (u32::from(cfg.hl_col) << 1)
         | (u32::from(cfg.fmt_on_save) << 2)
         | (u32::from(cfg.auto_close) << 3)
         | (u32::from(cfg.auto_complete) << 4);
-    let hl = d.add(hl);
-    d.add(Label::new(Rect::new(1, 19, 18, 20), "~Р~едактор", Some(hl)));
-    ok_cancel(&mut d, 25);
-    d.select(th);
-    d
+    d.add(editor);
+    groups.push(pages::ids_since(&d, start));
+    d.add(StaticText::new(Rect::new(2, 17, 63, 18), "Ctrl+PgUp/PgDn — разделы; Применить — сохранить изменения."));
+    action_cancel(&mut d, 19, "~П~рименить");
+    PagedDialog::new(d, ["~1~ Общие", "~2~ Инструменты", "~3~ Серверы", "~4~ Редактор"].into_iter().zip(groups).collect())
 }
 
 pub fn read_options(cfg: &mut Config, v: &Value) {
     let v = strs(v);
     cfg.theme = v.first().and_then(|x| x.as_u32()).unwrap_or(0).min(2);
-    let flags = v.get(1).and_then(|x| x.as_u32()).unwrap_or(3);
+    let flags = v.get(1).and_then(|x| x.as_u32()).unwrap_or(1);
     cfg.autosave = flags & 1 != 0;
-    cfg.lsp_enabled = flags & 2 != 0;
+    cfg.lsp_enabled = v.get(4).and_then(|x| x.as_u32()).unwrap_or(1) != 0;
     let cargo = s_at(&v, 2);
     if !cargo.trim().is_empty() {
         cfg.cargo = cargo.trim().to_string();
@@ -668,13 +717,13 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
         cfg.dep_git = matches!(dep, Dependency::Git(_));
         cfg.dep_value = dv.trim().to_string();
     }
-    let lsp = s_at(&v, 4);
+    let lsp = s_at(&v, 5);
     if !lsp.trim().is_empty() {
         cfg.lsp_command = lsp.trim().to_string();
     }
     // Сервер Cargo.toml (crates-lsp): пустое поле — выключен.
-    cfg.toml_lsp_command = s_at(&v, 5).trim().to_string();
-    let hl = v.get(6).and_then(|x| x.as_u32()).unwrap_or(31);
+    cfg.toml_lsp_command = s_at(&v, 6).trim().to_string();
+    let hl = v.get(7).and_then(|x| x.as_u32()).unwrap_or(31);
     cfg.hl_line = hl & 1 != 0;
     cfg.hl_col = hl & 2 != 0;
     cfg.fmt_on_save = hl & 4 != 0;
@@ -692,7 +741,7 @@ pub fn recent_dialog(recent: &[String]) -> (Dialog, ViewId) {
     let mut l = ListBox::new(Rect::new(2, 2, 66, 12), 1, Some(sb));
     l.set_items(recent.to_vec());
     let id = d.add(l);
-    ok_cancel(&mut d, 13);
+    action_cancel(&mut d, 13, "~О~ткрыть");
     d.select(id);
     (d, id)
 }

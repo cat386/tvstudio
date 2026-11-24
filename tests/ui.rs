@@ -282,6 +282,49 @@ fn props_dialog_renames_control() {
 }
 
 #[test]
+fn inspector_selects_known_values_and_preserves_undo() {
+    use tvstudio::model::FormClass;
+    use tvstudio::props::{self, Prop};
+    let mut t = T::new("property_choices");
+    t.open_about();
+    let doc = Ide::top_doc(&t.app).unwrap();
+    doc.borrow_mut().sel.clear();
+    t.pump();
+    t.cmd(CM_SHOW_INSPECTOR);
+    let id = t.ide.inspector.unwrap();
+    let select_prop = |t: &mut T, prop| {
+        let row = props::props_for(&doc.borrow().form, None).iter().position(|p| *p == prop).unwrap();
+        let w = t.app.find_mut::<InspectorWindow>(id).unwrap();
+        w.win.group.find_mut::<Table>(w.table_id).unwrap().set_cursor(row, 1);
+    };
+    select_prop(&mut t, Prop::FormClass);
+    t.keys(&[kb::ENTER, kb::key(Key::Down), kb::ENTER]);
+    assert_eq!(doc.borrow().form.class, FormClass::Window);
+    t.cmd(cm::UNDO);
+    assert_eq!(doc.borrow().form.class, FormClass::Dialog);
+    select_prop(&mut t, Prop::FormCentered);
+    let before = doc.borrow().form.centered;
+    t.key(kb::ENTER);
+    assert_eq!(doc.borrow().form.centered, !before);
+    t.cmd(cm::UNDO);
+    assert_eq!(doc.borrow().form.centered, before);
+}
+
+#[test]
+fn delete_in_code_and_alt_f3_close_keep_their_native_meaning() {
+    let mut t = T::new("editor_shortcuts");
+    let file = t.dir.join("shortcut.txt");
+    std::fs::write(&file, "abc").unwrap();
+    let id = t.ide.open_file(&mut t.app, &file, None).unwrap();
+    t.pump();
+    t.key(kb::key(Key::Del));
+    assert_eq!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.text(), "bc");
+    t.cmd(cm::SAVE);
+    t.key(kb::ALT_F3);
+    assert!(t.app.find::<CodeWindow>(id).is_none(), "Alt+F3 закрывает окно, а не открывает замену");
+}
+
+#[test]
 fn menu_editor_adds_item_and_command() {
     let mut t = T::new("menu");
     t.app.put_event(Event::command_event(CM_EDIT_MENU));

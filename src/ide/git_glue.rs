@@ -10,7 +10,7 @@ pub(super) fn menu() -> Menu {
         .item("~И~зменения", CM_GIT_SHOW)
         .item("~В~ыбрать ветку...", CM_GIT_BRANCH)
         .item("~Н~овая ветка...", CM_GIT_NEW_BRANCH)
-        .item("Ист~о~рия коммитов...", CM_GIT_HISTORY)
+        .item("Истори~я~ коммитов...", CM_GIT_HISTORY)
         .item("~С~оздать репозиторий...", CM_GIT_INIT)
         .separator()
         .item("П~у~ть к Git...", CM_GIT_CONFIG)
@@ -18,9 +18,9 @@ pub(super) fn menu() -> Menu {
         .item("Автор: ~г~лобально...", CM_GIT_IDENTITY_GLOBAL)
         .separator()
         .item("Добавить ~o~rigin...", CM_GIT_ORIGIN)
-        .item("~F~etch из origin", CM_GIT_FETCH)
-        .item("P~u~ll (fast-forward)", CM_GIT_PULL)
-        .item("~P~ush в origin...", CM_GIT_PUSH)
+        .item("Получить сс~ы~лки (fetch)", CM_GIT_FETCH)
+        .item("~О~бновить ветку (pull)", CM_GIT_PULL)
+        .item("О~т~править ветку (push)...", CM_GIT_PUSH)
 }
 
 /// Результат связывается с поколением проекта. Смена проекта закрывает

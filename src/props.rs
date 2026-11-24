@@ -215,6 +215,17 @@ fn yes_no(b: bool) -> String {
 }
 
 /// Разбор логического значения.
+/// Варианты для свойств с конечным набором значений в диалоге и инспекторе.
+pub fn choices(form: &Form, prop: Prop) -> Vec<String> {
+    match prop {
+        Prop::FormClass => vec!["Dialog".into(), "Window".into()],
+        Prop::FormPalette => vec!["серый".into(), "синий".into(), "бирюзовый".into()],
+        Prop::Link => std::iter::once(String::new()).chain(form.controls.iter().map(|c| c.name.clone())).collect(),
+        Prop::Command => ["cm::OK", "cm::CANCEL", "cm::YES", "cm::NO", "cm::CLOSE"].into_iter().map(String::from).collect(),
+        _ => Vec::new(),
+    }
+}
+
 pub fn parse_bool(s: &str) -> Result<bool, String> {
     match s.trim().to_lowercase().as_str() {
         "да" | "д" | "yes" | "y" | "true" | "1" | "+" | "вкл" | "on" => Ok(true),
