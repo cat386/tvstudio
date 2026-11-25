@@ -7,17 +7,24 @@ pub struct PagedDialog {
     pub dialog: Dialog,
     pages: Vec<Vec<ViewId>>,
     selected: usize,
+    tabs: Vec<(ViewId, String)>,
 }
 
 impl PagedDialog {
     pub fn new(mut dialog: Dialog, pages: Vec<(&str, Vec<ViewId>)>) -> Self {
+        assert!(!pages.is_empty());
+        let mut tabs = Vec::new();
         let mut x = 2;
         for (i, (title, _)) in pages.iter().enumerate() {
-            let width = tvision::text::cstr_width(title) as i32 + 4;
-            dialog.add(Button::new(Rect::new(x, 1, x + width, 3), title, PAGE_COMMAND + i as u16, bf::NORMAL));
+            if pages.len() == 1 {
+                break;
+            }
+            let width = tvision::text::cstr_width(title) as i32 + 6;
+            let id = dialog.add(Button::new(Rect::new(x, 1, x + width, 3), title, PAGE_COMMAND + i as u16, bf::NORMAL));
+            tabs.push((id, title.to_string()));
             x += width + 1;
         }
-        let mut result = Self { dialog, pages: pages.into_iter().map(|(_, ids)| ids).collect(), selected: 0 };
+        let mut result = Self { dialog, pages: pages.into_iter().map(|(_, ids)| ids).collect(), selected: 0, tabs };
         result.show(0);
         result
     }
@@ -35,6 +42,11 @@ impl PagedDialog {
             return;
         }
         self.selected = page;
+        for (i, (id, title)) in self.tabs.iter().enumerate() {
+            if let Some(button) = self.dialog.win.group.find_mut::<Button>(*id) {
+                button.title = format!("{}{}", if i == page { "● " } else { "  " }, title);
+            }
+        }
         for (i, ids) in self.pages.iter().enumerate() {
             for id in ids {
                 if let Some(v) = self.dialog.win.group.view_mut(*id) {
