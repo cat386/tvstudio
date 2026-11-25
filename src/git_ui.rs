@@ -16,11 +16,21 @@ pub struct Panel {
 impl Panel {
     pub fn open(app: &mut Program) -> Self {
         let extent = app.desktop().group.vs.extent();
-        let mut window = Window::new(extent.grown(-1, -1), "Git", 0);
+        let bottom = app
+            .desktop()
+            .group
+            .children
+            .iter()
+            .find_map(|v| v.as_any().downcast_ref::<crate::toolwins::MessagesWindow>().map(|_| v.vs().origin.y))
+            .unwrap_or(extent.height() - ((extent.height() / 4).clamp(5, 9) - 2));
+        let mut window = Window::new(Rect::new(1, 0, extent.width() - 1, bottom), "Git", 0);
+        window.group.vs.grow_mode = gf::GROW_HI_X | gf::GROW_HI_Y;
 
         let scroll1 = window.add(ScrollBar::new(Rect::new(0, 0, 1, 10)));
 
-        let list_view = window.add(ListBox::new(Rect::default(), 1, Some(scroll1)));
+        let mut list = ListBox::new(Rect::default(), 1, Some(scroll1));
+        list.set_items(vec!["Загрузка…".into()]);
+        let list_view = window.add(list);
 
         let line = window.add(Line::new(Rect::default()).to_frame());
 
@@ -31,7 +41,7 @@ impl Panel {
         let staged = button(&mut window, "Изменения и~н~декса", CM_GIT_DIFF_STAGED);
         let add = button(&mut window, "~+~ В индекс", CM_GIT_STAGE);
         let remove = button(&mut window, "~-~ Из индекса", CM_GIT_UNSTAGE);
-        let commit = button(&mut window, "~К~оммит", CM_GIT_COMMIT);
+        let commit = button(&mut window, "~К~оммит...", CM_GIT_COMMIT);
         let branch = button(&mut window, "~В~етка...", CM_GIT_BRANCH);
         // Добавляем кнопки
         window.set_layout(
@@ -56,13 +66,14 @@ impl Panel {
     /// статуса меняется и номер строки может указывать на другой файл.
     pub fn set(&mut self, app: &mut Program, snapshot: Snapshot) {
         let keep: Option<PathBuf> = self.selected(app).map(|entry| entry.path.clone());
-        let rows = snapshot
+        let mut rows = snapshot
             .changes
             .iter()
-            .map(|change| {
-                format!(" {}{}   {}", change.index, change.worktree, crate::git::display(change.path.to_string_lossy().as_bytes()).replace('\n', "↵"))
-            })
+            .map(|change| format!("{}  {}", change_label(change), crate::git::display(change.path.to_string_lossy().as_bytes()).replace('\n', "↵")))
             .collect::<Vec<_>>();
+        if rows.is_empty() {
+            rows.push("Нет изменений".into());
+        }
         if let Some(list) = app.find_mut::<ListBox>(self.list) {
             let old = list.focused;
             let cursor = keep.and_then(|path| snapshot.changes.iter().position(|entry| entry.path == path)).unwrap_or(old);
@@ -83,10 +94,35 @@ impl Panel {
         }
     }
 
+    pub fn error(&self, app: &mut Program) {
+        if self.snapshot.is_none() {
+            if let Some(list) = app.find_mut::<ListBox>(self.list) {
+                list.set_items(vec!["Не удалось прочитать статус. Подробности — в сообщениях.".into()]);
+            }
+        }
+        self.title(app, "Git — ошибка, см. сообщения".into());
+    }
+
     pub fn title(&self, app: &mut Program, title: String) {
         if let Some(window) = app.find_mut::<Window>(self.window) {
             window.title = title;
         }
+    }
+}
+
+fn change_label(change: &Change) -> &'static str {
+    if change.unmerged {
+        "Конфликт"
+    } else if change.index == '?' {
+        "Новый файл"
+    } else if change.index != '.' && change.worktree != '.' {
+        "Индекс + правки"
+    } else if change.index != '.' {
+        "В индексе"
+    } else if change.worktree == 'D' {
+        "Удалён"
+    } else {
+        "Изменён"
     }
 }
 
@@ -180,13 +216,13 @@ pub fn clone_dialog(app: &mut Program, start: &std::path::Path) -> Option<CloneR
         let destination = dialog.add(destination);
         dialog.add(Label::new(Rect::new(2, 4, width - 2, 5), "~К~аталог назначения", Some(destination)));
         dialog.add(Button::new(Rect::new(width - 8, 5, width - 2, 7), "~…~", cm::YES, bf::NORMAL));
-        let mut branch = InputLine::new(Rect::new(2, 9, width - 2, 10), 256);
+        let mut branch = InputLine::new(Rect::new(2, 9, width - 23, 10), 256);
         branch.set_text(&branch_name);
         let branch = dialog.add(branch);
-        dialog.add(Label::new(Rect::new(2, 8, width - 2, 9), "~В~етка (пусто — по умолчанию)", Some(branch)));
-        dialog.add(Button::new(Rect::new(2, 12, 17, 14), "К~л~онировать", cm::OK, bf::DEFAULT));
-        dialog.add(Button::new(Rect::new(18, 12, 35, 14), "~С~писок веток...", cm::NO, bf::NORMAL));
-        dialog.add(Button::new(Rect::new(width - 13, 12, width - 2, 14), "Отмена", cm::CANCEL, bf::NORMAL));
+        dialog.add(Label::new(Rect::new(2, 8, width - 2, 9), "~В~етка (пусто — основная)", Some(branch)));
+        dialog.add(Button::new(Rect::new(width / 2 - 15, 12, width / 2, 14), "К~л~онировать", cm::OK, bf::DEFAULT));
+        dialog.add(Button::new(Rect::new(width - 21, 8, width - 2, 10), "~С~писок веток...", cm::NO, bf::NORMAL));
+        dialog.add(Button::new(Rect::new(width / 2 + 1, 12, width / 2 + 13, 14), "Отмена", cm::CANCEL, bf::NORMAL));
         dialog.add(StaticText::new(Rect::new(2, 10, width - 2, 12), "В каталоге назначения будет создана папка репозитория."));
         dialog.select(if focus_on_parent { destination } else { address });
         let (command, dialog) = crate::dialogs::exec(app, dialog);

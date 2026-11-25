@@ -3,6 +3,42 @@ use std::process::Command;
 use tvision::platform::HeadlessBackend;
 
 #[test]
+fn clone_lookup_cancel_and_failure_keep_welcome_navigation() {
+    for fail in [false, true] {
+        let mut app = Program::new(Box::new(HeadlessBackend::new(80, 25)), Some(menu_bar()), Some(status_line()));
+        let mut ide = Ide::new(Config { lsp_enabled: false, ..Config::default() }, true);
+        ide.startup(&mut app, vec![]);
+        let welcome = ide.start_page.unwrap();
+        let dir = std::env::temp_dir();
+        ide.start_git(&mut app, dir.clone(), "Список веток", move |_| {
+            if fail {
+                Err("Тестовая ошибка сети".into())
+            } else {
+                Ok(Outcome::CloneBranches {
+                    destination: dir.join("test-repo"),
+                    dir,
+                    url: "https://example.invalid/repo.git".into(),
+                    default: Some("main".into()),
+                    branches: vec!["main".into()],
+                })
+            }
+        });
+        app.put_event(Event::KeyDown(kb::key(Key::Esc)));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while ide.git.pending.is_some() {
+            ide.poll_git(&mut app);
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(ide.start_page, Some(welcome));
+        assert!(app.desktop().group.view(welcome).is_some());
+        app.redraw();
+        assert!(app.screen_text().contains("Новый проект"));
+        assert!(app.screen_text().contains("Недавние проекты"));
+    }
+}
+
+#[test]
 fn branch_picker_reloads_editor_and_protects_unsaved_buffer() {
     let dir = std::env::temp_dir().join(format!("tvstudio-git-branch-ui-{}", std::process::id()));
     std::fs::create_dir(&dir).unwrap();

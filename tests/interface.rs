@@ -35,7 +35,7 @@ fn properties_of_every_component_fit_and_roundtrip_on_every_page() {
                 d.show(page);
                 let screen = render(d, width, height);
                 assert!(screen.contains("Свойства:"), "{kind:?}: {screen}");
-                assert!(screen.contains("Применить") && screen.contains("Отмена"), "{kind:?}, page {page}: {screen}");
+                assert!(screen.contains("Сохранить") && screen.contains("Отмена"), "{kind:?}, page {page}: {screen}");
             }
         }
     }
@@ -54,7 +54,7 @@ fn settings_sections_fit_and_preserve_hidden_values() {
             assert_eq!(back, cfg);
             let screen = render(d, width, height);
             assert!(screen.contains("Параметры среды"), "{screen}");
-            assert!(screen.contains("Применить") && screen.contains("Отмена"), "page {page}: {screen}");
+            assert!(screen.contains("Сохранить") && screen.contains("Отмена"), "page {page}: {screen}");
         }
     }
 }
@@ -171,4 +171,46 @@ fn menu_mnemonics_do_not_hide_other_items() {
         }
     }
     check(&menu_bar());
+}
+
+#[test]
+fn property_sections_are_named_and_active_section_survives_field_focus() {
+    let mut form = Form::new("audit", "Test");
+    form.controls.push(form.new_control(Kind::Table, 2, 2));
+    let (mut dialog, _) = dialogs::props_dialog(&form, Some(0));
+    assert_eq!(dialog.page_count(), 3);
+    for (page, title) in ["Основное", "Данные", "Поведение"].iter().enumerate() {
+        dialog.show(page);
+        let tabs: Vec<_> = dialog
+            .dialog
+            .win
+            .group
+            .children
+            .iter()
+            .filter_map(|v| v.as_any().downcast_ref::<Button>())
+            .filter(|b| b.title.starts_with("● "))
+            .collect();
+        assert_eq!(tabs.len(), 1);
+        assert!(tabs[0].title.contains(title));
+        assert_ne!(dialog.dialog.win.group.current_view().unwrap().vs().id, tabs[0].vs.id);
+    }
+    let mut form = Form::new("audit", "Test");
+    form.controls.push(form.new_control(Kind::Line, 2, 2));
+    let (dialog, _) = dialogs::props_dialog(&form, Some(0));
+    assert_eq!(dialog.page_count(), 1);
+    let screen = render(dialog, 80, 25);
+    assert!(!screen.contains("PgUp") && !screen.contains("пункту в строке"), "{screen}");
+}
+
+#[test]
+fn settings_page_buttons_and_dialog_help_fit_in_80_columns() {
+    for page in 0..4 {
+        let mut dialog = dialogs::options_dialog(&Config::default());
+        dialog.show(page);
+        let screen = render(dialog, 80, 25);
+        for text in ["Общие", "Инструменты", "Серверы", "Редактор", "Сохранить", "Отмена"] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+        assert!(!screen.contains("F9 Собрать"), "{screen}");
+    }
 }

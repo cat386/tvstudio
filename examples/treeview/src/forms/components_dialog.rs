@@ -42,11 +42,12 @@ pub struct ComponentsDialogIds {
     pub tid: ViewId,
     pub button1: ViewId,
     pub button2: ViewId,
+    pub line1: ViewId,
 }
 
 /// Построить диалог «Компоненты».
 pub fn build() -> (Dialog, ComponentsDialogIds) {
-    let mut d = Dialog::new(Rect::new(10, 3, 62, 21), "Компоненты");
+    let mut d = Dialog::new(Rect::new(10, 3, 62, 22), "Компоненты");
     d.win.group.vs.options |= of::CENTERED;
     // Текст «text1»
     let text1 = d.add(StaticText::new(Rect::new(3, 2, 49, 3), "Пробел — отметить, Enter на листе — OK"));
@@ -65,10 +66,12 @@ pub fn build() -> (Dialog, ComponentsDialogIds) {
         d.add(v)
     };
     // Кнопка «button1»
-    let button1 = d.add(Button::new(Rect::new(12, 14, 24, 16), "O~K~", cm::OK, bf::DEFAULT));
+    let button1 = d.add(Button::new(Rect::new(12, 16, 24, 18), "O~K~", cm::OK, bf::DEFAULT));
     // Кнопка «button2»
-    let button2 = d.add(Button::new(Rect::new(27, 14, 39, 16), "Отмена", cm::CANCEL, bf::NORMAL));
-    (d, ComponentsDialogIds { text1, tid, button1, button2 })
+    let button2 = d.add(Button::new(Rect::new(27, 16, 39, 18), "Отмена", cm::CANCEL, bf::NORMAL));
+    // Линия «line1»
+    let line1 = d.add(Line::horizontal(Rect::new(1, 14, 51, 15)).to_frame());
+    (d, ComponentsDialogIds { text1, tid, button1, button2, line1 })
 }
 
 /// Показать форму модально. `data` заносятся в диалог, а если диалог

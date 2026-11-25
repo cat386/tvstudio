@@ -73,7 +73,7 @@ impl Ide {
         self.last_error = Some(error.clone());
         self.say(app, &format!("Git: {error}"));
         if let Some(panel) = &self.git.panel {
-            panel.title(app, "Git — ошибка, см. сообщения".into());
+            panel.error(app);
         }
     }
 
@@ -190,6 +190,8 @@ impl Ide {
         };
         match command {
             CM_GIT_SHOW | CM_GIT_REFRESH => {
+                self.dismiss_start(app);
+                self.msgs(app);
                 let id = self.git.panel(app).window;
                 app.focus(id);
                 self.start_git(app, dir, "Чтение статуса", |git| Ok(status(git.snapshot()?, "")));
@@ -362,6 +364,7 @@ impl Ide {
         if let Some(file) = project_file {
             self.open_project(app, &file);
         } else {
+            self.dismiss_start(app);
             let panel = self.git.panel(app);
             panel.set(app, snapshot);
             app.focus(panel.window);

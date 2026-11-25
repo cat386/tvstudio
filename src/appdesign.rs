@@ -6,6 +6,8 @@
 //! добавляется в список команд. «Отмена» отбрасывает все изменения.
 
 use tvision::*;
+mod item_dialog;
+use item_dialog::{ActionFields, ItemDialog};
 
 use crate::cmds::*;
 use crate::dialogs::{build_message_box, flat};
@@ -156,7 +158,7 @@ impl ListEditor {
             d.add(button(x, y, 9, "~←~", CM_LE_LEFT));
             d.add(button(x + 9, y, 9, "~→~", CM_LE_RIGHT));
         }
-        d.add(Button::new(Rect::new(22, 19, 38, 21), "~П~рименить", cm::OK, bf::DEFAULT));
+        d.add(Button::new(Rect::new(22, 19, 38, 21), "Со~х~ранить", cm::OK, bf::DEFAULT));
         d.add(Button::new(Rect::new(40, 19, 54, 21), "Отмена", cm::CANCEL, bf::NORMAL));
         d.add(Relay::new(list_id, CM_LE_EDIT));
         d.select(list_id);
@@ -232,7 +234,8 @@ impl ListEditor {
     }
 
     /// Диалог правки строки `p`.
-    fn edit_dialog(&self, p: Pending) -> Dialog {
+    fn edit_dialog(&self, p: Pending) -> ItemDialog {
+        let mut action: Option<ActionFields> = None;
         let cmds: Vec<String> = self.app.all_command_names();
         let cmd_refs: Vec<&str> = cmds.iter().map(|s| s.as_str()).collect();
         // Поле «надпись + ввод (+ список)» в строке y.
@@ -248,11 +251,10 @@ impl ListEditor {
             d.add(Label::new(Rect::new(2, y, x, y + 1), label, Some(id)));
             id
         }
-        let ok_cancel = |d: &mut Dialog, y: i32, w: i32| {
-            d.add(Button::new(Rect::new(w / 2 - 13, y, w / 2 - 2, y + 2), "O~K~", cm::OK, bf::DEFAULT));
-            d.add(Button::new(Rect::new(w / 2 + 1, y, w / 2 + 12, y + 2), "Отмена", cm::CANCEL, bf::NORMAL));
+        let ok_cancel = |d: &mut Dialog, y: i32| {
+            crate::dialogs::action_cancel(d, y, if p.new { "Добавить" } else { "Сохранить" });
         };
-        match self.kind {
+        let mut dialog = match self.kind {
             LeKind::Menu => {
                 let r = if p.new {
                     MenuRow { depth: 0, sub: p.sub, sep: false, title: String::new(), command: String::new(), key: String::new(), help: 0 }
@@ -265,7 +267,7 @@ impl ListEditor {
                     field(&mut d, 4, "К~л~авиша", &r.key, None, 16);
                     field(&mut d, 6, "~С~правка", &r.help.to_string(), None, 8);
                     d.add(StaticText::new(Rect::new(2, 7, 54, 8), "~Ф~айл — буква в тильдах выбирается Alt+буква."));
-                    ok_cancel(&mut d, 9, 56);
+                    ok_cancel(&mut d, 9);
                     d.select(first);
                     d
                 } else {
@@ -274,9 +276,9 @@ impl ListEditor {
                     field(&mut d, 4, "~К~оманда", &r.command, Some(&cmd_refs), 38);
                     field(&mut d, 6, "К~л~авиша", &r.key, None, 20);
                     field(&mut d, 8, "~С~правка", &r.help.to_string(), None, 8);
-                    d.add(StaticText::new(Rect::new(2, 10, 58, 11), "Клавиша: F2, Alt+X, Ctrl+N, Shift+F6. Новое имя команды —"));
-                    d.add(StaticText::new(Rect::new(2, 11, 58, 12), "новая команда программы (появится в списке команд)."));
-                    ok_cancel(&mut d, 12, 60);
+                    d.add(StaticText::new(Rect::new(2, 10, 58, 11), "Клавиша: F2, Alt+X, Ctrl+N, Shift+F6."));
+                    d.add(StaticText::new(Rect::new(2, 11, 58, 12), "Новое имя создаст команду. Подробнее — F1."));
+                    ok_cancel(&mut d, 12);
                     d.select(first);
                     d
                 }
@@ -292,7 +294,7 @@ impl ListEditor {
                 field(&mut d, 4, "~К~лавиша", &s.key, None, 20);
                 field(&mut d, 6, "К~о~манда", &s.command, Some(&cmd_refs), 38);
                 d.add(StaticText::new(Rect::new(2, 8, 58, 9), "Текст «~F2~ Сохранить»; пустой — клавиша без надписи."));
-                ok_cancel(&mut d, 10, 60);
+                ok_cancel(&mut d, 10);
                 d.select(first);
                 d
             }
@@ -307,7 +309,7 @@ impl ListEditor {
                 let first = field(&mut d, 2, "~И~мя", &c.name, None, 30);
                 field(&mut d, 3, "~Н~омер", &c.value.to_string(), None, 8);
                 let mut rb =
-                    RadioButtons::radio_buttons(Rect::new(18, 5, 50, 8), &["Ваш ~к~од (main.rs)", "Открыть ~ф~орму", "Показать ~с~ообщение"]);
+                    RadioButtons::radio_buttons(Rect::new(18, 5, 50, 8), &["Ваш ~к~од (main.rs)", "Открыть фо~р~му", "Показать соо~б~щение"]);
                 rb.value = match c.action {
                     Action::None => 0,
                     Action::Form(_) => 1,
@@ -317,15 +319,31 @@ impl ListEditor {
                 d.add(Label::new(Rect::new(2, 5, 18, 6), "~Д~ействие", Some(rb)));
                 let form = if let Action::Form(f) = &c.action { f.clone() } else { String::new() };
                 let msg = if let Action::Message(m) = &c.action { m.clone() } else { String::new() };
+                let start = d.win.group.children.len();
                 field(&mut d, 9, "~Ф~орма", &form, Some(&forms), 30);
+                let form_fields = d.win.group.children[start..].iter().map(|v| v.vs().id).collect();
+                let start = d.win.group.children.len();
                 field(&mut d, 10, "~Т~екст", &msg, None, 42);
+                let text_fields = d.win.group.children[start..].iter().map(|v| v.vs().id).collect();
+                action = Some((rb, form_fields, text_fields));
                 field(&mut d, 12, "Ко~м~ментарий", &c.comment, None, 42);
-                d.add(StaticText::new(Rect::new(2, 13, 62, 14), "Имя — константа ui::cmd::ИМЯ; номера 100–255 можно запрещать."));
-                ok_cancel(&mut d, 15, 64);
+                d.add(StaticText::new(Rect::new(2, 13, 62, 14), "Номер предложен автоматически. Подробнее — F1."));
+                ok_cancel(&mut d, 15);
                 d.select(first);
                 d
             }
-        }
+        };
+        dialog.win.group.vs.help_ctx = HC_APP_MODEL;
+        let (kind, model, rows, forms) = (self.kind, self.app.clone(), self.rows.clone(), self.forms.clone());
+        ItemDialog::new(
+            dialog,
+            Box::new(move |data| {
+                let mut draft = ListEditor::new(kind, &model, &forms);
+                draft.rows = rows.clone();
+                draft.apply(p, data)
+            }),
+            action,
+        )
     }
 
     /// Строки из данных диалога правки.
@@ -383,11 +401,11 @@ impl ListEditor {
                     }
                     row.help = s(2).trim().parse().unwrap_or(0);
                 } else {
-                    row.command = self.ensure_command(&s(1))?;
                     row.key = s(2).trim().to_string();
                     if !row.key.is_empty() && parse_key(&row.key).is_none() {
                         return Err(format!("Непонятная клавиша «{}». Примеры: F2, Alt+X, Ctrl+N.", row.key));
                     }
+                    row.command = self.ensure_command(&s(1))?;
                     row.help = s(3).trim().parse().unwrap_or(0);
                 }
                 if p.new {

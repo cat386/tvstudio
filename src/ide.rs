@@ -245,6 +245,26 @@ pub fn status_line() -> Vec<StatusDef> {
                 StatusItem::new("~Alt+F3~ Закрыть", kb::ALT_F3, cm::CLOSE),
             ]),
         ),
+        StatusDef::range(
+            HC_APP_MODEL,
+            HC_BUILD,
+            vec![
+                hint_item("~Enter~ Подтвердить"),
+                hint_item("~Esc~ Отмена"),
+                hint_item("~Tab~ Поле"),
+                StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
+            ],
+        ),
+        StatusDef::range(
+            HC_DIALOG,
+            HC_PROPERTIES,
+            vec![
+                hint_item("~Enter~ Подтвердить"),
+                hint_item("~Esc~ Отмена"),
+                hint_item("~Tab~ Поле"),
+                StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
+            ],
+        ),
         StatusDef::all(with(vec![
             StatusItem::new("~F1~ Справка", kb::F1, cm::HELP),
             //StatusItem::new("~F3~ Открыть", kb::f(3), cm::OPEN),
@@ -448,9 +468,13 @@ impl Ide {
     /// Окно сообщений (создаётся, если закрыто).
     fn msgs<'a>(&mut self, app: &'a mut Program) -> &'a mut MessagesWindow {
         if !Self::alive(app, self.messages) {
+            let current = Self::current_window(app);
             let l = self.layout(app);
             let id = dialogs::insert(app, MessagesWindow::new(l[2]));
             self.messages = Some(id);
+            if let Some(current) = current.filter(|id| Some(*id) != self.start_page) {
+                app.focus(current);
+            }
         }
         app.find_mut::<MessagesWindow>(self.messages.unwrap()).unwrap()
     }
@@ -1390,7 +1414,7 @@ impl Ide {
         MenuClock::install(app);
         let diag_hint = self.lsp_state.hint.clone();
         let hint: Box<dyn Fn(u16) -> String> = Box::new(move |ctx| match ctx {
-            HC_DESIGNER => "Стрелки — сдвиг, Shift — размер".into(),
+            HC_DESIGNER => String::new(),
             HC_PALETTE => "Enter — добавить на форму".into(),
             HC_PROJECT => "Enter — открыть".into(),
             HC_MESSAGES => "Enter — к месту ошибки".into(),

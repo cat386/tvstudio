@@ -5,7 +5,7 @@ title: Компоненты
 x: 10
 y: 3
 w: 52
-h: 18
+h: 19
 centered: true
 palette: gray
 help_ctx: 0
@@ -32,7 +32,7 @@ controls:
   - kind: button
     name: button1
     x: 12
-    y: 14
+    y: 16
     w: 12
     h: 2
     text: O~K~
@@ -42,9 +42,17 @@ controls:
   - kind: button
     name: button2
     x: 27
-    y: 14
+    y: 16
     w: 12
     h: 2
     text: Отмена
     command: cm::CANCEL
     scrollbar: false
+  - kind: line
+    name: line1
+    x: 1
+    y: 14
+    w: 50
+    h: 1
+    scrollbar: false
+    to_frame: true

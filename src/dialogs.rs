@@ -27,6 +27,9 @@ pub use project::ProjectDialog;
 /// Окно без тени.
 pub fn flat<T: View>(mut v: T) -> T {
     v.vs_mut().state &= !sf::SHADOW;
+    if v.as_any().is::<Dialog>() && v.vs().help_ctx == 0 {
+        v.vs_mut().help_ctx = HC_DIALOG;
+    }
     v
 }
 
@@ -68,8 +71,7 @@ pub fn choose(app: &mut Program, title: &str, items: &[String]) -> Option<usize>
     let mut list = ListBox::new(Rect::new(2, 2, w - 2, h - 4), 1, None);
     list.set_items(items.to_vec());
     let list_id = d.add(list);
-    d.add(Button::new(Rect::new(w - 26, h - 3, w - 14, h - 1), "O~K~", cm::OK, bf::DEFAULT));
-    d.add(Button::new(Rect::new(w - 13, h - 3, w - 2, h - 1), "Отмена", cm::CANCEL, bf::NORMAL));
+    action_cancel(&mut d, h - 3, "~В~ыбрать");
     d.select(list_id);
     let (cmd, d) = exec(app, d);
     if cmd != cm::OK {
@@ -85,8 +87,7 @@ pub fn input_box(app: &mut Program, title: &str, label: &str, initial: &str, lim
     let mut d = Dialog::centered(w, 8, title);
     let il = d.add(InputLine::new(Rect::new(4 + label_w, 2, w - 3, 3), limit));
     d.add(Label::new(Rect::new(2, 2, 3 + label_w, 3), label, Some(il)));
-    d.add(Button::new(Rect::new(w - 24, 5, w - 14, 7), "O~K~", cm::OK, bf::DEFAULT));
-    d.add(Button::new(Rect::new(w - 12, 5, w - 2, 7), "Отмена", cm::CANCEL, bf::NORMAL));
+    action_cancel(&mut d, 5, "Подтвердить");
     d.select(il);
     if let Some(v) = d.win.group.find_mut::<InputLine>(il) {
         v.set_text(initial);
@@ -146,21 +147,45 @@ fn is_multi(p: Prop, kind: Option<Kind>) -> bool {
 /// Диалог всех свойств выделенного элемента (или формы).
 pub fn props_dialog(form: &Form, sel: Option<usize>) -> (PagedDialog, Vec<Prop>) {
     let kind = sel.and_then(|i| form.controls.get(i)).map(|c| c.kind);
-    let list = props::props_for(form, sel);
+    let mut list = props::props_for(form, sel);
+    let multiple = list.iter().map(|p| if is_multi(*p, kind) { 4 } else { 1 }).sum::<i32>() > 13;
+    let section = |p: Prop| match p {
+        Prop::Name
+        | Prop::X
+        | Prop::Y
+        | Prop::W
+        | Prop::H
+        | Prop::FormName
+        | Prop::FormTitle
+        | Prop::FormClass
+        | Prop::FormX
+        | Prop::FormY
+        | Prop::FormW
+        | Prop::FormH => 0,
+        Prop::Text | Prop::Items | Prop::Value | Prop::Max => 1,
+        _ => 2,
+    };
+    if multiple {
+        list.sort_by_key(|p| section(*p));
+    }
     let title = match sel.and_then(|i| form.controls.get(i)) {
         Some(c) => format!("Свойства: {} ({})", c.name, c.kind.title()),
         None => format!("Свойства формы {}", form.name),
     };
     let mut d = Dialog::centered(66, 22, &title);
-    d.win.group.vs.help_ctx = HC_INSPECTOR;
+    d.win.group.vs.help_ctx = HC_PROPERTIES;
     let mut y = 4;
     let x = 16;
     let mut first = None;
     let mut pages = Vec::new();
+    let mut names = Vec::new();
+    let mut current_section = section(list[0]);
     let mut start = d.win.group.children.len();
     for p in &list {
         let rows = if is_multi(*p, kind) { 4 } else { 1 };
-        if y + rows > 17 {
+        if y + rows > 17 || (multiple && section(*p) != current_section && y > 4) {
+            names.push(["Основное", "Данные", "Поведение"][current_section]);
+            current_section = section(*p);
             pages.push(pages::ids_since(&d, start));
             start = d.win.group.children.len();
             y = 4;
@@ -189,18 +214,20 @@ pub fn props_dialog(form: &Form, sel: Option<usize>) -> (PagedDialog, Vec<Prop>)
             y += 1;
         }
     }
-    let hint = if kind.is_some() {
-        "Tab — следующее поле. Пункты списка — по одному в строке."
-    } else {
-        "Класс: Dialog / Window. Цвет: серый, синий, бирюзовый. Да / нет."
-    };
+    names.push(["Основное", "Данные", "Поведение"][current_section]);
     pages.push(pages::ids_since(&d, start));
-    d.add(StaticText::new(Rect::new(2, 17, 64, 19), &format!("{}\nCtrl+PgUp/PgDn — страницы", hint)));
-    action_cancel(&mut d, 19, "~П~рименить");
+    let hint = if list.iter().any(|p| is_multi(*p, kind)) {
+        "Данные списка: по одному пункту в строке."
+    } else {
+        "Tab — следующее поле. F1 — справка."
+    };
+    let hint = if pages.len() > 1 { format!("{hint}\nCtrl+PgUp/PgDn — разделы") } else { hint.into() };
+    d.add(StaticText::new(Rect::new(2, 17, 64, 19), &hint));
+    action_cancel(&mut d, 19, "Со~х~ранить");
     if let Some(f) = first {
         d.select(f);
     }
-    let titles: Vec<String> = (1..=pages.len()).map(|i| format!("~{}~", i)).collect();
+    let titles: Vec<String> = names.iter().enumerate().map(|(i, name)| format!("~{}~ {}", i + 1, name)).collect();
     let pages = titles.iter().zip(pages).map(|(title, ids)| (title.as_str(), ids)).collect();
     (PagedDialog::new(d, pages), list)
 }
@@ -386,10 +413,7 @@ pub fn new_form_dialog(existing: &[String]) -> Dialog {
     let titles: Vec<&str> = FormClass::ALL.iter().map(|c| c.title()).collect();
     let class = d.add(RadioButtons::radio_buttons(Rect::new(16, 8, 52, 10), &titles));
     d.add(Label::new(Rect::new(2, 8, 16, 9), "~К~ласс", Some(class)));
-    d.add(StaticText::new(
-        Rect::new(2, 11, 56, 13),
-        "Имя — модуль forms::имя (латиница, цифры, _).\nDialog — run() ждёт OK/Отмены; Window — open() и дальше.",
-    ));
+    d.add(StaticText::new(Rect::new(2, 11, 56, 13), "Имя: латиница, цифры и _.\nДиалог ждёт ответа; окно остаётся открытым."));
     action_cancel(&mut d, 14, "~С~оздать");
     d.select(first);
     d
@@ -444,7 +468,7 @@ pub fn app_options_dialog(app: &AppModel, forms: &[String]) -> Dialog {
     d.add(Label::new(Rect::new(1, 4, 18, 5), "~Я~зык", Some(cb)));
     let items: Vec<&str> = forms.iter().map(|s| s.as_str()).collect();
     field(&mut d, 18, 6, "~С~тартовая форма", &app.startup_form, 30, Some(&items));
-    action_cancel(&mut d, 9, "~П~рименить");
+    action_cancel(&mut d, 9, "Со~х~ранить");
     d.select(first);
     d
 }
@@ -647,6 +671,7 @@ impl Config {
 
 pub fn options_dialog(cfg: &Config) -> PagedDialog {
     let mut d = Dialog::centered(66, 22, "Параметры среды");
+    d.win.group.vs.help_ctx = HC_PAGED_DIALOG;
     let mut groups = Vec::new();
     let start = d.win.group.children.len();
     let mut th = RadioButtons::radio_buttons(Rect::new(18, 4, 62, 7), &["~g~ruvbox (256 цветов)", "~к~лассическая", "~ч~ёрно-белая"]);
@@ -697,8 +722,8 @@ pub fn options_dialog(cfg: &Config) -> PagedDialog {
         | (u32::from(cfg.auto_complete) << 4);
     d.add(editor);
     groups.push(pages::ids_since(&d, start));
-    d.add(StaticText::new(Rect::new(2, 17, 63, 18), "Ctrl+PgUp/PgDn — разделы; Применить — сохранить изменения."));
-    action_cancel(&mut d, 19, "~П~рименить");
+    d.add(StaticText::new(Rect::new(2, 17, 63, 18), "Ctrl+PgUp/PgDn — разделы. F1 — справка."));
+    action_cancel(&mut d, 19, "Со~х~ранить");
     PagedDialog::new(d, ["~1~ Общие", "~2~ Инструменты", "~3~ Серверы", "~4~ Редактор"].into_iter().zip(groups).collect())
 }
 

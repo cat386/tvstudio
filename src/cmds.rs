@@ -131,3 +131,7 @@ pub const CM_GIT_BRANCH: u16 = 1265;
 pub const CM_GIT_NEW_BRANCH: u16 = 1266;
 pub const CM_GIT_PULL: u16 = 1267;
 pub const CM_GIT_HISTORY: u16 = 1268;
+
+pub const HC_DIALOG: u16 = 1010;
+pub const HC_PAGED_DIALOG: u16 = 1011;
+pub const HC_PROPERTIES: u16 = 1012;

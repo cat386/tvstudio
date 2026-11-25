@@ -7,7 +7,8 @@ pub struct ProjectDialog {
 }
 
 impl ProjectDialog {
-    pub(super) fn new(dialog: Dialog, kind: Option<ViewId>, dependency: Vec<ViewId>) -> Self {
+    pub(super) fn new(mut dialog: Dialog, kind: Option<ViewId>, dependency: Vec<ViewId>) -> Self {
+        dialog.win.group.vs.help_ctx = crate::cmds::HC_DIALOG;
         let mut result = Self { dialog, kind, dependency };
         result.refresh();
         result
