@@ -670,7 +670,7 @@ impl Config {
 }
 
 pub fn options_dialog(cfg: &Config) -> PagedDialog {
-    let mut d = Dialog::centered(66, 22, "Параметры среды");
+    let mut d = Dialog::centered(90, 22, "Параметры среды");
     d.win.group.vs.help_ctx = HC_PAGED_DIALOG;
     let mut groups = Vec::new();
     let start = d.win.group.children.len();
