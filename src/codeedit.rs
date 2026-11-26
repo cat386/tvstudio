@@ -793,6 +793,19 @@ impl View for CodeEditor {
 
     fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
         let focused = self.fe.editor.vs.is_focused();
+        // Вставка — единая операция, без дополнения и обработки пар.
+        let paste = ev.command() == Some(cm::PASTE)
+            || matches!(ev, Event::KeyDown(k)
+                if (k.key == Key::Ins && k.mods == Mods::SHIFT)
+                    || (matches!(k.key, Key::Char('v' | 'V')) && k.mods.ctrl && !k.mods.alt));
+        if focused && paste {
+            self.completion = None;
+            self.auto_closed.clear();
+            let mut paste_event = Event::command_event(cm::PASTE);
+            self.fe.handle_event(&mut paste_event, ctx);
+            ev.clear();
+            return;
+        }
         // Открытый список дополнения перехватывает клавиши выбора.
         if self.completion.is_some() {
             match ev {
