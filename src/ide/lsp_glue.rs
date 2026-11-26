@@ -91,6 +91,9 @@ impl Srv {
 /// Чего ждём от сервера по номеру запроса.
 #[derive(Clone, Debug)]
 pub enum Wait {
+    Hover {
+        key: HoverKey,
+    },
     /// Дополнение в окне `win`; позиция курсора на момент запроса.
     Completion {
         win: ViewId,
@@ -118,9 +121,23 @@ pub enum Wait {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HoverKey {
+    generation: u64,
+    win: ViewId,
+    pos: Pos,
+    path: PathBuf,
+    text: String,
+    scroll: Point,
+    local: Point,
+}
+
 /// Всё, что среда держит для LSP.
 #[derive(Default)]
 pub struct LspState {
+    pub pointer: crate::hover::SharedPointer,
+    hover_key: Option<HoverKey>,
+    hover_requested: bool,
     pub docs: HashMap<PathBuf, DocSync>,
     /// Последние диагностики по файлам (как прислал сервер).
     pub diags: HashMap<PathBuf, Vec<Diagnostic>>,
@@ -236,7 +253,18 @@ impl Ide {
         }
         let hint = self.lsp_state.hint.clone();
         hint.borrow_mut().clear();
-        self.lsp_state = LspState { hint, ..LspState::default() };
+        let pointer = self.lsp_state.pointer.clone();
+        {
+            let mut p = pointer.borrow_mut();
+            p.pos = None;
+            p.generation = p.generation.wrapping_add(1);
+        }
+        self.lsp_state = LspState { hint, pointer, ..LspState::default() };
+        for id in Self::windows::<CodeWindow>(app) {
+            if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                w.editor_mut().hover = None;
+            }
+        }
         self.apply_diags(app);
         self.show_lsp_status(app);
     }
@@ -284,6 +312,7 @@ impl Ide {
 
     /// Работа в простое: разобрать ответы, отправить изменения.
     pub fn lsp_idle(&mut self, app: &mut Program) {
+        self.hover_idle(app);
         if !self.any_lsp() {
             if self.lsp_state.diags_dirty {
                 self.apply_diags(app);
@@ -310,6 +339,59 @@ impl Ide {
             self.apply_hints(app);
         }
         self.update_diag_hint(app);
+    }
+
+    fn hover_idle(&mut self, app: &mut Program) {
+        let pointer = self.lsp_state.pointer.borrow().clone();
+        let target = if app.modal_top().is_none() { pointer.pos.and_then(|p| crate::hover::hit(&app.group, p)) } else { None };
+        let key = target.and_then(|(editor_id, pos, local)| {
+            Self::windows::<CodeWindow>(app).into_iter().find_map(|id| {
+                let w = app.find::<CodeWindow>(id)?;
+                let e = w.editor();
+                if e.vs().id != editor_id || e.completion.is_some() {
+                    return None;
+                }
+                Some(HoverKey {
+                    generation: pointer.generation,
+                    win: id,
+                    pos,
+                    path: w.path(),
+                    text: e.fe.editor.text(),
+                    scroll: e.fe.editor.delta,
+                    local,
+                })
+            })
+        });
+        if key != self.lsp_state.hover_key {
+            for id in Self::windows::<CodeWindow>(app) {
+                if let Some(w) = app.find_mut::<CodeWindow>(id) {
+                    w.editor_mut().hover = None;
+                }
+            }
+            self.lsp_state.hover_key = key.clone();
+            self.lsp_state.hover_requested = false;
+            self.lsp_state.wait.retain(|_, w| !matches!(w, Wait::Hover { .. }));
+        }
+        let Some(key) = key else { return };
+        if self.lsp_state.hover_requested || pointer.since.elapsed() < Duration::from_millis(400) {
+            return;
+        }
+        let Some(w) = app.find::<CodeWindow>(key.win) else { return };
+        let path = w.path();
+        let Some(srv) = Srv::for_path(&path) else { return };
+        if !self.client(srv).map(|c| c.ready && c.has_hover).unwrap_or(false) {
+            return;
+        }
+        let line = w.editor().fe.editor.line(key.pos.line);
+        let pos = LPos { line: key.pos.line, col: col_to_lsp(&line, key.pos.col, self.encoding(srv)) };
+        self.sync_docs(app, true);
+        let Some(c) = self.client_mut(srv) else { return };
+        if !c.is_open(&path) {
+            return;
+        }
+        let id = c.hover(&path, pos);
+        self.lsp_state.wait.insert((srv, id), Wait::Hover { key });
+        self.lsp_state.hover_requested = true;
     }
 
     // ------------------------------------------------------------------
@@ -461,8 +543,18 @@ impl Ide {
             LspEvent::Error { id, message } => {
                 // Отменённые сервером запросы (текст изменился) — не ошибка для пользователя.
                 if let Some(w) = self.lsp_state.wait.remove(&(srv, id)) {
-                    if !matches!(w, Wait::Completion { .. }) && !message.contains("content modified") {
+                    if !matches!(w, Wait::Completion { .. } | Wait::Hover { .. }) && !message.contains("content modified") {
                         self.say(app, &format!("{}: {}", srv.title(), message));
+                    }
+                }
+            }
+            LspEvent::Hover { id, text } => {
+                if let Some(Wait::Hover { key }) = self.lsp_state.wait.remove(&(srv, id)) {
+                    if self.lsp_state.hover_key.as_ref() == Some(&key) && !text.trim().is_empty() {
+                        let pointer = self.lsp_state.pointer.clone();
+                        if let Some(w) = app.find_mut::<CodeWindow>(key.win) {
+                            w.editor_mut().hover = Some(crate::hover::Popup { pointer, generation: key.generation, at: key.local, text });
+                        }
                     }
                 }
             }

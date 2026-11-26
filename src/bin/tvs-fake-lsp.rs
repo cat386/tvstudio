@@ -164,7 +164,7 @@ fn main() {
                 let offered = p.get("capabilities").and_then(|c| c.get("general")).map(|g| g.strings("positionEncodings")).unwrap_or_default();
                 let enc = if offered.iter().any(|e| e == "utf-32") { "utf-32" } else { "utf-16" };
                 let caps = json::parse(&format!(
-                    r#"{{"positionEncoding":"{}","textDocumentSync":1,"completionProvider":{{"triggerCharacters":[".",":"]}},"definitionProvider":true,"referencesProvider":true,"inlayHintProvider":true,"codeActionProvider":{{"codeActionKinds":["quickfix"]}}}}"#,
+                    r#"{{"positionEncoding":"{}","textDocumentSync":1,"completionProvider":{{"triggerCharacters":[".",":"]}},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"inlayHintProvider":true,"codeActionProvider":{{"codeActionKinds":["quickfix"]}}}}"#,
                     enc
                 ))
                 .unwrap();
@@ -243,6 +243,21 @@ fn main() {
                     fields.push(("additionalTextEdits".into(), Json::Arr(vec![edit])));
                 }
                 reply(id.as_ref().unwrap(), item);
+            }
+            "textDocument/hover" => {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let word = word_at(docs.get(&doc_uri).map(String::as_str).unwrap_or(""), at.0, at.1);
+                let result = if word == "helper" {
+                    Json::obj(vec![(
+                        "contents",
+                        Json::obj(vec![("kind", Json::s("plaintext")), ("value", Json::s("fn helper() -> i32\nHelper documentation"))]),
+                    )])
+                } else {
+                    Json::Null
+                };
+                if let Some(id) = &id {
+                    reply(id, result);
+                }
             }
             "textDocument/definition" => {
                 let text = docs.get(&doc_uri).cloned().unwrap_or_default();

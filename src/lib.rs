@@ -51,3 +51,5 @@ pub mod toolwins;
 pub mod ui_commands;
 pub mod words;
 pub mod yaml;
+
+pub mod hover;
