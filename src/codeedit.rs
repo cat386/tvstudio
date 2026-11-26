@@ -131,6 +131,7 @@ pub struct CodeEditor {
     pub hints: Vec<(usize, String)>,
     /// Список дополнения (если открыт).
     pub completion: Option<Completion>,
+    pub hover: Option<crate::hover::Popup>,
     /// Подсвечивать строку курсора.
     pub hl_line: bool,
     /// Подсвечивать столбец курсора.
@@ -191,6 +192,7 @@ impl CodeEditor {
             diags: Vec::new(),
             hints: Vec::new(),
             completion: None,
+            hover: None,
             hl_line: true,
             hl_col: true,
             auto_close: true,
@@ -669,7 +671,7 @@ impl View for CodeEditor {
         // Фон подчёркнутых диагностикой мест.
         let err_bg = |a: Attr| if wide { with_bg256(a, 52) } else { with_back(a, 4) };
         let warn_bg = |a: Attr| if wide { with_bg256(a, 58) } else { with_back(a, 6) };
-        let popup = self.completion_rows();
+        let popup = if self.completion.is_some() { self.completion_rows() } else { self.hover.as_ref().map(|h| h.rows(size)).unwrap_or_default() };
         let (pop_n, pop_s) = if wide { (attr256(223, 237), attr256(235, 214)) } else { (attr(0, 7), attr(15, 2)) };
         // Строка и столбец курсора — чуть другим фоном (только в активном
         // редакторе, чтобы в остальных окнах не рябило).
@@ -793,6 +795,9 @@ impl View for CodeEditor {
 
     fn handle_event(&mut self, ev: &mut Event, ctx: &mut Ctx) {
         let focused = self.fe.editor.vs.is_focused();
+        if matches!(ev, Event::KeyDown(_) | Event::MouseDown(_) | Event::Command(_)) {
+            self.hover = None;
+        }
         // Вставка — единая операция, без дополнения и обработки пар.
         let paste = ev.command() == Some(cm::PASTE)
             || matches!(ev, Event::KeyDown(k)

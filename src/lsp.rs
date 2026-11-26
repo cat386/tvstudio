@@ -202,6 +202,10 @@ pub struct CodeAction {
 /// Событие от сервера для среды.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LspEvent {
+    Hover {
+        id: i64,
+        text: String,
+    },
     /// Сервер готов (ответ на initialize).
     Ready {
         name: String,
@@ -472,6 +476,7 @@ fn parse_diagnostics(params: &Json) -> (PathBuf, Vec<Diagnostic>) {
 /// Что было запрошено (чтобы понять ответ).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReqKind {
+    Hover,
     Initialize,
     Completion,
     CompletionResolve,
@@ -510,6 +515,7 @@ pub struct LspClient {
     pub has_inlay_hints: bool,
     /// Сервер умеет быстрые исправления (`codeActionProvider`).
     pub has_code_actions: bool,
+    pub has_hover: bool,
 }
 
 // Один поток владеет stdin: порядок сообщений сохраняется, интерфейс
@@ -651,6 +657,7 @@ impl LspClient {
             stderr_tail: tail,
             has_inlay_hints: false,
             has_code_actions: false,
+            has_hover: false,
         };
         let root_uri = path_to_uri(root);
         let name = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -665,6 +672,7 @@ impl LspClient {
                     "resolveSupport": {"properties": ["additionalTextEdits", "detail", "documentation"]}}, "contextSupport": true},
                 "definition": {"linkSupport": true},
                 "references": {},
+                "hover": {"contentFormat": ["plaintext", "markdown"]},
                 "inlayHint": {"dynamicRegistration": false},
                 "codeAction": {"codeActionLiteralSupport": {"codeActionKind": {"valueSet":
                     ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source"]}},
@@ -777,6 +785,10 @@ impl LspClient {
 
     fn pos_params(p: &Path, pos: LPos) -> Vec<(&'static str, Json)> {
         vec![("textDocument", Self::doc_id(p)), ("position", pos_json(pos))]
+    }
+
+    pub fn hover(&mut self, p: &Path, pos: LPos) -> i64 {
+        self.request("textDocument/hover", Json::obj(Self::pos_params(p, pos)), ReqKind::Hover)
     }
 
     pub fn completion(&mut self, p: &Path, pos: LPos, trigger: Option<char>) -> i64 {
@@ -951,6 +963,7 @@ impl LspClient {
                 let has = |k: &str| matches!(caps.get(k), Some(Json::Bool(true)) | Some(Json::Obj(_)));
                 self.has_inlay_hints = has("inlayHintProvider");
                 self.has_code_actions = has("codeActionProvider");
+                self.has_hover = has("hoverProvider");
                 self.ready = true;
                 let init = Json::obj(vec![("jsonrpc", Json::s("2.0")), ("method", Json::s("initialized")), ("params", Json::obj(vec![]))]);
                 self.send(&init);
@@ -963,6 +976,7 @@ impl LspClient {
             ReqKind::Completion => {
                 out.push(LspEvent::Completion { id, items: parse_completion(&result), incomplete: result.bool("isIncomplete", false) })
             }
+            ReqKind::Hover => out.push(LspEvent::Hover { id, text: parse_hover(&result) }),
             ReqKind::CompletionResolve => out.push(LspEvent::CompletionResolved { id, edits: parse_text_edits(result.arr("additionalTextEdits")) }),
             ReqKind::Definition | ReqKind::References => out.push(LspEvent::Locations { id, items: parse_locations(&result) }),
             ReqKind::InlayHint => out.push(LspEvent::InlayHints { id, items: parse_inlay_hints(&result) }),
@@ -1013,3 +1027,16 @@ impl LspClient {
 
 #[cfg(test)]
 mod tests;
+
+/// Hover contents: MarkupContent, MarkedString or MarkedString[].
+pub fn parse_hover(result: &Json) -> String {
+    fn text(j: &Json) -> String {
+        match j {
+            Json::Str(s) => s.clone(),
+            Json::Arr(a) => a.iter().map(text).filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n\n"),
+            Json::Obj(_) => j.str("value"),
+            _ => String::new(),
+        }
+    }
+    text(result.get("contents").unwrap_or(&Json::Null)).trim().to_string()
+}

@@ -551,3 +551,49 @@ fn completion_while_typing() {
     }
     assert!(t.ed().completion.is_none(), "в комментарии");
 }
+
+#[test]
+fn hover_delay_hide_and_stale_reply() {
+    let mut t = T::new("hover");
+    t.goto(1, 1);
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    let cursor = t.ed().fe.editor.cursor();
+    let point = origin + Point::new(4, 0);
+    let set_pointer = |t: &mut T, pos, aged| {
+        let mut p = t.ide.lsp_state.pointer.borrow_mut();
+        p.pos = Some(pos);
+        p.generation += 1;
+        p.since = if aged { Instant::now() - Duration::from_millis(500) } else { Instant::now() };
+    };
+    set_pointer(&mut t, point, false);
+    t.pump();
+    assert!(t.ed().hover.is_none(), "no popup before debounce");
+    set_pointer(&mut t, point, true);
+    assert!(t.wait(|t| t.ed().hover.is_some()), "server hover must appear");
+    assert!(t.ed().hover.as_ref().unwrap().text.contains("fn helper() -> i32"));
+    assert_eq!(t.ed().fe.editor.cursor(), cursor, "hover must not move caret");
+    assert!(t.ed().vs().is_focused(), "hover must not steal focus");
+    set_pointer(&mut t, origin + Point::new(2, 0), true); // space
+    t.pump();
+    assert!(t.ed().hover.is_none());
+    // Send a request, then leave before the delayed server replies.
+    set_pointer(&mut t, point, true);
+    t.pump();
+    set_pointer(&mut t, Point::new(0, 0), true);
+    t.pump();
+    std::thread::sleep(Duration::from_millis(250));
+    t.pump();
+    assert!(t.ed().hover.is_none(), "stale response must not reopen popup");
+    set_pointer(&mut t, origin, true); // 'fn': server returns null
+    t.pump();
+    std::thread::sleep(Duration::from_millis(250));
+    t.pump();
+    assert!(t.ed().hover.is_none(), "null hover must stay hidden");
+    let pointer = t.ide.lsp_state.pointer.clone();
+    t.ide.lsp_restart(&mut t.app);
+    assert!(std::rc::Rc::ptr_eq(&pointer, &t.ide.lsp_state.pointer), "restart must preserve the backend observer");
+    assert!(t.wait(|t| t.ide.lsp.as_ref().map(|c| c.ready).unwrap_or(false)));
+    set_pointer(&mut t, point, true);
+    assert!(t.wait(|t| t.ed().hover.is_some()), "hover must work after restart");
+}
