@@ -890,3 +890,37 @@ fn completion_from_project_words_without_lsp() {
     let c = ed(&t).expect("из открытого текста");
     assert_eq!(c.items[c.shown[0]].label, "local_counter_value");
 }
+
+
+#[test]
+fn editor_pairs_keep_cursor_inside_and_paste_is_literal() {
+    let mut t = T::new("literal_paste");
+    let f = t.dir.join("src/paste.rs");
+    std::fs::write(&f, "").unwrap();
+    let id = t.ide.open_file(&mut t.app, &f, None).unwrap();
+    t.app.focus(id);
+    t.pump();
+    for (open, close) in [('(', ')'), ('[', ']'), ('{', '}'), ('"', '"')] {
+        t.cmd(cm::SELECT_ALL);
+        t.cmd(cm::CLEAR);
+        t.key(KeyEvent::new(Key::Char(open), Mods::NONE));
+        let e = &t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor;
+        assert_eq!(e.text(), format!("{open}{close}"));
+        assert_eq!(e.cursor(), Pos::new(0, 1));
+        t.key(KeyEvent::new(Key::Char('x'), Mods::NONE));
+        assert_eq!(t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor.text(), format!("{open}x{close}"));
+    }
+    let pasted = "foo(\n\t[{'\"";
+    for method in 0..3 {
+        t.cmd(cm::SELECT_ALL);
+        t.app.ctx.clipboard.set(pasted);
+        match method {
+            0 => t.cmd(cm::PASTE),
+            1 => t.key(KeyEvent::new(Key::Char('v'), Mods::CTRL)),
+            _ => t.key(KeyEvent::new(Key::Ins, Mods::SHIFT)),
+        }
+        let e = &t.app.find::<CodeWindow>(id).unwrap().editor().fe.editor;
+        assert_eq!(e.text(), pasted);
+        assert_eq!(e.cursor(), Pos::new(1, 5));
+    }
+}
