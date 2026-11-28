@@ -12,6 +12,8 @@ use crate::props::{self, Prop};
 
 mod pages;
 pub use pages::PagedDialog;
+mod pick;
+pub use pick::{browse_directory, choose_indexed};
 mod project;
 pub use project::ProjectDialog;
 

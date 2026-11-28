@@ -1505,6 +1505,17 @@ impl CargoLayout {
     /// файл `file` (если у него есть программа — `src/main.rs` или
     /// `src/bin/`); иначе корневой пакет (`None` — cargo выберет сам); без
     /// своего пакета — первый участник с программой. Не workspace — `None`.
+    /// Каталог участника workspace, которому принадлежит `file`; иначе корень.
+    pub fn member_dir_for_file(&self, workspace: &Path, file: &Path) -> PathBuf {
+        let f = normalize(file);
+        self.members
+            .iter()
+            .filter(|m| f.starts_with(&m.dir))
+            .max_by_key(|m| m.dir.components().count())
+            .map(|m| m.dir.clone())
+            .unwrap_or_else(|| normalize(workspace))
+    }
+
     pub fn run_package(&self, file: Option<&Path>) -> Option<String> {
         let has_bin = |d: &Path| d.join("src/main.rs").is_file() || d.join("src/bin").is_dir();
         let owner = file.and_then(|f| {

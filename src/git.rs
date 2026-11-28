@@ -65,6 +65,32 @@ impl Git<'_> {
         git_output(output.status, output.stdout, output.stderr)
     }
 
+    fn run_stdin<I, S>(&self, args: I, stdin: &[u8]) -> Result<Vec<u8>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        use std::io::Write;
+        let mut command = self.command(args);
+        command.stdin(Stdio::piped());
+        let mut child = command.spawn().map_err(|e| format!("Не удалось запустить Git: {e}"))?;
+        if let Some(mut input) = child.stdin.take() {
+            input.write_all(stdin).map_err(|e| e.to_string())?;
+        }
+        let output = child.wait_with_output().map_err(|e| e.to_string())?;
+        git_output(output.status, output.stdout, output.stderr)
+    }
+
+    /// Подготовить или снять один блок patch из индекса.
+    pub fn apply_hunk(&self, patch: &str, reverse: bool) -> Result<()> {
+        let args: Vec<&str> = if reverse {
+            vec!["apply", "--cached", "--reverse"]
+        } else {
+            vec!["apply", "--cached"]
+        };
+        self.run_stdin(args, patch.as_bytes()).map(drop)
+    }
+
     /// Команды клонирования и чтения веток могут ждать сеть или помощник
     /// входа. Учитываем отсутствие вывода, чтобы длительная передача могла
     /// продолжаться, пока Git присылает прогресс.
@@ -103,10 +129,8 @@ impl Git<'_> {
     }
 
     pub fn init(&self, branch: &str) -> Result<Snapshot> {
-        match self.root() {
-            Ok(root) => return Err(format!("Каталог уже входит в репозиторий {}", root.display())),
-            Err(e) if !e.starts_with("fatal: not a git repository") => return Err(e),
-            Err(_) => {}
+        if self.cwd.join(".git").exists() {
+            return Err(format!("Каталог {} уже содержит репозиторий Git", self.cwd.display()));
         }
         self.run(["init", "--initial-branch", branch, "--", "."])?;
         self.snapshot()
@@ -555,6 +579,9 @@ pub fn clone_destination(parent: &Path, url: &str) -> Result<PathBuf> {
     }
     Ok(parent.join(name))
 }
+
+pub mod hunks;
+pub use hunks::{parse_patch_hunks, Hunk};
 
 #[cfg(test)]
 mod clone_tests;

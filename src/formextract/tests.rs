@@ -30,6 +30,27 @@ fn layout_dialog(title: &str) -> Dialog {
 }
 "#;
 
+const WINDOW_SRC: &str = r#"
+fn open_counters() -> Window {
+    let mut w = Window::new(Rect::new(10, 3, 46, 11), "Счётчики", 1);
+    w.add(StaticText::new(Rect::new(2, 2, 30, 4), "Всего: 0", None));
+    w
+}
+"#;
+
+#[test]
+fn extracts_window_form() {
+    let v = extract(WINDOW_SRC, &HashMap::new());
+    assert_eq!(v.len(), 1);
+    let f = &v[0].form;
+    assert_eq!(f.class, crate::model::FormClass::Window);
+    assert_eq!((f.x, f.y, f.w, f.h, f.number), (10, 3, 36, 8, 1));
+    assert_eq!(f.title, "Счётчики");
+    assert!(!f.centered);
+    assert_eq!(f.controls.len(), 1);
+    assert_eq!(f.controls[0].kind, Kind::StaticText);
+}
+
 #[test]
 fn extracts_layout_dialog() {
     let v = extract(SRC, &HashMap::new());

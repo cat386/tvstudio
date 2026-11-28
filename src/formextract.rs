@@ -1,5 +1,5 @@
 //! Извлечение форм из кода: диалоги, собранные в программе вызовами
-//! `Dialog::centered(…)` / `Dialog::new(…)` и `d.add(…)`, превращаются в
+//! `Dialog::centered(…)` / `Dialog::new(…)`, `Window::new(…)` и `d.add(…)`, превращаются в
 //! формы TV Studio (`forms/*.tvf`).
 //!
 //! Внутри — маленький интерпретатор подмножества Rust: выражения
@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::importer::{lex, Tk, Tok};
-use crate::model::{is_ident, Control, Form, Kind, Pal, BUILTIN_COMMANDS};
+use crate::model::{is_ident, Control, Form, FormClass, Kind, Pal, BUILTIN_COMMANDS};
 
 // ======================================================================
 // Выражения
@@ -905,12 +905,33 @@ impl<'a> Run<'a> {
         }
     }
 
-    /// Начать форму по конструктору диалога.
-    fn start_dialog(&mut self, f: &E, a: &[E], var: &str) {
+    /// Начать форму по `Dialog::…` или `Window::new`.
+    fn start_form(&mut self, f: &E, a: &[E], var: &str, class: FormClass) {
         self.finish();
         let E::Path(p) = f else { return };
         let ctor = p.last().map(|s| s.as_str()).unwrap_or("");
         let mut form = Form::new("", "");
+        form.class = class;
+        if class == FormClass::Window {
+            if let Some((x, y, x2, y2)) = self.rect(a.first()) {
+                form.x = x;
+                form.y = y;
+                form.w = x2 - x;
+                form.h = y2 - y;
+            }
+            form.centered = false;
+            form.title = match a.get(1).map(|e| (e, self.eval(e))) {
+                Some((_, V::S(s))) => s,
+                Some((E::Path(p), _)) => format!("{{{}}}", p.join("::")),
+                _ => String::new(),
+            };
+            if let Some(n) = a.get(2).and_then(|e| self.eval(e).int()) {
+                form.number = n as i16;
+            }
+            self.form = Some(form);
+            self.dvar = Some(var.to_string());
+            return;
+        }
         let title_e = if ctor == "centered" { a.get(2) } else { a.get(1) };
         if ctor == "centered" {
             // Размер, который вычисляется во время работы, — образец 60×16.
@@ -947,6 +968,10 @@ impl<'a> Run<'a> {
         };
         self.form = Some(form);
         self.dvar = Some(var.to_string());
+    }
+
+    fn start_dialog(&mut self, f: &E, a: &[E], var: &str) {
+        self.start_form(f, a, var, FormClass::Dialog);
     }
 
     /// Закончить текущую форму: связи, полосы прокрутки, имена.
@@ -1238,6 +1263,12 @@ impl<'a> Run<'a> {
                     }
                     return;
                 }
+                if matches!(&**f, E::Path(p) if p.len() >= 2 && p[p.len() - 2] == "Window" && p[p.len() - 1] == "new") {
+                    if let Some(var) = pat.first() {
+                        self.start_form(f, args, var, FormClass::Window);
+                    }
+                    return;
+                }
             }
             if let Some((x, var)) = self.as_add(&e).map(|x| (x, pat.first().cloned())) {
                 self.add(&x, var);
@@ -1483,11 +1514,13 @@ pub fn extract(src: &str, extra_consts: &HashMap<String, i64>) -> Vec<Extracted>
         if t[i].s >= test_start {
             break;
         }
-        // Dialog :: centered | new
-        if !(t[i].t == Tk::Id("Dialog".into())
+        let dialog_ctor = t[i].t == Tk::Id("Dialog".into())
             && t.get(i + 1).map(|x| x.t == Tk::P(':')).unwrap_or(false)
-            && matches!(t.get(i + 3).map(|x| &x.t), Some(Tk::Id(s)) if s == "centered" || s == "new"))
-        {
+            && matches!(t.get(i + 3).map(|x| &x.t), Some(Tk::Id(s)) if s == "centered" || s == "new");
+        let window_ctor = t[i].t == Tk::Id("Window".into())
+            && t.get(i + 1).map(|x| x.t == Tk::P(':')).unwrap_or(false)
+            && matches!(t.get(i + 3).map(|x| &x.t), Some(Tk::Id(s)) if s == "new");
+        if !(dialog_ctor || window_ctor) {
             continue;
         }
         // Охватывающий блок `{ … }`.
@@ -1557,7 +1590,7 @@ pub fn int_consts(src: &str) -> HashMap<String, i64> {
 
 /// Есть ли смысл искать в файле диалоги (быстрая проверка).
 pub fn has_dialogs(path: &Path) -> bool {
-    std::fs::read_to_string(path).map(|s| s.contains("Dialog::centered") || s.contains("Dialog::new")).unwrap_or(false)
+    std::fs::read_to_string(path).map(|s| s.contains("Dialog::centered") || s.contains("Dialog::new") || s.contains("Window::new")).unwrap_or(false)
 }
 
 // ======================================================================
@@ -1685,7 +1718,7 @@ pub fn extract_into_project(p: &mut crate::model::Project) -> Result<FormsReport
     let mut names: Vec<String> = p.forms.clone();
     for f in files {
         let Ok(text) = std::fs::read_to_string(&f) else { continue };
-        if text.starts_with(GENERATED_MARK) || !(text.contains("Dialog::centered") || text.contains("Dialog::new")) {
+        if text.starts_with(GENERATED_MARK) || !(text.contains("Dialog::centered") || text.contains("Dialog::new") || text.contains("Window::new")) {
             continue;
         }
         let rel = p.rel(&f);

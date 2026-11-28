@@ -1,7 +1,7 @@
 //! Связь Git с проектом TV Studio, окнами и очередью событий IDE.
 
 use super::*;
-use crate::git::{self, Branch, Commit, Git, Snapshot, Switch, WorktreeUpdate};
+use crate::git::{self, Branch, Change, Commit, Git, Snapshot, Switch, WorktreeUpdate};
 use crate::git_ui::{self, Panel};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -41,6 +41,7 @@ enum Outcome {
     History(PathBuf, Vec<Commit>),
     Fetched(PathBuf, String),
     Diff(String, String),
+    HunkList(Change, Vec<crate::git::Hunk>),
     Executable(String, String),
     Message(String),
 }
@@ -133,7 +134,12 @@ impl Ide {
             Ok(Outcome::History(dir, commits)) => {
                 if commits.is_empty() {
                     self.say(app, "Git: в текущей ветке ещё нет коммитов.");
-                } else if let Some(index) = git_ui::choose(app, "Git — история текущей ветки", commits.iter().map(|c| c.label.clone()).collect(), 0)
+                } else if let Some(index) = crate::dialogs::choose_indexed(
+                    app,
+                    "Git — история текущей ветки",
+                    commits.iter().map(|c| c.label.clone()).collect(),
+                    0,
+                )
                 {
                     let oid = commits[index].oid.clone();
                     self.start_git(app, dir, "Чтение коммита", move |git| {
@@ -162,6 +168,11 @@ impl Ide {
             Ok(Outcome::Diff(title, text)) => {
                 git_ui::show_diff(app, &title, &text);
             }
+            Ok(Outcome::HunkList(change, hunks)) => {
+                if let Ok(dir) = self.git_dir(app) {
+                    self.git_hunks_interactive(app, dir, change, hunks);
+                }
+            }
             Ok(Outcome::Executable(path, version)) => {
                 self.cfg.git = path;
                 if !self.headless {
@@ -174,7 +185,7 @@ impl Ide {
     }
 
     pub(super) fn git_command(&mut self, app: &mut Program, command: u16) -> bool {
-        if !(CM_GIT_SHOW..=CM_GIT_HISTORY).contains(&command) {
+        if !(CM_GIT_SHOW..=CM_GIT_HUNKS).contains(&command) {
             return false;
         }
         if self.git.pending.is_some() {
@@ -263,6 +274,11 @@ impl Ide {
                 let selected_dir = dir.clone();
                 self.start_git(app, dir, "Чтение истории", move |git| Ok(Outcome::History(selected_dir, git.history()?)));
             }
+            CM_GIT_FILTER => {
+                self.git.panel(app).cycle_filter(app);
+            }
+            CM_GIT_OPEN => self.git_open_selected(app, dir),
+            CM_GIT_HUNKS => self.git_hunks_load(app, dir),
             CM_GIT_DIFF | CM_GIT_DIFF_STAGED | CM_GIT_STAGE | CM_GIT_UNSTAGE => self.git_selected_command(app, dir, command),
             CM_GIT_COMMIT => {
                 let index_ready = self
@@ -332,7 +348,7 @@ impl Ide {
     ) {
         let default = default.map_or_else(|| "Ветка по умолчанию на сервере".into(), |name| format!("Ветка по умолчанию — {name}"));
         let rows = std::iter::once(default).chain(branches.iter().cloned()).collect();
-        let Some(index) = git_ui::choose(app, "Клонирование — выберите ветку", rows, 0) else { return };
+        let Some(index) = crate::dialogs::choose_indexed(app, "Клонирование — выберите ветку", rows, 0) else { return };
         let branch = index.checked_sub(1).map(|i| branches[i].clone());
         self.git_start_clone(app, dir, destination, url, branch);
     }
@@ -386,7 +402,7 @@ impl Ide {
             })
             .collect();
         let selected = branches.iter().position(|branch| branch.current).unwrap_or(0);
-        let Some(index) = git_ui::choose(app, "Git — выбрать ветку", rows, selected) else { return };
+        let Some(index) = crate::dialogs::choose_indexed(app, "Git — выбрать ветку", rows, selected) else { return };
         let branch = &branches[index];
         if branch.current || !self.git_worktree_ready(app) {
             return;
@@ -486,6 +502,83 @@ impl Ide {
                     self.open_form(app, &name);
                 }
             }
+        }
+    }
+
+    fn git_hunks_load(&mut self, app: &mut Program, dir: PathBuf) {
+        let Some(panel) = &self.git.panel else { return };
+        let Some(change) = panel.selected(app).cloned() else {
+            self.say(app, "Git: выберите файл в списке.");
+            return;
+        };
+        if change.index == '?' {
+            self.say(app, "Git: для нового файла используйте «+ В индекс» целиком.");
+            return;
+        }
+        if change.unmerged {
+            self.say(app, "Git: сначала разрешите конфликт.");
+            return;
+        }
+        self.start_git(app, dir, "Чтение блоков diff", move |git| {
+            let text = git.diff(&change, false)?;
+            let hunks = crate::git::parse_patch_hunks(&text);
+            if hunks.is_empty() {
+                return Ok(Outcome::Message("Git: в файле нет блоков для выборочной подготовки.".into()));
+            }
+            Ok(Outcome::HunkList(change, hunks))
+        });
+    }
+
+    fn git_hunks_interactive(&mut self, app: &mut Program, dir: PathBuf, change: Change, mut hunks: Vec<crate::git::Hunk>) {
+        let mut staged = false;
+        loop {
+            match git_ui::pick_hunk(app, &change.path, &hunks) {
+                git_ui::HunkPick::Close => break,
+                git_ui::HunkPick::View(i) => {
+                    git_ui::show_diff(app, &format!("Блок {}", i + 1), &hunks[i].patch);
+                }
+                git_ui::HunkPick::Stage(i) => {
+                    let patch = hunks[i].patch.clone();
+                    let git = Git { executable: &self.cfg.git, cwd: &dir };
+                    match git.apply_hunk(&patch, false) {
+                        Ok(()) => {
+                            hunks.remove(i);
+                            staged = true;
+                            self.say(app, &format!("Git: блок {} подготовлен в индекс.", i + 1));
+                        }
+                        Err(error) => {
+                            self.git_error(app, format!("Git: не удалось подготовить блок — {error}"));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if staged {
+            if let Ok(snapshot) = (Git { executable: &self.cfg.git, cwd: &dir }).snapshot() {
+                if let Some(panel) = &mut self.git.panel {
+                    panel.set(app, snapshot);
+                }
+            }
+        }
+    }
+
+    fn git_open_selected(&mut self, app: &mut Program, dir: PathBuf) {
+        let Some(panel) = &self.git.panel else { return };
+        let Some(change) = panel.selected(app).cloned() else {
+            self.say(app, "Git: выберите файл в списке.");
+            return;
+        };
+        let root = panel.snapshot.as_ref().map(|s| s.root.clone()).unwrap_or(dir);
+        let path = root.join(&change.path);
+        if !path.is_file() {
+            self.say(app, &format!("Git: файл не найден — {}", path.display()));
+            return;
+        }
+        let at = if change.unmerged { git_ui::conflict_marker_line(&path).map(|line| (line, 1)) } else { None };
+        self.open_file(app, &path, at);
+        if change.unmerged && at.is_none() {
+            self.say(app, "Git: маркеры конфликта не найдены — открыт весь файл.");
         }
     }
 

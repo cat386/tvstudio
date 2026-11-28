@@ -131,6 +131,11 @@ pub const CM_GIT_BRANCH: u16 = 1265;
 pub const CM_GIT_NEW_BRANCH: u16 = 1266;
 pub const CM_GIT_PULL: u16 = 1267;
 pub const CM_GIT_HISTORY: u16 = 1268;
+pub const CM_GIT_FILTER: u16 = 1269;
+pub const CM_GIT_OPEN: u16 = 1270;
+pub const CM_GIT_HUNKS: u16 = 1271;
+pub const CM_GIT_HUNK_VIEW: u16 = 1272;
+pub const CM_GIT_HUNK_STAGE: u16 = 1273;
 
 pub const HC_DIALOG: u16 = 1010;
 pub const HC_PAGED_DIALOG: u16 = 1011;

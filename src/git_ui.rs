@@ -1,28 +1,69 @@
 //! Окно статуса Git и диалоги выбора файла, каталога и ветки.
 
 use crate::cmds::*;
-use crate::git::{Change, Snapshot};
+use crate::git::{Change, Hunk, Snapshot};
 use crate::toolwins::Relay;
 use std::path::PathBuf;
 use tvision::layout::{item, HBox, VBox};
 use tvision::*;
 
+/// Какие записи `git status` показывать в списке.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StatusFilter {
+    #[default]
+    All,
+    Conflicts,
+    Untracked,
+    Staged,
+    Worktree,
+}
+
+impl StatusFilter {
+    fn title(self) -> &'static str {
+        match self {
+            Self::All => "все",
+            Self::Conflicts => "конфликты",
+            Self::Untracked => "новые",
+            Self::Staged => "в индексе",
+            Self::Worktree => "на диске",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::All => Self::Conflicts,
+            Self::Conflicts => Self::Untracked,
+            Self::Untracked => Self::Staged,
+            Self::Staged => Self::Worktree,
+            Self::Worktree => Self::All,
+        }
+    }
+}
+
+pub fn filter_matches(filter: StatusFilter, change: &Change) -> bool {
+    match filter {
+        StatusFilter::All => true,
+        StatusFilter::Conflicts => change.unmerged,
+        StatusFilter::Untracked => change.index == '?',
+        StatusFilter::Staged => change.index != '.' && change.index != '?',
+        StatusFilter::Worktree => change.worktree != '.' || change.index == '?',
+    }
+}
+
 pub struct Panel {
     pub window: ViewId,
     pub list: ViewId,
     pub snapshot: Option<Snapshot>,
+    filter: StatusFilter,
+    filter_btn: ViewId,
+    /// Индексы в `snapshot.changes`, соответствующие строкам списка.
+    visible: Vec<usize>,
 }
 
 impl Panel {
     pub fn open(app: &mut Program) -> Self {
         let extent = app.desktop().group.vs.extent();
-        let bottom = app
-            .desktop()
-            .group
-            .children
-            .iter()
-            .find_map(|v| v.as_any().downcast_ref::<crate::toolwins::MessagesWindow>().map(|_| v.vs().origin.y))
-            .unwrap_or(extent.height() - ((extent.height() / 4).clamp(5, 9) - 2));
+        let bottom = crate::toolwins::stack_above_messages(app);
         let mut window = Window::new(Rect::new(1, 0, extent.width() - 1, bottom), "Git", 0);
         window.group.vs.grow_mode = gf::GROW_HI_X | gf::GROW_HI_Y;
 
@@ -37,58 +78,110 @@ impl Panel {
         window.add(Relay::new(list_view, CM_GIT_DIFF));
 
         let refresh = button(&mut window, "~О~бновить", CM_GIT_REFRESH);
+        let filter_btn = button(&mut window, "Фильтр: все", CM_GIT_FILTER);
         let diff = button(&mut window, "~И~зменения", CM_GIT_DIFF);
         let staged = button(&mut window, "Изменения и~н~декса", CM_GIT_DIFF_STAGED);
+        let open = button(&mut window, "~О~ткрыть", CM_GIT_OPEN);
         let add = button(&mut window, "~+~ В индекс", CM_GIT_STAGE);
         let remove = button(&mut window, "~-~ Из индекса", CM_GIT_UNSTAGE);
+        let hunks = button(&mut window, "~Б~локи", CM_GIT_HUNKS);
         let commit = button(&mut window, "~К~оммит...", CM_GIT_COMMIT);
         let branch = button(&mut window, "~В~етка...", CM_GIT_BRANCH);
-        // Добавляем кнопки
         window.set_layout(
             VBox::new()
                 .add(HBox::new().add(item(list_view).expand().stretch(1)).add(scroll1))
                 .space(1)
                 .add(line)
-                .add(HBox::new().spacing(1).add(refresh).add(diff).add(staged))
-                .add(HBox::new().spacing(1).add(add).add(remove).add(commit).add(branch)),
+                .add(HBox::new().spacing(1).add(refresh).add(filter_btn).add(diff).add(staged).add(open))
+                .add(HBox::new().spacing(1).add(add).add(remove).add(hunks).add(commit).add(branch)),
         );
         window.select(list_view);
         let window = crate::dialogs::insert(app, window);
-        Self { window, list: list_view, snapshot: None }
+        Self {
+            window,
+            list: list_view,
+            snapshot: None,
+            filter: StatusFilter::default(),
+            filter_btn,
+            visible: Vec::new(),
+        }
+    }
+
+    pub fn cycle_filter(&mut self, app: &mut Program) {
+        self.filter = self.filter.next();
+        self.sync_filter_button(app);
+        if let Some(snapshot) = self.snapshot.take() {
+            self.set(app, snapshot);
+        }
+    }
+
+    fn sync_filter_button(&self, app: &mut Program) {
+        let title = format!("Фильтр: {}", self.filter.title());
+        if let Some(button) = app.find_mut::<Button>(self.filter_btn) {
+            button.title = title;
+        }
     }
 
     pub fn selected(&self, app: &Program) -> Option<&Change> {
         let focused = app.find::<ListBox>(self.list)?.focused;
-        self.snapshot.as_ref()?.changes.get(focused)
+        let snapshot = self.snapshot.as_ref()?;
+        let index = self.visible.get(focused)?;
+        snapshot.changes.get(*index)
     }
 
     /// Сохраняем выбор по пути: после подготовки файла порядок записей
     /// статуса меняется и номер строки может указывать на другой файл.
     pub fn set(&mut self, app: &mut Program, snapshot: Snapshot) {
         let keep: Option<PathBuf> = self.selected(app).map(|entry| entry.path.clone());
-        let mut rows = snapshot
+        self.visible = snapshot
             .changes
             .iter()
-            .map(|change| format!("{}  {}", change_label(change), crate::git::display(change.path.to_string_lossy().as_bytes()).replace('\n', "↵")))
+            .enumerate()
+            .filter_map(|(index, change)| filter_matches(self.filter, change).then_some(index))
+            .collect();
+        let mut rows = self
+            .visible
+            .iter()
+            .map(|&index| format_change_row(&snapshot.changes[index]))
             .collect::<Vec<_>>();
         if rows.is_empty() {
-            rows.push("Нет изменений".into());
+            let hint = if snapshot.changes.is_empty() {
+                "Нет изменений"
+            } else {
+                "Нет файлов под этот фильтр"
+            };
+            rows.push(hint.into());
+            self.visible.clear();
         }
         if let Some(list) = app.find_mut::<ListBox>(self.list) {
             let old = list.focused;
-            let cursor = keep.and_then(|path| snapshot.changes.iter().position(|entry| entry.path == path)).unwrap_or(old);
+            let cursor = keep
+                .and_then(|path| self.visible.iter().position(|&index| snapshot.changes[index].path == path))
+                .unwrap_or(old.min(rows.len().saturating_sub(1)));
             list.set_items(rows);
             list.focus_item(cursor);
         }
         self.snapshot = Some(snapshot);
         self.ready_title(app);
+        self.sync_filter_button(app);
     }
 
     pub fn ready_title(&self, app: &mut Program) {
         if let Some(snapshot) = &self.snapshot {
             let upstream = if snapshot.upstream.is_empty() { String::new() } else { format!(" → {}", snapshot.upstream) };
             let pending = snapshot.changes.iter().filter(|entry| !matches!(entry.index, '.' | '?') && !entry.unmerged).count();
-            self.title(app, format!("Git — {}{}  •  файлов {}  •  в индексе {}", snapshot.branch, upstream, snapshot.changes.len(), pending));
+            let filter = if self.filter == StatusFilter::All {
+                String::new()
+            } else {
+                format!("  •  показано {} ({})", self.visible.len(), self.filter.title())
+            };
+            self.title(
+                app,
+                format!(
+                    "Git — {}{}  •  файлов {}  •  в индексе {}{}",
+                    snapshot.branch, upstream, snapshot.changes.len(), pending, filter
+                ),
+            );
         } else {
             self.title(app, "Git — нет данных".into());
         }
@@ -108,6 +201,28 @@ impl Panel {
             window.title = title;
         }
     }
+}
+
+/// Две колонки porcelain, как в `git status -sb` (для `??` — отдельная запись).
+pub fn change_code(change: &Change) -> String {
+    if change.index == '?' {
+        "??".into()
+    } else {
+        let index = if change.index == '.' { ' ' } else { change.index };
+        let worktree = if change.worktree == '.' { ' ' } else { change.worktree };
+        format!("{index}{worktree}")
+    }
+}
+
+fn format_change_row(change: &Change) -> String {
+    let path = crate::git::display(change.path.to_string_lossy().as_bytes()).replace('\n', "↵");
+    format!("{}  {}  {}", change_code(change), change_label(change), path)
+}
+
+/// Первая строка с конфликтным маркером (1-based), если файл текстовый.
+pub fn conflict_marker_line(path: &std::path::Path) -> Option<usize> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines().position(|line| line.starts_with("<<<<<<<")).map(|line| line + 1)
 }
 
 fn change_label(change: &Change) -> &'static str {
@@ -156,30 +271,49 @@ pub fn show_diff(app: &mut Program, title: &str, text: &str) {
     crate::dialogs::exec(app, dialog);
 }
 
-/// Список выбора в одном диалоге, включая двойной щелчок и Enter.
-pub fn choose(app: &mut Program, title: &str, rows: Vec<String>, selected: usize) -> Option<usize> {
-    if rows.is_empty() {
-        return None;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HunkPick {
+    Close,
+    View(usize),
+    Stage(usize),
+}
+
+/// Выбор блока diff: просмотр, подготовка в индекс или закрытие.
+pub fn pick_hunk(app: &mut Program, path: &std::path::Path, hunks: &[Hunk]) -> HunkPick {
+    if hunks.is_empty() {
+        return HunkPick::Close;
     }
+    let rows: Vec<String> = hunks.iter().enumerate().map(|(i, h)| format!("{}. {}", i + 1, h.header.trim())).collect();
+    let title = format!("Блоки — {}", path.display());
     let area = app.desktop().group.vs.extent();
-    let mut dialog = Dialog::centered((area.width() - 2).clamp(32, 100), (rows.len().min(20) as i32 + 5).min((area.height() - 2).max(7)), title);
+    let mut dialog = Dialog::centered((area.width() - 2).clamp(36, 100), (rows.len().min(16) as i32 + 6).min((area.height() - 2).max(8)), &title);
     let scroll = dialog.win.standard_scroll_bar(true);
     let mut list = ListBox::new(Rect::default(), 1, Some(scroll));
-    let count = rows.len();
     list.set_items(rows);
-    list.focus_item(selected);
     let list = dialog.add(list);
-    dialog.add(Relay::new(list, cm::OK));
-    let choose = dialog.add(Button::new(Rect::default(), "~В~ыбрать", cm::OK, bf::DEFAULT));
-    let cancel = dialog.add(Button::new(Rect::default(), "~О~тмена", cm::CANCEL, bf::NORMAL));
-    dialog.set_layout(VBox::new().add(item(list).expand().stretch(1)).add(HBox::new().spacing(1).add(choose).add(cancel)));
+    dialog.add(Relay::new(list, CM_GIT_HUNK_STAGE));
+    let view = dialog.add(Button::new(Rect::default(), "~П~росмотр", CM_GIT_HUNK_VIEW, bf::NORMAL));
+    let stage = dialog.add(Button::new(Rect::default(), "~+~ В индекс", CM_GIT_HUNK_STAGE, bf::DEFAULT));
+    let close = dialog.add(Button::new(Rect::default(), "Закрыть", cm::CANCEL, bf::NORMAL));
+    dialog.set_layout(
+        VBox::new()
+            .add(item(list).expand().stretch(1))
+            .add(HBox::new().spacing(1).add(view).add(stage).add(close)),
+    );
     dialog.select(list);
     let (command, dialog) = crate::dialogs::exec(app, dialog);
-    if command != cm::OK {
-        return None;
+    if command == cm::CANCEL {
+        return HunkPick::Close;
     }
-    let index = dialog.win.group.find::<ListBox>(list)?.focused;
-    (index < count).then_some(index)
+    let index = dialog.win.group.find::<ListBox>(list).map(|l| l.focused).unwrap_or(0);
+    if index >= hunks.len() {
+        return HunkPick::Close;
+    }
+    if command == CM_GIT_HUNK_VIEW {
+        HunkPick::View(index)
+    } else {
+        HunkPick::Stage(index)
+    }
 }
 
 /// Прямой режим запускает clone сразу, даже когда имя ветки задано вручную.
@@ -234,7 +368,7 @@ pub fn clone_dialog(app: &mut Program, start: &std::path::Path) -> Option<CloneR
         branch_name = dialog.win.group.find::<InputLine>(branch)?.text();
         let folder = if parent.trim().is_empty() { start.to_path_buf() } else { start.join(parent.trim()) };
         if command == cm::YES {
-            if let Some(path) = browse_directory(app, folder) {
+            if let Some(path) = crate::dialogs::browse_directory(app, folder) {
                 parent = path.to_string_lossy().into_owned();
             }
             focus_on_parent = true;
@@ -257,41 +391,6 @@ pub fn clone_dialog(app: &mut Program, start: &std::path::Path) -> Option<CloneR
                     focus_on_parent = false;
                 }
             }
-        }
-    }
-}
-
-/// Просмотр каталога хранит путь локально. Стандартный ChDirDialog
-/// меняет текущий каталог всего процесса, что здесь нежелательно.
-fn browse_directory(app: &mut Program, start: PathBuf) -> Option<PathBuf> {
-    let mut directory = start.ancestors().find(|p| p.is_dir())?.to_path_buf();
-    loop {
-        let mut children: Vec<_> =
-            std::fs::read_dir(&directory).ok()?.filter_map(|entry| entry.ok()).map(|entry| entry.path()).filter(|path| path.is_dir()).collect();
-        children.sort();
-        let rows = ["Выбрать этот каталог", ".. (выше)", "Диски и корни…"]
-            .into_iter()
-            .map(str::to_string)
-            .chain(children.iter().map(|path| path.file_name().unwrap_or_default().to_string_lossy().into_owned()))
-            .collect();
-        let title = format!("Каталог — {}", directory.display());
-        match choose(app, &title, rows, 0)? {
-            0 => return Some(directory),
-            1 => {
-                directory.pop();
-            }
-            2 => {
-                let roots = available_roots();
-                if !roots.is_empty() {
-                    let (cmd, dialog) = crate::dialogs::exec(app, DriveDialog::new(&roots, &directory));
-                    if cmd == cm::OK {
-                        if let Some(path) = dialog.selection() {
-                            directory = path;
-                        }
-                    }
-                }
-            }
-            index => directory = children[index - 3].clone(),
         }
     }
 }

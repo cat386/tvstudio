@@ -410,6 +410,17 @@ pub fn parse_cargo_line(line: &str) -> MsgEntry {
 
 /// Окно сообщений: вывод cargo, найденное «поиском в файлах», события среды.
 /// Enter или двойной щелчок по строке с местом — открыть файл на этой строке.
+/// Верхняя координата Y области, куда встаёт панель над «Сообщениями».
+pub fn stack_above_messages(app: &Program) -> i32 {
+    let extent = app.desktop().group.vs.extent();
+    app.desktop()
+        .group
+        .children
+        .iter()
+        .find_map(|v| v.as_any().downcast_ref::<MessagesWindow>().map(|_| v.vs().origin.y))
+        .unwrap_or(extent.height() - ((extent.height() / 4).clamp(5, 9) - 2))
+}
+
 pub struct MessagesWindow {
     pub win: Window,
     pub list_id: ViewId,

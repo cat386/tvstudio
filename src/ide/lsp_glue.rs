@@ -162,6 +162,8 @@ pub struct LspState {
     /// Запуск не удался — не пытаться снова до перезапуска вручную.
     pub failed: bool,
     pub toml_failed: bool,
+    /// Участник workspace активного редактора (для перезапуска LSP).
+    member_dir: Option<PathBuf>,
 }
 
 impl Ide {
@@ -254,12 +256,13 @@ impl Ide {
         let hint = self.lsp_state.hint.clone();
         hint.borrow_mut().clear();
         let pointer = self.lsp_state.pointer.clone();
+        let member_dir = self.lsp_state.member_dir.clone();
         {
             let mut p = pointer.borrow_mut();
             p.pos = None;
             p.generation = p.generation.wrapping_add(1);
         }
-        self.lsp_state = LspState { hint, pointer, ..LspState::default() };
+        self.lsp_state = LspState { hint, pointer, member_dir, ..LspState::default() };
         for id in Self::windows::<CodeWindow>(app) {
             if let Some(w) = app.find_mut::<CodeWindow>(id) {
                 w.editor_mut().hover = None;
@@ -312,6 +315,7 @@ impl Ide {
 
     /// Работа в простое: разобрать ответы, отправить изменения.
     pub fn lsp_idle(&mut self, app: &mut Program) {
+        self.lsp_follow_workspace_member(app);
         self.hover_idle(app);
         if !self.any_lsp() {
             if self.lsp_state.diags_dirty {
@@ -339,6 +343,34 @@ impl Ide {
             self.apply_hints(app);
         }
         self.update_diag_hint(app);
+    }
+
+    /// В workspace с несколькими участниками перезапускает LSP при смене
+    /// каталога пакета верхнего редактора.
+    fn lsp_follow_workspace_member(&mut self, app: &mut Program) {
+        let Some(root) = self.base_dir() else { return };
+        let layout = crate::model::cargo_layout(&root);
+        if layout.members.len() < 2 {
+            if self.lsp_state.member_dir.is_some() {
+                self.lsp_state.member_dir = None;
+            }
+            return;
+        }
+        let path = Self::current_window(app)
+            .and_then(|id| app.find::<CodeWindow>(id))
+            .map(|w| w.path())
+            .filter(|p| !p.as_os_str().is_empty());
+        let Some(path) = path else { return };
+        let member = layout.member_dir_for_file(&root, &path);
+        if self.lsp_state.member_dir.as_ref() == Some(&member) {
+            return;
+        }
+        self.lsp_state.member_dir = Some(member.clone());
+        if !self.any_lsp() {
+            return;
+        }
+        self.say(app, &format!("— LSP: открыт пакет {}, перезапуск серверов…", member.display()));
+        self.lsp_restart(app);
     }
 
     fn hover_idle(&mut self, app: &mut Program) {

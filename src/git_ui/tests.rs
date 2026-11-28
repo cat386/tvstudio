@@ -32,7 +32,7 @@ fn git_actions_fit_above_messages_and_empty_status_is_explicit() {
         app.focus(messages); // Даже поверх активной панели окно сообщений не закрывает кнопки.
         app.redraw();
         let text = app.screen_text();
-        for label in ["Нет изменений", "В индекс", "Из индекса", "Коммит", "Ветка"] {
+        for label in ["Нет изменений", "Фильтр", "Открыть", "В индекс", "Из индекса", "Блоки", "Коммит", "Ветка"] {
             assert!(text.contains(label), "{label}: {text}");
         }
         assert!(panel.selected(&app).is_none());
@@ -43,10 +43,34 @@ fn git_actions_fit_above_messages_and_empty_status_is_explicit() {
 fn git_status_labels_distinguish_staged_worktree_and_conflicts() {
     let mut change = Change { path: "src/main.rs".into(), index: '.', worktree: 'M', unmerged: false };
     assert_eq!(change_label(&change), "Изменён");
+    assert_eq!(change_code(&change), " M");
     change.index = 'M';
     assert_eq!(change_label(&change), "Индекс + правки");
+    assert_eq!(change_code(&change), "MM");
     change.worktree = '.';
     assert_eq!(change_label(&change), "В индексе");
+    assert_eq!(change_code(&change), "M ");
     change.unmerged = true;
     assert_eq!(change_label(&change), "Конфликт");
+    change.index = '?';
+    change.worktree = '?';
+    assert_eq!(change_code(&change), "??");
+    assert!(filter_matches(StatusFilter::Untracked, &change));
+    assert!(!filter_matches(StatusFilter::Staged, &change));
+}
+
+#[test]
+fn git_filter_hides_untracked_from_staged_list() {
+    let changes = vec![
+        Change { path: "new.txt".into(), index: '?', worktree: '?', unmerged: false },
+        Change { path: "src/a.rs".into(), index: 'M', worktree: '.', unmerged: false },
+    ];
+    assert_eq!(
+        changes.iter().filter(|c| filter_matches(StatusFilter::Staged, c)).count(),
+        1
+    );
+    assert_eq!(
+        changes.iter().filter(|c| filter_matches(StatusFilter::Untracked, c)).count(),
+        1
+    );
 }
