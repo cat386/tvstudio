@@ -1,6 +1,8 @@
 //! Связь Git с проектом TV Studio, окнами и очередью событий IDE.
 
 use super::*;
+use crate::codeedit::CodeWindow;
+use crate::designer::DesignWindow;
 use crate::git::{self, Branch, Change, Commit, Git, Snapshot, Switch, WorktreeUpdate};
 use crate::git_ui::{self, Panel};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -20,6 +22,11 @@ pub(super) fn menu() -> Menu {
         .item("Добавить ~o~rigin...", CM_GIT_ORIGIN)
         .item("Получить сс~ы~лки (fetch)", CM_GIT_FETCH)
         .item("~О~бновить ветку (pull)", CM_GIT_PULL)
+        .item("Pull с ~с~лиянием…", CM_GIT_PULL_MERGE)
+        .item("Слить с ~u~pstream", CM_GIT_MERGE_UPSTREAM)
+        .item("R~e~base на upstream", CM_GIT_REBASE_UPSTREAM)
+        .item("Пр~о~должить merge/rebase", CM_GIT_CONTINUE)
+        .item("~О~тменить merge/rebase", CM_GIT_ABORT)
         .item("О~т~править ветку (push)...", CM_GIT_PUSH)
 }
 
@@ -33,17 +40,23 @@ pub(super) struct State {
     running_generation: u64,
 }
 
+enum PullMode {
+    FastForward,
+    Merge,
+}
+
 enum Outcome {
     Status(Box<Snapshot>, String),
     Cloned(Box<Snapshot>),
     CloneBranches { dir: PathBuf, destination: PathBuf, url: String, default: Option<String>, branches: Vec<String> },
     Branches(PathBuf, Vec<Branch>),
     History(PathBuf, Vec<Commit>),
-    Fetched(PathBuf, String),
+    Fetched(PathBuf, String, PullMode),
     Diff(String, String),
-    HunkList(Change, Vec<crate::git::Hunk>),
+    HunkList(Change, Vec<crate::git::Hunk>, bool),
     Executable(String, String),
     Message(String),
+    Worktree(Box<WorktreeUpdate>, String),
 }
 
 impl State {
@@ -148,15 +161,25 @@ impl Ide {
                     });
                 }
             }
-            Ok(Outcome::Fetched(dir, branch)) => {
+            Ok(Outcome::Fetched(dir, branch, mode)) => {
                 // После фонового fetch пользователь мог изменить документ
                 // или сменить ветку снаружи IDE. Проверяем ещё раз перед merge.
                 if self.git_worktree_ready(app) {
                     let git = Git { executable: &self.cfg.git, cwd: &dir };
                     match git.snapshot() {
                         Ok(snapshot) if snapshot.branch == branch => {
-                            let result = git.fast_forward();
-                            self.git_worktree_done(app, result, "Pull выполнен.");
+                            let result = match mode {
+                                PullMode::FastForward => git.fast_forward(),
+                                PullMode::Merge => git.merge_upstream(),
+                            };
+                            let ok = match &result {
+                                Ok(_) => match mode {
+                                    PullMode::FastForward => "Pull (fast-forward) выполнен.",
+                                    PullMode::Merge => "Pull (merge) выполнен.",
+                                },
+                                Err(_) => "Операция не завершена — см. сообщения.",
+                            };
+                            self.git_worktree_done(app, result, ok);
                         }
                         Ok(_) => self.say(app, "Git: ветка сменилась во время fetch. Повторите pull."),
                         Err(error) => self.git_error(app, error),
@@ -168,9 +191,9 @@ impl Ide {
             Ok(Outcome::Diff(title, text)) => {
                 git_ui::show_diff(app, &title, &text);
             }
-            Ok(Outcome::HunkList(change, hunks)) => {
+            Ok(Outcome::HunkList(change, hunks, unstage)) => {
                 if let Ok(dir) = self.git_dir(app) {
-                    self.git_hunks_interactive(app, dir, change, hunks);
+                    self.git_hunks_interactive(app, dir, change, hunks, unstage);
                 }
             }
             Ok(Outcome::Executable(path, version)) => {
@@ -181,11 +204,20 @@ impl Ide {
                 self.say(app, &format!("Git: {version}"));
             }
             Ok(Outcome::Message(text)) => self.say(app, &text),
+            Ok(Outcome::Worktree(update, message)) => {
+                self.git_reload_files(app, &update);
+                let window = self.git.panel(app);
+                window.set(app, update.snapshot);
+                if !message.is_empty() {
+                    self.say(app, &message);
+                }
+                self.tree_dirty = true;
+            }
         }
     }
 
     pub(super) fn git_command(&mut self, app: &mut Program, command: u16) -> bool {
-        if !(CM_GIT_SHOW..=CM_GIT_HUNKS).contains(&command) {
+        if !(CM_GIT_SHOW..=CM_GIT_PULL_MERGE).contains(&command) {
             return false;
         }
         if self.git.pending.is_some() {
@@ -266,8 +298,48 @@ impl Ide {
                     self.start_git(app, dir, "Получение изменений для pull", move |git| {
                         let snapshot = git.snapshot()?;
                         git.fetch_upstream()?;
-                        Ok(Outcome::Fetched(snapshot.root, snapshot.branch))
+                        Ok(Outcome::Fetched(snapshot.root, snapshot.branch, PullMode::FastForward))
                     });
+                }
+            }
+            CM_GIT_PULL_MERGE => {
+                if self.git_worktree_ready(app) {
+                    self.start_git(app, dir, "Pull (fetch + merge)", move |git| {
+                        let snapshot = git.snapshot()?;
+                        git.fetch_upstream()?;
+                        Ok(Outcome::Fetched(snapshot.root, snapshot.branch, PullMode::Merge))
+                    });
+                }
+            }
+            CM_GIT_MERGE_UPSTREAM => {
+                if self.git_worktree_ready(app) {
+                    self.start_git(app, dir, "Слияние с upstream", |git| {
+                        Ok(Outcome::Worktree(Box::new(git.merge_upstream()?), "Слияние с upstream.".into()))
+                    })
+                }
+            }
+            CM_GIT_REBASE_UPSTREAM => {
+                if self.git_worktree_ready(app) {
+                    self.start_git(app, dir, "Rebase на upstream", |git| {
+                        Ok(Outcome::Worktree(Box::new(git.rebase_upstream()?), "Rebase на upstream.".into()))
+                    })
+                }
+            }
+            CM_GIT_CONTINUE => {
+                if self.git_worktree_ready(app) {
+                    self.start_git(app, dir, "Продолжение Git", |git| {
+                        Ok(Outcome::Worktree(Box::new(git.operation_continue()?), "Операция продолжена.".into()))
+                    })
+                }
+            }
+            CM_GIT_ABORT => {
+                if message_box(app, "Отменить незавершённый merge/rebase?", mf::CONFIRMATION | mf::YES_NO_CANCEL) != cm::YES {
+                    return true;
+                }
+                if self.git_worktree_ready(app) {
+                    self.start_git(app, dir, "Отмена merge/rebase", |git| {
+                        Ok(Outcome::Worktree(Box::new(git.operation_abort()?), "Операция отменена.".into()))
+                    })
                 }
             }
             CM_GIT_HISTORY => {
@@ -278,7 +350,8 @@ impl Ide {
                 self.git.panel(app).cycle_filter(app);
             }
             CM_GIT_OPEN => self.git_open_selected(app, dir),
-            CM_GIT_HUNKS => self.git_hunks_load(app, dir),
+            CM_GIT_HUNKS => self.git_hunks_load(app, dir, false),
+            CM_GIT_HUNKS_STAGED => self.git_hunks_load(app, dir, true),
             CM_GIT_DIFF | CM_GIT_DIFF_STAGED | CM_GIT_STAGE | CM_GIT_UNSTAGE => self.git_selected_command(app, dir, command),
             CM_GIT_COMMIT => {
                 let index_ready = self
@@ -505,13 +578,13 @@ impl Ide {
         }
     }
 
-    fn git_hunks_load(&mut self, app: &mut Program, dir: PathBuf) {
+    fn git_hunks_load(&mut self, app: &mut Program, dir: PathBuf, from_index: bool) {
         let Some(panel) = &self.git.panel else { return };
         let Some(change) = panel.selected(app).cloned() else {
             self.say(app, "Git: выберите файл в списке.");
             return;
         };
-        if change.index == '?' {
+        if change.index == '?' && !from_index {
             self.say(app, "Git: для нового файла используйте «+ В индекс» целиком.");
             return;
         }
@@ -519,42 +592,74 @@ impl Ide {
             self.say(app, "Git: сначала разрешите конфликт.");
             return;
         }
-        self.start_git(app, dir, "Чтение блоков diff", move |git| {
-            let text = git.diff(&change, false)?;
+        if from_index && matches!(change.index, '.' | '?') {
+            self.say(app, "Git: в индексе нет подготовленных изменений для этого файла.");
+            return;
+        }
+        if !from_index && change.worktree == '.' {
+            let msg = if change.index != '.' && change.index != '?' {
+                "Git: в рабочей копии нет новых правок (есть только индекс — «−Блоки»)."
+            } else {
+                "Git: нет неподготовленных правок. Для индекса — «−Блоки»."
+            };
+            self.say(app, msg);
+            return;
+        }
+        let label = if from_index { "Чтение блоков индекса" } else { "Чтение блоков diff" };
+        self.start_git(app, dir, label, move |git| {
+            let text = git.diff(&change, from_index)?;
             let hunks = crate::git::parse_patch_hunks(&text);
             if hunks.is_empty() {
-                return Ok(Outcome::Message("Git: в файле нет блоков для выборочной подготовки.".into()));
+                let msg = if from_index {
+                    "Git: в индексе нет блоков для выборочного снятия."
+                } else {
+                    "Git: в файле нет блоков для выборочной подготовки."
+                };
+                return Ok(Outcome::Message(msg.into()));
             }
-            Ok(Outcome::HunkList(change, hunks))
+            Ok(Outcome::HunkList(change, hunks, from_index))
         });
     }
 
-    fn git_hunks_interactive(&mut self, app: &mut Program, dir: PathBuf, change: Change, mut hunks: Vec<crate::git::Hunk>) {
-        let mut staged = false;
+    fn git_hunks_interactive(
+        &mut self,
+        app: &mut Program,
+        dir: PathBuf,
+        change: Change,
+        mut hunks: Vec<crate::git::Hunk>,
+        unstage: bool,
+    ) {
+        let mut changed = false;
         loop {
-            match git_ui::pick_hunk(app, &change.path, &hunks) {
+            match git_ui::pick_hunk(app, &change.path, &hunks, unstage) {
                 git_ui::HunkPick::Close => break,
                 git_ui::HunkPick::View(i) => {
                     git_ui::show_diff(app, &format!("Блок {}", i + 1), &hunks[i].patch);
                 }
-                git_ui::HunkPick::Stage(i) => {
+                git_ui::HunkPick::Apply(i) => {
                     let patch = hunks[i].patch.clone();
                     let git = Git { executable: &self.cfg.git, cwd: &dir };
-                    match git.apply_hunk(&patch, false) {
+                    match git.apply_hunk(&patch, unstage) {
                         Ok(()) => {
                             hunks.remove(i);
-                            staged = true;
-                            self.say(app, &format!("Git: блок {} подготовлен в индекс.", i + 1));
+                            changed = true;
+                            let msg = if unstage {
+                                format!("Git: блок {} снят с индекса.", i + 1)
+                            } else {
+                                format!("Git: блок {} подготовлен в индекс.", i + 1)
+                            };
+                            self.say(app, &msg);
                         }
                         Err(error) => {
-                            self.git_error(app, format!("Git: не удалось подготовить блок — {error}"));
+                            let what = if unstage { "снять" } else { "подготовить" };
+                            self.git_error(app, format!("Git: не удалось {what} блок — {error}"));
                             break;
                         }
                     }
                 }
             }
         }
-        if staged {
+        if changed {
             if let Ok(snapshot) = (Git { executable: &self.cfg.git, cwd: &dir }).snapshot() {
                 if let Some(panel) = &mut self.git.panel {
                     panel.set(app, snapshot);

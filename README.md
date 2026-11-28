@@ -340,7 +340,9 @@ cargo run --bin tvs-import -- --examples ../tvision-rs examples
 | `formextract` | диалоги из кода → формы (интерпретатор подмножества Rust) |
 | `lsp` | клиент Language Server Protocol (rust-analyzer, crates-lsp) |
 | `words` | словарь проекта для подсказок без сервера LSP |
-| `ide` | меню, строка состояния, обработчик команд среды; `ide/lsp_glue` — LSP в редакторах (`.rs` → rust-analyzer, `.toml` → crates-lsp) |
+| `ide` | `Ide`, `AppHandler`; `ide/menu` — меню и строка состояния; glue — `project`, `forms`, `app_model`, `commands`, `windows`, `lifecycle`, `ui`, `build`, `git`, `lsp` |
+| `debug` | отладка после сборки (rust-lldb / gdb) |
+| `git` | вызов Git, merge/rebase, блоки patch (`git/hunks`) |
 
 Файлы проекта (`.tvsp`) и форм (`.tvf`) — YAML: меню, строка состояния и
 команды — списки `app.menu`, `app.status`, `app.commands`, элементы формы —

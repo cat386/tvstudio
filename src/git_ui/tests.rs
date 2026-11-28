@@ -28,7 +28,14 @@ fn git_actions_fit_above_messages_and_empty_status_is_explicit() {
         let mut panel = Panel::open(&mut app);
         let window = app.find::<Window>(panel.window).unwrap();
         assert!(window.group.vs.origin.y + window.group.vs.size.y <= top);
-        panel.set(&mut app, Snapshot { root: PathBuf::new(), branch: "main".into(), upstream: String::new(), changes: vec![], initial: false });
+        panel.set(&mut app, Snapshot {
+            root: PathBuf::new(),
+            branch: "main".into(),
+            upstream: String::new(),
+            changes: vec![],
+            initial: false,
+            repo_state: crate::git::RepoState::Normal,
+        });
         app.focus(messages); // Даже поверх активной панели окно сообщений не закрывает кнопки.
         app.redraw();
         let text = app.screen_text();

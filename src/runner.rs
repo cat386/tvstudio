@@ -22,6 +22,7 @@ pub enum JobMsg {
 pub enum After {
     Nothing,
     Run,
+    Debug,
 }
 
 /// Фоновая задача cargo.

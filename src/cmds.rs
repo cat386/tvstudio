@@ -14,6 +14,8 @@ pub const CM_STOP: u16 = 145;
 pub const CM_GENERATE: u16 = 146;
 /// Параметры сборки (профиль, features, платформа…) и сборка с ними.
 pub const CM_BUILD_OPTS: u16 = 147;
+/// Собрать и отладить (lldb/gdb).
+pub const CM_DEBUG: u16 = 148;
 
 // --- Формы ---
 pub const CM_NEW_FORM: u16 = 150;
@@ -136,6 +138,13 @@ pub const CM_GIT_OPEN: u16 = 1270;
 pub const CM_GIT_HUNKS: u16 = 1271;
 pub const CM_GIT_HUNK_VIEW: u16 = 1272;
 pub const CM_GIT_HUNK_STAGE: u16 = 1273;
+pub const CM_GIT_HUNKS_STAGED: u16 = 1274;
+pub const CM_GIT_HUNK_UNSTAGE: u16 = 1275;
+pub const CM_GIT_MERGE_UPSTREAM: u16 = 1276;
+pub const CM_GIT_REBASE_UPSTREAM: u16 = 1277;
+pub const CM_GIT_CONTINUE: u16 = 1278;
+pub const CM_GIT_ABORT: u16 = 1279;
+pub const CM_GIT_PULL_MERGE: u16 = 1280;
 
 pub const HC_DIALOG: u16 = 1010;
 pub const HC_PAGED_DIALOG: u16 = 1011;

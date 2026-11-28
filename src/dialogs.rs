@@ -528,6 +528,8 @@ pub struct Config {
     pub fmt_on_save: bool,
     /// Команда rustfmt.
     pub rustfmt: String,
+    /// Отладчик: пусто — rust-lldb/rust-gdb/lldb/gdb из PATH.
+    pub debugger: String,
 }
 
 impl Default for Config {
@@ -549,6 +551,7 @@ impl Default for Config {
             auto_complete: true,
             fmt_on_save: true,
             rustfmt: "rustfmt".into(),
+            debugger: String::new(),
         }
     }
 }
@@ -591,6 +594,9 @@ impl Config {
         c.auto_complete = j.bool("auto_complete", true);
         c.fmt_on_save = j.bool("fmt_on_save", true);
         c.rustfmt = Some(j.str("rustfmt")).filter(|s| !s.trim().is_empty()).unwrap_or(c.rustfmt);
+        if let Some(crate::json::Json::Str(s)) = j.get("debugger") {
+            c.debugger = s.clone();
+        }
         c.lsp_command = Some(j.str("lsp_command")).filter(|s| !s.trim().is_empty()).unwrap_or(c.lsp_command);
         // Пустая строка — сервер Cargo.toml выключен; нет ключа — по умолчанию.
         // taplo (прежний сервер) больше не поддерживается — заменяется на crates-lsp.
@@ -623,6 +629,7 @@ impl Config {
             ("auto_complete", Json::Bool(self.auto_complete)),
             ("fmt_on_save", Json::Bool(self.fmt_on_save)),
             ("rustfmt", Json::s(&self.rustfmt)),
+            ("debugger", Json::s(&self.debugger)),
         ]);
         let _ = std::fs::write(p, j.to_pretty());
     }
@@ -687,10 +694,11 @@ pub fn options_dialog(cfg: &Config) -> PagedDialog {
 
     let start = d.win.group.children.len();
     field(&mut d, 18, 4, "~c~argo", &cfg.cargo, 44, None);
-    field(&mut d, 18, 7, "t~v~ision-rs", &cfg.dep_value, 44, None);
+    field(&mut d, 18, 7, "~о~тладчик", &cfg.debugger, 44, None);
+    field(&mut d, 18, 10, "t~v~ision-rs", &cfg.dep_value, 44, None);
     d.add(StaticText::new(
-        Rect::new(2, 9, 63, 12),
-        "tvision-rs: Git-адрес или каталог библиотеки\nдля новых приложений с формами.\nКоманды установки инструментов — в справке F1.",
+        Rect::new(2, 12, 63, 15),
+        "Отладчик: rust-lldb, gdb… Пусто — подбор из PATH.\ntvision-rs: Git или каталог для новых проектов.\nУстановка инструментов — в справке F1.",
     ));
     groups.push(pages::ids_since(&d, start));
 
@@ -734,23 +742,24 @@ pub fn read_options(cfg: &mut Config, v: &Value) {
     cfg.theme = v.first().and_then(|x| x.as_u32()).unwrap_or(0).min(2);
     let flags = v.get(1).and_then(|x| x.as_u32()).unwrap_or(1);
     cfg.autosave = flags & 1 != 0;
-    cfg.lsp_enabled = v.get(4).and_then(|x| x.as_u32()).unwrap_or(1) != 0;
+    cfg.lsp_enabled = v.get(5).and_then(|x| x.as_u32()).unwrap_or(1) != 0;
     let cargo = s_at(&v, 2);
     if !cargo.trim().is_empty() {
         cfg.cargo = cargo.trim().to_string();
     }
-    let dv = s_at(&v, 3);
+    cfg.debugger = s_at(&v, 3).trim().to_string();
+    let dv = s_at(&v, 4);
     if let Some(dep) = Dependency::detect(&dv) {
         cfg.dep_git = matches!(dep, Dependency::Git(_));
         cfg.dep_value = dv.trim().to_string();
     }
-    let lsp = s_at(&v, 5);
+    let lsp = s_at(&v, 6);
     if !lsp.trim().is_empty() {
         cfg.lsp_command = lsp.trim().to_string();
     }
     // Сервер Cargo.toml (crates-lsp): пустое поле — выключен.
-    cfg.toml_lsp_command = s_at(&v, 6).trim().to_string();
-    let hl = v.get(7).and_then(|x| x.as_u32()).unwrap_or(31);
+    cfg.toml_lsp_command = s_at(&v, 7).trim().to_string();
+    let hl = v.get(8).and_then(|x| x.as_u32()).unwrap_or(31);
     cfg.hl_line = hl & 1 != 0;
     cfg.hl_col = hl & 2 != 0;
     cfg.fmt_on_save = hl & 4 != 0;

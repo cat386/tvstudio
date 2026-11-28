@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use super::*;
 use crate::codeedit::CodeWindow;
+use crate::dialogs;
 use crate::runner::{After, Job, JobMsg};
 use crate::toolwins::{parse_cargo_line, MessagesWindow, MsgKind, Problem, ProblemsWindow};
 
@@ -93,28 +94,67 @@ impl Ide {
                 }
             }
         }
-        if ok && after == After::Run && !self.headless {
-            if let Some(dir) = self.base_dir() {
-                let cargo = self.cfg.cargo.clone();
-                let opts = self.project.as_ref().map(|p| p.build.clone()).unwrap_or_default();
-                let mut extra = opts.cargo_args();
-                if opts.package.trim().is_empty() {
+        if ok && !self.headless {
+            if after == After::Run {
+                if let Some(dir) = self.base_dir() {
+                    let cargo = self.cfg.cargo.clone();
+                    let opts = self.project.as_ref().map(|p| p.build.clone()).unwrap_or_default();
+                    let mut extra = opts.cargo_args();
+                    if opts.package.trim().is_empty() {
+                        let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
+                        if let Some(p) = crate::model::cargo_layout(&dir).run_package(file.as_deref()) {
+                            self.say(app, &format!("— Запуск пакета {} (cargo run -p {})", p, p));
+                            extra.extend(["-p".to_string(), p]);
+                        }
+                    }
+                    let prog = opts.program_args();
+                    if !prog.is_empty() {
+                        extra.push("--".into());
+                        extra.extend(prog);
+                    }
+                    let extra: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
+                    let code = app.suspended(|| crate::runner::run_foreground(&dir, &cargo, &extra));
+                    self.say(app, &format!("— Программа завершилась, код {}", code.map(|c| c.to_string()).unwrap_or("?".into())));
+                }
+            } else if after == After::Debug {
+                if let Some(dir) = self.base_dir() {
+                    let Some(dbg) = crate::debug::resolve(&self.cfg.debugger) else {
+                        let msg = if self.cfg.debugger.trim().is_empty() {
+                            "Не найден отладчик (rust-lldb, rust-gdb, lldb или gdb в PATH).\nУстановите инструменты Rust или укажите путь в Параметрах среды."
+                        } else {
+                            "Указанный отладчик недоступен — проверьте путь в Параметрах среды."
+                        };
+                        self.say(app, &format!("— {msg}"));
+                        Self::error(app, msg);
+                        return;
+                    };
+                    let mut opts = self.project.as_ref().map(|p| p.build.clone()).unwrap_or_default();
+                    if opts.package.trim().is_empty() {
+                        let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
+                        if let Some(p) = crate::model::cargo_layout(&dir).run_package(file.as_deref()) {
+                            opts.package = p;
+                        }
+                    }
+                    let prog = opts.program_args();
                     let file = Self::windows::<CodeWindow>(app).last().and_then(|&id| app.find::<CodeWindow>(id)).map(|w| w.path());
-                    if let Some(p) = crate::model::cargo_layout(&dir).run_package(file.as_deref()) {
-                        self.say(app, &format!("— Запуск пакета {} (cargo run -p {})", p, p));
-                        extra.extend(["-p".to_string(), p]);
+                    let cargo = self.cfg.cargo.clone();
+                    let dbg_name = dbg.program.clone();
+                    self.say(app, &format!("— Отладка через {}", dbg_name));
+                    let r = app.suspended(|| crate::debug::debug_foreground(&dir, &dbg, &cargo, &opts, &prog, file.as_deref()));
+                    match r {
+                        Ok(code) => self.say(app, &format!("— Отладчик завершился, код {}", code.map(|c| c.to_string()).unwrap_or("?".into()))),
+                        Err(e) => {
+                            self.say(app, &format!("— {e}"));
+                            Self::error(app, &e);
+                        }
                     }
                 }
-                let prog = opts.program_args();
-                if !prog.is_empty() {
-                    extra.push("--".into());
-                    extra.extend(prog);
-                }
-                let extra: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
-                let code = app.suspended(|| crate::runner::run_foreground(&dir, &cargo, &extra));
-                self.say(app, &format!("— Программа завершилась, код {}", code.map(|c| c.to_string()).unwrap_or("?".into())));
             }
         }
+    }
+
+    pub fn debug_build(&mut self, app: &mut Program) {
+        self.cargo(app, &["build", "--message-format=short"], "Сборка для отладки", After::Debug);
     }
 
     fn update_marks(&mut self, app: &mut Program) {

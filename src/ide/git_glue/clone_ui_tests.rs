@@ -1,4 +1,5 @@
 use super::*;
+use crate::codeedit::CodeWindow;
 use tvision::platform::HeadlessBackend;
 
 #[test]

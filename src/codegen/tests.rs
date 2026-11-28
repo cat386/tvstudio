@@ -66,3 +66,31 @@ fn line_code_roundtrip() {
     assert_eq!((lines[1].x, lines[1].y, lines[1].w, lines[1].h), (10, 1, 1, 4));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn incremental_codegen_skips_unchanged() {
+    let dir = std::env::temp_dir().join(format!("tvs_cg_incr_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let tv = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tvision-rs");
+    let p = Project::create(&dir, "incr_app", &Dependency::Path(tv.display().to_string())).unwrap();
+    let f = about_form("x");
+    let first = generate_all(&p, &[f.clone()]).unwrap();
+    assert!(!first.is_empty());
+    let ui = p.dir.join("src/ui.rs");
+    let body = std::fs::read_to_string(&ui).unwrap();
+    assert!(body.lines().nth(1).unwrap().starts_with(DIGEST_MARK));
+    let second = generate_all(&p, &[f]).unwrap();
+    assert!(second.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn add_codegen_digest_replaces_stamp() {
+    let raw = format!("{GENERATED_MARK}\n// old\nfoo();\n");
+    let d = 0xabc_du64;
+    let stamped = add_codegen_digest(&raw, d);
+    assert!(stamped.contains(&format!("{DIGEST_MARK} {d:016x}")));
+    let again = add_codegen_digest(&stamped, d);
+    assert_eq!(stamped, again);
+}

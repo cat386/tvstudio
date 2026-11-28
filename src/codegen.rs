@@ -9,18 +9,94 @@
 //! * `src/main.rs` — только если его ещё нет: это файл программиста.
 //!
 //! Сгенерированные файлы помечены первой строкой [`GENERATED_MARK`] и
-//! перезаписываются при каждой генерации.
+//! отпечатком входных данных на второй (`// @tvstudio-digest:`). Если
+//! отпечаток совпадает с моделью, текст модуля заново не строится.
 
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write as _;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use crate::builder::input_width;
+use crate::json::Json;
 use crate::model::{
     build_order, camel, key_expr, parse_key, parse_tree, rust_str, Action, AppModel, Control, Form, FormClass, Kind, MenuNode, Pal, Project,
 };
 
 /// Метка сгенерированных файлов (первая строка).
 pub const GENERATED_MARK: &str = "// Сгенерировано TV Studio. Не редактируйте: файл перезаписывается.";
+
+/// Вторая строка сгенерированного файла: отпечаток модели для этой цели.
+pub const DIGEST_MARK: &str = "// @tvstudio-digest:";
+
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut h = DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
+}
+
+fn digest_json(j: &Json) -> u64 {
+    hash_bytes(crate::yaml::to_string(j).as_bytes())
+}
+
+fn ui_inputs_digest(p: &Project, forms: &[Form]) -> u64 {
+    let mut h = DefaultHasher::new();
+    digest_json(&p.app.to_json()).hash(&mut h);
+    p.name.hash(&mut h);
+    let mut names: Vec<_> = forms.iter().map(|f| (f.name.as_str(), digest_json(&f.to_json()))).collect();
+    names.sort_by_key(|(n, _)| *n);
+    for (n, d) in names {
+        n.hash(&mut h);
+        d.hash(&mut h);
+    }
+    h.finish()
+}
+
+fn form_inputs_digest(f: &Form) -> u64 {
+    digest_json(&f.to_json())
+}
+
+fn forms_mod_digest(forms: &[Form]) -> u64 {
+    let mut names: Vec<_> = forms.iter().map(|f| f.name.as_str()).collect();
+    names.sort_unstable();
+    hash_bytes(names.join("\n").as_bytes())
+}
+
+/// Вставить или обновить строку отпечатка сразу после [`GENERATED_MARK`].
+pub fn add_codegen_digest(text: &str, digest: u64) -> String {
+    let mut lines = text.lines();
+    let mark = lines.next().unwrap_or("");
+    if mark != GENERATED_MARK {
+        return text.to_string();
+    }
+    let mut body: Vec<&str> = lines.collect();
+    if body.first().is_some_and(|l| l.starts_with(DIGEST_MARK)) {
+        body.remove(0);
+    }
+    let body = body.join("\n");
+    let mut out = String::with_capacity(text.len() + 48);
+    let _ = writeln!(out, "{}", GENERATED_MARK);
+    let _ = writeln!(out, "{} {:016x}", DIGEST_MARK, digest);
+    out.push_str(&body);
+    if !body.is_empty() && !body.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn stored_codegen_digest(path: &PathBuf) -> Option<u64> {
+    let text = std::fs::read_to_string(path).ok()?;
+    if !text.starts_with(GENERATED_MARK) {
+        return None;
+    }
+    let line = text.lines().nth(1)?;
+    let hex = line.strip_prefix(DIGEST_MARK)?.trim();
+    u64::from_str_radix(hex, 16).ok()
+}
+
+fn needs_codegen(path: &PathBuf, digest: u64) -> bool {
+    stored_codegen_digest(path) != Some(digest)
+}
 
 // ======================================================================
 // main.rs — создаётся один раз
@@ -665,17 +741,29 @@ pub fn generate_all(p: &Project, forms: &[Form]) -> Result<Vec<PathBuf>, String>
         changed.push(main);
     }
     let ui = src.join("ui.rs");
-    if write_if_changed(&ui, &ui_rs(p, forms))? {
-        changed.push(ui);
+    let ui_digest = ui_inputs_digest(p, forms);
+    if needs_codegen(&ui, ui_digest) {
+        let text = add_codegen_digest(&ui_rs(p, forms), ui_digest);
+        if write_if_changed(&ui, &text)? {
+            changed.push(ui);
+        }
     }
     let fm = src.join("forms").join("mod.rs");
-    if write_if_changed(&fm, &forms_mod_rs(forms))? {
-        changed.push(fm);
+    let fm_digest = forms_mod_digest(forms);
+    if needs_codegen(&fm, fm_digest) {
+        let text = add_codegen_digest(&forms_mod_rs(forms), fm_digest);
+        if write_if_changed(&fm, &text)? {
+            changed.push(fm);
+        }
     }
     for f in forms {
         let path = p.form_code_path(&f.name);
-        if write_if_changed(&path, &form_rs(p, f))? {
-            changed.push(path);
+        let digest = form_inputs_digest(f);
+        if needs_codegen(&path, digest) {
+            let text = add_codegen_digest(&form_rs(p, f), digest);
+            if write_if_changed(&path, &text)? {
+                changed.push(path);
+            }
         }
     }
     // Модули удалённых форм убираем (только сгенерированные нами).

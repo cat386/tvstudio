@@ -1,7 +1,7 @@
 //! Окно статуса Git и диалоги выбора файла, каталога и ветки.
 
 use crate::cmds::*;
-use crate::git::{Change, Hunk, Snapshot};
+use crate::git::{Change, Hunk, RepoState, Snapshot};
 use crate::toolwins::Relay;
 use std::path::PathBuf;
 use tvision::layout::{item, HBox, VBox};
@@ -85,15 +85,21 @@ impl Panel {
         let add = button(&mut window, "~+~ В индекс", CM_GIT_STAGE);
         let remove = button(&mut window, "~-~ Из индекса", CM_GIT_UNSTAGE);
         let hunks = button(&mut window, "~Б~локи", CM_GIT_HUNKS);
+        let hunks_staged = button(&mut window, "−~Б~локи", CM_GIT_HUNKS_STAGED);
         let commit = button(&mut window, "~К~оммит...", CM_GIT_COMMIT);
         let branch = button(&mut window, "~В~етка...", CM_GIT_BRANCH);
+        let merge = button(&mut window, "~С~лить", CM_GIT_MERGE_UPSTREAM);
+        let rebase = button(&mut window, "R~e~base", CM_GIT_REBASE_UPSTREAM);
+        let cont = button(&mut window, "~Д~алее", CM_GIT_CONTINUE);
+        let abort = button(&mut window, "О~т~мена", CM_GIT_ABORT);
         window.set_layout(
             VBox::new()
                 .add(HBox::new().add(item(list_view).expand().stretch(1)).add(scroll1))
                 .space(1)
                 .add(line)
                 .add(HBox::new().spacing(1).add(refresh).add(filter_btn).add(diff).add(staged).add(open))
-                .add(HBox::new().spacing(1).add(add).add(remove).add(hunks).add(commit).add(branch)),
+                .add(HBox::new().spacing(1).add(add).add(remove).add(hunks).add(hunks_staged).add(commit).add(branch))
+                .add(HBox::new().spacing(1).add(merge).add(rebase).add(cont).add(abort)),
         );
         window.select(list_view);
         let window = crate::dialogs::insert(app, window);
@@ -169,6 +175,13 @@ impl Panel {
     pub fn ready_title(&self, app: &mut Program) {
         if let Some(snapshot) = &self.snapshot {
             let upstream = if snapshot.upstream.is_empty() { String::new() } else { format!(" → {}", snapshot.upstream) };
+            let op = if snapshot.repo_state != RepoState::Normal {
+                format!("  •  {}", snapshot.repo_state.label())
+            } else {
+                String::new()
+            };
+            let conflicts = snapshot.changes.iter().filter(|c| c.unmerged).count();
+            let conflict = if conflicts > 0 { format!("  •  конфликтов {conflicts}") } else { String::new() };
             let pending = snapshot.changes.iter().filter(|entry| !matches!(entry.index, '.' | '?') && !entry.unmerged).count();
             let filter = if self.filter == StatusFilter::All {
                 String::new()
@@ -178,8 +191,8 @@ impl Panel {
             self.title(
                 app,
                 format!(
-                    "Git — {}{}  •  файлов {}  •  в индексе {}{}",
-                    snapshot.branch, upstream, snapshot.changes.len(), pending, filter
+                    "Git — {}{}{}{}  •  файлов {}  •  в индексе {}{}",
+                    snapshot.branch, upstream, op, conflict, snapshot.changes.len(), pending, filter
                 ),
             );
         } else {
@@ -275,25 +288,31 @@ pub fn show_diff(app: &mut Program, title: &str, text: &str) {
 pub enum HunkPick {
     Close,
     View(usize),
-    Stage(usize),
+    Apply(usize),
 }
 
-/// Выбор блока diff: просмотр, подготовка в индекс или закрытие.
-pub fn pick_hunk(app: &mut Program, path: &std::path::Path, hunks: &[Hunk]) -> HunkPick {
+/// Выбор блока diff: просмотр, подготовка или снятие с индекса, закрытие.
+pub fn pick_hunk(app: &mut Program, path: &std::path::Path, hunks: &[Hunk], unstage: bool) -> HunkPick {
     if hunks.is_empty() {
         return HunkPick::Close;
     }
     let rows: Vec<String> = hunks.iter().enumerate().map(|(i, h)| format!("{}. {}", i + 1, h.header.trim())).collect();
-    let title = format!("Блоки — {}", path.display());
+    let title = if unstage {
+        format!("Блоки индекса — {}", path.display())
+    } else {
+        format!("Блоки — {}", path.display())
+    };
     let area = app.desktop().group.vs.extent();
     let mut dialog = Dialog::centered((area.width() - 2).clamp(36, 100), (rows.len().min(16) as i32 + 6).min((area.height() - 2).max(8)), &title);
     let scroll = dialog.win.standard_scroll_bar(true);
     let mut list = ListBox::new(Rect::default(), 1, Some(scroll));
     list.set_items(rows);
     let list = dialog.add(list);
-    dialog.add(Relay::new(list, CM_GIT_HUNK_STAGE));
+    let apply_cmd = if unstage { CM_GIT_HUNK_UNSTAGE } else { CM_GIT_HUNK_STAGE };
+    let apply_label = if unstage { "~−~ Из индекса" } else { "~+~ В индекс" };
+    dialog.add(Relay::new(list, apply_cmd));
     let view = dialog.add(Button::new(Rect::default(), "~П~росмотр", CM_GIT_HUNK_VIEW, bf::NORMAL));
-    let stage = dialog.add(Button::new(Rect::default(), "~+~ В индекс", CM_GIT_HUNK_STAGE, bf::DEFAULT));
+    let stage = dialog.add(Button::new(Rect::default(), apply_label, apply_cmd, bf::DEFAULT));
     let close = dialog.add(Button::new(Rect::default(), "Закрыть", cm::CANCEL, bf::NORMAL));
     dialog.set_layout(
         VBox::new()
@@ -312,7 +331,7 @@ pub fn pick_hunk(app: &mut Program, path: &std::path::Path, hunks: &[Hunk]) -> H
     if command == CM_GIT_HUNK_VIEW {
         HunkPick::View(index)
     } else {
-        HunkPick::Stage(index)
+        HunkPick::Apply(index)
     }
 }
 

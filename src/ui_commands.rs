@@ -42,6 +42,7 @@ pub fn commands() -> Vec<CommandSpec> {
     add(CM_CHECK, "~П~роверить код", kb::alt_f(9), "Alt+F9", "");
     add(CM_BUILD, "~С~обрать", kb::f(9), "F9", "");
     add(CM_RUN, "~З~апустить приложение", kb::ctrl_f(9), "Ctrl+F9", "");
+    add(CM_DEBUG, "~О~тладка", kb::shift_f(5), "Shift+F5", "");
     add(CM_NEXT_ERR, "Следующая о~ш~ибка", kb::f(8), "F8", "");
     add(CM_PREV_ERR, "Предыдущая ош~и~бка", kb::shift_f(8), "Shift+F8", "");
     add(CM_SHOW_PROBLEMS, "О~ш~ибки и предупреждения", kb::ctrl_f(8), "Ctrl+F8", "");

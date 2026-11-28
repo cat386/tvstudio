@@ -17,17 +17,19 @@
 //! | [`appdesign`] | редакторы меню, строки состояния, команд |
 //! | [`codeedit`], [`highlight`] | редактор кода и подсветка |
 //! | [`runner`] | запуск cargo в фоне |
+//! | [`debug`] | отладка lldb/gdb после сборки |
 //! | [`dialogs`] | прочие диалоги и настройки среды |
 //! | [`yaml`], [`toml`], [`json`] | формат файлов проекта и форм (YAML; старые — TOML и JSON); TOML — ещё и Cargo.toml |
 //! | [`formextract`] | извлечение форм из диалогов в коде |
 //! | [`importer`] | импорт готовой программы на tvision-rs |
-//! | [`ide`] | сама среда: меню и обработчик команд |
+//! | [`ide`] | среда: меню, [`ide::Ide`], glue-модули (проект, формы, git, сборка, LSP…) |
 
 pub mod appdesign;
 pub mod builder;
 pub mod cmds;
 pub mod codeedit;
 pub mod codegen;
+pub mod debug;
 pub mod designer;
 pub mod dialogs;
 mod fileio;

@@ -18,6 +18,26 @@ pub struct Change {
     pub unmerged: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RepoState {
+    #[default]
+    Normal,
+    Merge,
+    Rebase,
+    CherryPick,
+}
+
+impl RepoState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "",
+            Self::Merge => "слияние",
+            Self::Rebase => "rebase",
+            Self::CherryPick => "cherry-pick",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Snapshot {
     pub root: PathBuf,
@@ -25,6 +45,7 @@ pub struct Snapshot {
     pub upstream: String,
     pub changes: Vec<Change>,
     pub initial: bool,
+    pub repo_state: RepoState,
 }
 
 pub struct Git<'a> {
@@ -124,8 +145,26 @@ impl Git<'_> {
     /// Статус и все относительные имена относятся к дереву Git целиком.
     pub fn snapshot(&self) -> Result<Snapshot> {
         let root = self.root()?;
-        let raw = Git { cwd: &root, ..*self }.run(["status", "--porcelain=v2", "-z", "--branch", "--no-renames", "--untracked-files=all"])?;
-        parse_status(root, &raw)
+        let git = Git { cwd: &root, ..*self };
+        let raw = git.run(["status", "--porcelain=v2", "-z", "--branch", "--no-renames", "--untracked-files=all"])?;
+        let repo_state = git.repo_state();
+        let mut snapshot = parse_status(root, &raw)?;
+        snapshot.repo_state = repo_state;
+        Ok(snapshot)
+    }
+
+    /// Незавершённое слияние, rebase или cherry-pick.
+    pub fn repo_state(&self) -> RepoState {
+        if self.run(["rev-parse", "-q", "--verify", "MERGE_HEAD"]).is_ok() {
+            return RepoState::Merge;
+        }
+        if self.run(["rev-parse", "-q", "--verify", "REBASE_HEAD"]).is_ok() {
+            return RepoState::Rebase;
+        }
+        if self.run(["rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD"]).is_ok() {
+            return RepoState::CherryPick;
+        }
+        RepoState::Normal
     }
 
     pub fn init(&self, branch: &str) -> Result<Snapshot> {
@@ -349,7 +388,14 @@ fn terminate_git(child: &mut Child) {
 /// Porcelain v2 отделяет записи нулевым байтом. У обычных строк и
 /// конфликтов разное число полей, а хвост содержит путь целиком.
 fn parse_status(root: PathBuf, raw: &[u8]) -> Result<Snapshot> {
-    let mut snapshot = Snapshot { root, branch: String::new(), upstream: String::new(), changes: Vec::new(), initial: false };
+    let mut snapshot = Snapshot {
+        root,
+        branch: String::new(),
+        upstream: String::new(),
+        changes: Vec::new(),
+        initial: false,
+        repo_state: RepoState::Normal,
+    };
     for row in raw.split(|&b| b == 0).filter(|row| !row.is_empty()) {
         if let Some(branch) = row.strip_prefix(b"# branch.head ") {
             snapshot.branch = display(branch);
@@ -512,6 +558,70 @@ impl Git<'_> {
         let git = Git { cwd: &root, ..*self };
         let old = git.head();
         git.run(["merge", "--ff-only", "--no-autostash", "--no-edit", "@{upstream}"])?;
+        git.worktree_update(old.as_deref())
+    }
+
+    pub fn merge_upstream(&self) -> Result<WorktreeUpdate> {
+        self.run(["rev-parse", "--verify", "@{upstream}"])?;
+        let root = self.root()?;
+        let git = Git { cwd: &root, ..*self };
+        let old = git.head();
+        git.run(["merge", "--no-edit", "--no-autostash", "@{upstream}"])?;
+        git.worktree_update(old.as_deref())
+    }
+
+    pub fn rebase_upstream(&self) -> Result<WorktreeUpdate> {
+        self.run(["rev-parse", "--verify", "@{upstream}"])?;
+        let root = self.root()?;
+        let git = Git { cwd: &root, ..*self };
+        let old = git.head();
+        git.run(["rebase", "@{upstream}"])?;
+        git.worktree_update(old.as_deref())
+    }
+
+    pub fn operation_continue(&self) -> Result<WorktreeUpdate> {
+        let root = self.root()?;
+        let git = Git { cwd: &root, ..*self };
+        let state = git.repo_state();
+        if state == RepoState::Normal {
+            return Err("Нет незавершённого merge, rebase или cherry-pick".into());
+        }
+        let old = git.head();
+        match state {
+            RepoState::Merge => {
+                git.run(["-c", "core.editor=true", "merge", "--continue"])?;
+            }
+            RepoState::Rebase => {
+                git.run(["-c", "core.editor=true", "rebase", "--continue"])?;
+            }
+            RepoState::CherryPick => {
+                git.run(["-c", "core.editor=true", "cherry-pick", "--continue"])?;
+            }
+            RepoState::Normal => {}
+        }
+        git.worktree_update(old.as_deref())
+    }
+
+    pub fn operation_abort(&self) -> Result<WorktreeUpdate> {
+        let root = self.root()?;
+        let git = Git { cwd: &root, ..*self };
+        let state = git.repo_state();
+        if state == RepoState::Normal {
+            return Err("Нечего отменять: нет незавершённой операции Git".into());
+        }
+        let old = git.head();
+        match state {
+            RepoState::Merge => {
+                git.run(["merge", "--abort"])?;
+            }
+            RepoState::Rebase => {
+                git.run(["rebase", "--abort"])?;
+            }
+            RepoState::CherryPick => {
+                git.run(["cherry-pick", "--abort"])?;
+            }
+            RepoState::Normal => {}
+        }
         git.worktree_update(old.as_deref())
     }
 
