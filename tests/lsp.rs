@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use tvision::platform::HeadlessBackend;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use tvision::platform::{Backend, HeadlessBackend, RawEvent};
 use tvision::*;
 use tvstudio::cmds::*;
 use tvstudio::codeedit::{CodeEditor, CodeWindow, Gutter};
@@ -73,11 +74,32 @@ fn stalled_server_does_not_block_and_queue_overflow_is_reported() {
     assert!(events.contains(&LspEvent::Exited));
 }
 
+// Очередь реальных сырых событий проходит через тот же HoverBackend, что и приложение.
+struct InputBackend {
+    inner: HeadlessBackend,
+    input: Rc<RefCell<VecDeque<RawEvent>>>,
+}
+impl Backend for InputBackend {
+    fn size(&self) -> Point {
+        self.inner.size()
+    }
+    fn read(&mut self, timeout: Duration) -> Option<RawEvent> {
+        self.input.borrow_mut().pop_front().or_else(|| self.inner.read(timeout))
+    }
+    fn flush(&mut self, screen: &ScreenBuffer, cursor: Option<Point>, insert: bool) {
+        self.inner.flush(screen, cursor, insert);
+    }
+    fn last_frame(&self) -> Option<&ScreenBuffer> {
+        self.inner.last_frame()
+    }
+}
+
 struct T {
     app: Program,
     ide: Ide,
     win: ViewId,
     file: PathBuf,
+    input: Rc<RefCell<VecDeque<RawEvent>>>,
 }
 
 impl T {
@@ -90,15 +112,22 @@ impl T {
         std::fs::write(&file, SRC).unwrap();
         let mut b = HeadlessBackend::new(120, 40);
         b.esc_budget = 0;
-        let mut app = Program::new(Box::new(b), Some(menu_bar()), Some(status_line()));
+        let input = Rc::new(RefCell::new(VecDeque::new()));
         let cfg = Config { lsp_command: env!("CARGO_BIN_EXE_tvs-fake-lsp").into(), toml_lsp_command: String::new(), ..Config::default() };
         let mut ide = Ide::new(cfg, true);
+        let backend = tvstudio::hover::HoverBackend::new(Box::new(InputBackend { inner: b, input: input.clone() }), ide.lsp_state.pointer.clone());
+        let mut app = Program::new(Box::new(backend), Some(menu_bar()), Some(status_line()));
         ide.startup(&mut app, vec![p.file().display().to_string()]);
         app.pump(&mut ide);
         let win = ide.open_file(&mut app, &file, None).unwrap();
-        let mut t = T { app, ide, win, file };
+        let mut t = T { app, ide, win, file, input };
         assert!(t.wait(|t| t.ide.lsp.as_ref().map(|c| c.ready).unwrap_or(false)), "сервер не ответил на initialize");
         t
+    }
+
+    fn mouse(&mut self, pos: Point, wheel: i8) {
+        self.input.borrow_mut().push_back(RawEvent::Mouse { pos, buttons: 0, mods: Mods::NONE, wheel });
+        self.pump();
     }
 
     fn pump(&mut self) {
@@ -346,7 +375,7 @@ fn toml_server_for_cargo_toml() {
     app.pump(&mut ide);
     let rs_win = ide.open_file(&mut app, &rs, None).unwrap();
     let win = ide.open_file(&mut app, &cargo, None).unwrap();
-    let mut t = T { app, ide, win, file: cargo.clone() };
+    let mut t = T { app, ide, win, file: cargo.clone(), input: Rc::default() };
     assert!(t.wait(|t| t.ide.lsp.as_ref().map(|c| c.ready).unwrap_or(false) && t.ide.lsp_toml.as_ref().map(|c| c.ready).unwrap_or(false)));
 
     // Каждый файл — своему серверу, с правильным languageId.
@@ -426,7 +455,7 @@ fn cargo_toml_hints_and_quick_fixes() {
     ide.startup(&mut app, vec![p.file().display().to_string()]);
     app.pump(&mut ide);
     let win = ide.open_file(&mut app, &cargo, None).unwrap();
-    let mut t = T { app, ide, win, file: cargo.clone() };
+    let mut t = T { app, ide, win, file: cargo.clone(), input: Rc::default() };
     let hint = |t: &T, line: usize| t.ed().hints.iter().find(|(l, _)| *l == line).map(|(_, h)| h.clone());
 
     // Подсказки: строки с «= "» (name, serde, legacy, bad); у legacy — из частей.
@@ -596,4 +625,105 @@ fn hover_delay_hide_and_stale_reply() {
     assert!(t.wait(|t| t.ide.lsp.as_ref().map(|c| c.ready).unwrap_or(false)));
     set_pointer(&mut t, point, true);
     assert!(t.wait(|t| t.ed().hover.is_some()), "hover must work after restart");
+}
+
+/// Полный путь: сырой ввод → HoverBackend → LSP → Markdown → отрисовка.
+#[test]
+fn hover_markdown_scroll_transition_refresh_and_escape() {
+    let mut t = T::new("hover_markdown");
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    let main = origin + Point::new(4, 4);
+    let helper = origin + Point::new(4, 0);
+    let cursor = t.ed().fe.editor.cursor();
+    let scroll = t.ed().fe.editor.delta;
+    t.mouse(main, 0);
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    assert!(t.wait(|t| t.ed().hover.is_some()));
+    assert!(t.ed().hover.as_ref().unwrap().markdown);
+    let rows = t.ed().hover.as_ref().unwrap().rows(t.ed().vs().size);
+    assert!(rows.iter().any(|r| r.2.contains("Main")));
+    assert!(!rows.iter().any(|r| r.2.contains("**") || r.2.contains("```")));
+    assert!(rows.iter().any(|r| r.2.ends_with('█')));
+    let inside = origin + Point::new(rows[1].1 + 1, rows[1].0);
+    t.mouse(inside, 1);
+    assert_eq!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().offset, 3);
+    assert_eq!(t.ed().fe.editor.cursor(), cursor);
+    assert_eq!(t.ed().fe.editor.delta, scroll);
+    assert!(t.ed().vs().is_focused());
+    // Возврат на имя сохраняет даже длинную подсказку и текущую прокрутку.
+    t.mouse(main, 0);
+    assert!(t.ed().hover.is_some());
+    assert!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().leaving.is_none());
+    let gap = origin + Point::new(100, 0);
+    t.mouse(gap, 0);
+    assert!(t.ed().hover.is_some());
+    t.mouse(inside, 0);
+    assert!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().leaving.is_none());
+    // Другое имя ждёт обычные 400 мс от движения, без дополнительных 300 мс.
+    t.mouse(helper, 0);
+    assert!(t.ed().hover.as_ref().unwrap().markdown);
+    {
+        let mut p = t.ide.lsp_state.pointer.borrow_mut();
+        p.active.as_mut().unwrap().leaving = Some(Instant::now() - Duration::from_millis(310));
+        p.since = Instant::now() - Duration::from_millis(350);
+    }
+    t.pump();
+    assert!(t.ed().hover.is_none());
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    assert!(t.wait(|t| t.ed().hover.is_some()));
+    assert!(!t.ed().hover.as_ref().unwrap().markdown);
+    assert_eq!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().offset, 0);
+    t.input.borrow_mut().push_back(RawEvent::Key(KeyEvent::new(Key::Esc, Mods::NONE)));
+    t.pump();
+    assert!(t.ed().hover.is_none());
+    assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
+    // Закрытие файла убирает область, которая могла бы поглощать колесо.
+    t.mouse(main, 0);
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    assert!(t.wait(|t| t.ed().hover.is_some()));
+    t.app.put_event(Event::Command(Message::with(cm::CLOSE, Info::Id(t.win))));
+    t.pump();
+    assert!(t.app.find::<CodeWindow>(t.win).is_none());
+    assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
+}
+
+#[test]
+fn hover_document_change_cancels_pending_and_visible() {
+    let mut t = T::new("hover_change");
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    let main = origin + Point::new(4, 4);
+    t.mouse(main, 0);
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    t.pump(); // запрос уже отправлен, учебный сервер ещё ждёт 150 мс
+    t.app.find_mut::<CodeWindow>(t.win).unwrap().editor_mut().fe.editor.insert_text(" ", false);
+    t.pump();
+    std::thread::sleep(Duration::from_millis(220));
+    t.pump();
+    assert!(t.ed().hover.is_none(), "старый ответ после изменения документа отброшен");
+    assert!(t.ide.lsp_state.pointer.borrow().pos.is_none());
+    t.mouse(main, 0);
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    assert!(t.wait(|t| t.ed().hover.is_some()));
+    t.app.find_mut::<CodeWindow>(t.win).unwrap().editor_mut().fe.editor.insert_text(" ", false);
+    t.pump();
+    assert!(t.ed().hover.is_none(), "изменение закрывает уже показанную подсказку");
+    assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
+}
+
+#[test]
+fn hover_typing_closes_without_moving_keyboard_focus() {
+    let mut t = T::new("hover_typing");
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    t.mouse(origin + Point::new(4, 0), 0);
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    assert!(t.wait(|t| t.ed().hover.is_some()));
+    t.input.borrow_mut().push_back(RawEvent::Key(KeyEvent::new(Key::Char('z'), Mods::NONE)));
+    t.pump();
+    assert!(t.ed().hover.is_none());
+    assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
+    assert!(t.ed().vs().is_focused());
+    assert!(t.ed().fe.editor.text().contains('z'));
 }

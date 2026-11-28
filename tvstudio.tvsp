@@ -3,7 +3,7 @@ version: 1
 name: tvstudio
 kind: rust
 forms: []
-open_files: [src/codeedit.rs, src/builder.rs, src/words.rs, src/fileio.rs, src/formextract.rs, examples/guide_contacts/src/forms/contact_dialog.rs, src/ide/lsp_glue.rs, src/git.rs, src/git_ui.rs, src/ide/git_glue.rs, src/toolwins.rs, src/ide.rs, src/cmds.rs, src/ui_commands.rs, src/dialogs.rs, Cargo.toml, examples/guide_contacts/src/main.rs, src/main.rs, build.rs]
+open_files: [src/hover.rs]
 app:
   title: tvstudio
   russian: true

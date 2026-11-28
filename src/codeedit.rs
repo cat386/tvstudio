@@ -671,7 +671,8 @@ impl View for CodeEditor {
         // Фон подчёркнутых диагностикой мест.
         let err_bg = |a: Attr| if wide { with_bg256(a, 52) } else { with_back(a, 4) };
         let warn_bg = |a: Attr| if wide { with_bg256(a, 58) } else { with_back(a, 6) };
-        let popup = if self.completion.is_some() { self.completion_rows() } else { self.hover.as_ref().map(|h| h.rows(size)).unwrap_or_default() };
+        let popup = self.completion_rows();
+        let hover = if self.completion.is_none() { self.hover.as_ref().map(|h| h.rows(size)).unwrap_or_default() } else { vec![] };
         let (pop_n, pop_s) = if wide { (attr256(223, 237), attr256(235, 214)) } else { (attr(0, 7), attr(15, 2)) };
         // Строка и столбец курсора — чуть другим фоном (только в активном
         // редакторе, чтобы в остальных окнах не рябило).
@@ -783,6 +784,16 @@ impl View for CodeEditor {
             for (py, px, text, on) in &popup {
                 if *py == row {
                     b.move_str_limited(*px as usize, text, if *on { pop_s } else { pop_n }, w.saturating_sub(*px as usize));
+                }
+            }
+            for (py, px, text, styles) in &hover {
+                if *py == row {
+                    let mut x = *px as usize;
+                    for (i, ch) in text.chars().enumerate() {
+                        let style = styles.get(i).copied().unwrap_or_default();
+                        b.move_str_limited(x, &ch.to_string(), style.attr(pop_n, wide), w.saturating_sub(x));
+                        x += tvision::text::char_width(ch).max(1);
+                    }
                 }
             }
             dc.write_line(0, row, size.x, 1, &b);

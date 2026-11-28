@@ -252,6 +252,12 @@ fn main() {
                         "contents",
                         Json::obj(vec![("kind", Json::s("plaintext")), ("value", Json::s("fn helper() -> i32\nHelper documentation"))]),
                     )])
+                } else if word == "main" {
+                    let text = format!(
+                        "# Main\n\n**Entry** *point* `main` [docs](https://example.org)\n\n```rust\nfn main()\n```\n\n{}",
+                        (0..25).map(|n| format!("- item {n}\n")).collect::<String>()
+                    );
+                    Json::obj(vec![("contents", Json::obj(vec![("kind", Json::s("markdown")), ("value", Json::s(&text))]))])
                 } else {
                     Json::Null
                 };

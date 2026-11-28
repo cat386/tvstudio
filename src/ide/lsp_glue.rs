@@ -342,7 +342,30 @@ impl Ide {
     }
 
     fn hover_idle(&mut self, app: &mut Program) {
+        self.lsp_state.pointer.borrow_mut().expire();
+        // Изменение документа и закрытие окна отменяют и видимую подсказку,
+        // и ожидающий ответ. Без нового движения мыши повторного запроса нет.
+        let invalid = app.modal_top().is_some()
+            || self.lsp_state.hover_key.as_ref().is_some_and(|key| {
+                app.find::<CodeWindow>(key.win).is_none_or(|w| {
+                    let e = w.editor();
+                    w.path() != key.path
+                        || e.fe.editor.delta != key.scroll
+                        || e.fe.editor.text() != key.text
+                        || e.completion.is_some()
+                        || (self.lsp_state.pointer.borrow().active.is_some() && e.hover.is_none())
+                })
+            });
+        if invalid {
+            let mut p = self.lsp_state.pointer.borrow_mut();
+            p.pos = None;
+            p.active = None;
+            p.generation = p.generation.wrapping_add(1);
+        }
         let pointer = self.lsp_state.pointer.borrow().clone();
+        if pointer.active.is_some() {
+            return;
+        }
         let target = if app.modal_top().is_none() { pointer.pos.and_then(|p| crate::hover::hit(&app.group, p)) } else { None };
         let key = target.and_then(|(editor_id, pos, local)| {
             Self::windows::<CodeWindow>(app).into_iter().find_map(|id| {
@@ -548,12 +571,13 @@ impl Ide {
                     }
                 }
             }
-            LspEvent::Hover { id, text } => {
+            LspEvent::Hover { id, text, markdown } => {
                 if let Some(Wait::Hover { key }) = self.lsp_state.wait.remove(&(srv, id)) {
                     if self.lsp_state.hover_key.as_ref() == Some(&key) && !text.trim().is_empty() {
                         let pointer = self.lsp_state.pointer.clone();
                         if let Some(w) = app.find_mut::<CodeWindow>(key.win) {
-                            w.editor_mut().hover = Some(crate::hover::Popup { pointer, generation: key.generation, at: key.local, text });
+                            crate::hover::activate(&pointer, w.editor(), key.pos, key.local);
+                            w.editor_mut().hover = Some(crate::hover::Popup { pointer, generation: key.generation, at: key.local, text, markdown });
                         }
                     }
                 }

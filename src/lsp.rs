@@ -205,6 +205,7 @@ pub enum LspEvent {
     Hover {
         id: i64,
         text: String,
+        markdown: bool,
     },
     /// Сервер готов (ответ на initialize).
     Ready {
@@ -672,7 +673,7 @@ impl LspClient {
                     "resolveSupport": {"properties": ["additionalTextEdits", "detail", "documentation"]}}, "contextSupport": true},
                 "definition": {"linkSupport": true},
                 "references": {},
-                "hover": {"contentFormat": ["plaintext", "markdown"]},
+                "hover": {"contentFormat": ["markdown", "plaintext"]},
                 "inlayHint": {"dynamicRegistration": false},
                 "codeAction": {"codeActionLiteralSupport": {"codeActionKind": {"valueSet":
                     ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source"]}},
@@ -976,7 +977,10 @@ impl LspClient {
             ReqKind::Completion => {
                 out.push(LspEvent::Completion { id, items: parse_completion(&result), incomplete: result.bool("isIncomplete", false) })
             }
-            ReqKind::Hover => out.push(LspEvent::Hover { id, text: parse_hover(&result) }),
+            ReqKind::Hover => {
+                let (text, markdown) = parse_hover(&result);
+                out.push(LspEvent::Hover { id, text, markdown });
+            }
             ReqKind::CompletionResolve => out.push(LspEvent::CompletionResolved { id, edits: parse_text_edits(result.arr("additionalTextEdits")) }),
             ReqKind::Definition | ReqKind::References => out.push(LspEvent::Locations { id, items: parse_locations(&result) }),
             ReqKind::InlayHint => out.push(LspEvent::InlayHints { id, items: parse_inlay_hints(&result) }),
@@ -1029,14 +1033,23 @@ impl LspClient {
 mod tests;
 
 /// Hover contents: MarkupContent, MarkedString or MarkedString[].
-pub fn parse_hover(result: &Json) -> String {
-    fn text(j: &Json) -> String {
+pub fn parse_hover(result: &Json) -> (String, bool) {
+    // MarkedString без kind по протоколу содержит Markdown; объект language/value
+    // означает код. Явный plaintext всегда сохраняется без интерпретации.
+    fn legacy(j: &Json) -> String {
         match j {
             Json::Str(s) => s.clone(),
-            Json::Arr(a) => a.iter().map(text).filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n\n"),
+            Json::Arr(a) => a.iter().map(legacy).filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n\n"),
+            Json::Obj(_) if j.get("language").is_some() => {
+                let value = j.str("value");
+                let longest = value.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+                let fence = "`".repeat((longest + 1).max(3));
+                format!("{fence}\n{value}\n{fence}")
+            }
             Json::Obj(_) => j.str("value"),
             _ => String::new(),
         }
     }
-    text(result.get("contents").unwrap_or(&Json::Null)).trim().to_string()
+    let contents = result.get("contents").unwrap_or(&Json::Null);
+    (legacy(contents), contents.str("kind") != "plaintext")
 }
