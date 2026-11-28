@@ -3,7 +3,7 @@ version: 1
 name: tvstudio
 kind: rust
 forms: []
-open_files: [src/hover.rs]
+open_files: [src/hover.rs, src/hover_markdown.rs]
 app:
   title: tvstudio
   russian: true

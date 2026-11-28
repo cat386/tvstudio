@@ -126,6 +126,8 @@ pub struct CodeEditor {
     pub lang: Lang,
     /// Диагностики сервера LSP для этого файла.
     pub diags: Vec<Underline>,
+    /// Сообщения LSP и диапазоны для всплывающих диагностик.
+    pub hover_diags: Vec<crate::hover::Diagnostic>,
     /// Подсказки в тексте (crates-lsp): (номер строки с 0, надпись) — серым
     /// в конце строки.
     pub hints: Vec<(usize, String)>,
@@ -190,6 +192,7 @@ impl CodeEditor {
             fe,
             lang: Lang::from_path(path),
             diags: Vec::new(),
+            hover_diags: Vec::new(),
             hints: Vec::new(),
             completion: None,
             hover: None,

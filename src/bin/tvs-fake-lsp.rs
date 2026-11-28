@@ -115,6 +115,10 @@ fn occurrences(text: &str, word: &str) -> Vec<(usize, usize)> {
 }
 
 fn publish(uri: &str, text: &str, lang: &str) {
+    publish_revision(uri, text, lang, 0);
+}
+
+fn publish_revision(uri: &str, text: &str, lang: &str, revision: usize) {
     let mut diags = Vec::new();
     let tag = if lang == "rust" { String::new() } else { format!("[{}] ", lang) };
     for (word, sev, msg) in [("ОШИБКА", 1, "найдена ОШИБКА"), ("warn_me", 2, "предупреждение warn_me")] {
@@ -129,6 +133,27 @@ fn publish(uri: &str, text: &str, lang: &str) {
             ]));
         }
     }
+    if text.contains("diagnostic-hover-fixture") {
+        diags.clear();
+        if revision < 2 {
+            let long = (0..20).map(|n| format!("detail {n}\n")).collect::<String>();
+            for (line, start, end, sev, code, message) in [
+                (4, 3, 7, 2, Json::i(42), format!("**warning** revision {revision}\n{long}")),
+                (4, 4, 6, 1, Json::s("E0001"), "`error` overlaps".into()),
+                (5, 0, 4, 2, Json::s("WSPACE"), "space warning".into()),
+                (0, 20, 20, 1, Json::s("EEOL"), "end of line".into()),
+                (3, 0, 0, 1, Json::s("EEMPTY"), "empty line".into()),
+            ] {
+                diags.push(Json::obj(vec![
+                    ("range", range(line, start, end)),
+                    ("severity", Json::i(sev)),
+                    ("code", code),
+                    ("source", Json::s("fixture")),
+                    ("message", Json::s(&message)),
+                ]));
+            }
+        }
+    }
     notify("textDocument/publishDiagnostics", Json::obj(vec![("uri", Json::s(uri)), ("diagnostics", Json::Arr(diags))]));
 }
 
@@ -140,6 +165,7 @@ fn main() {
     let mut docs: HashMap<String, String> = HashMap::new();
     let mut langs: HashMap<String, String> = HashMap::new();
     let mut r = BufReader::new(std::io::stdin().lock());
+    let mut saves: HashMap<String, usize> = HashMap::new();
     let mut next = 1000;
     let mut hint_no = 0;
     let mut compl_no = 0;
@@ -186,6 +212,18 @@ fn main() {
                 let text = p.arr("contentChanges").last().map(|c| c.str("text")).unwrap_or_default();
                 docs.insert(doc_uri.clone(), text.clone());
                 publish(&doc_uri, &text, langs.get(&doc_uri).map(|s| s.as_str()).unwrap_or("rust"));
+            }
+            "textDocument/didSave" => {
+                next += 1;
+                send(Json::obj(vec![("jsonrpc", Json::s("2.0")), ("id", Json::i(next)), ("method", Json::s("workspace/inlayHint/refresh"))]));
+                let revision = saves.entry(doc_uri.clone()).or_default();
+                *revision += 1;
+                publish_revision(
+                    &doc_uri,
+                    docs.get(&doc_uri).map(String::as_str).unwrap_or(""),
+                    langs.get(&doc_uri).map(String::as_str).unwrap_or("rust"),
+                    *revision,
+                );
             }
             "textDocument/didClose" => {
                 docs.remove(&doc_uri);
@@ -310,10 +348,6 @@ fn main() {
                     v.push(Json::obj(vec![("position", end), ("label", label), ("paddingLeft", Json::Bool(true))]));
                 }
                 reply(id.as_ref().unwrap(), Json::Arr(v));
-            }
-            "textDocument/didSave" => {
-                next += 1;
-                send(Json::obj(vec![("jsonrpc", Json::s("2.0")), ("id", Json::i(next)), ("method", Json::s("workspace/inlayHint/refresh"))]));
             }
             "textDocument/codeAction" => {
                 let text = docs.get(&doc_uri).cloned().unwrap_or_default();

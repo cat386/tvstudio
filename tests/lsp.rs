@@ -109,7 +109,8 @@ impl T {
         std::fs::create_dir_all(&base).unwrap();
         let p = Project::create(&base, "demo", &Dependency::Git("https://example.invalid/tvision-rs".into())).unwrap();
         let file = p.dir.join("src").join("demo.rs");
-        std::fs::write(&file, SRC).unwrap();
+        std::fs::write(&file, if name.starts_with("diagnostic_hover") { format!("{SRC}\n// diagnostic-hover-fixture\n") } else { SRC.into() })
+            .unwrap();
         let mut b = HeadlessBackend::new(120, 40);
         b.esc_budget = 0;
         let input = Rc::new(RefCell::new(VecDeque::new()));
@@ -726,4 +727,74 @@ fn hover_typing_closes_without_moving_keyboard_focus() {
     assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
     assert!(t.ed().vs().is_focused());
     assert!(t.ed().fe.editor.text().contains('z'));
+}
+
+/// Диагностика публикуется независимо от Hover: первое окно появляется до
+/// ответа сервера, затем дополняется Markdown, с общей прокруткой и прежним фокусом.
+#[test]
+fn diagnostic_hover_combined_updates_and_scrolls() {
+    let mut t = T::new("diagnostic_hover_combined");
+    assert!(t.wait(|t| t.ed().hover_diags.len() == 5));
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    let main = origin + Point::new(4, 4);
+    let cursor = t.ed().fe.editor.cursor();
+    let scroll = t.ed().fe.editor.delta;
+    t.mouse(main, 0);
+    assert!(t.ed().hover.is_none());
+    t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+    t.pump();
+    let popup = t.ed().hover.as_ref().expect("диагностика не должна ждать Hover");
+    assert!(popup.diagnostics.starts_with("Ошибка (fixture · E0001)\n`error` overlaps"));
+    assert!(popup.diagnostics.contains("Предупреждение (fixture · 42)"));
+    assert!(popup.text.is_empty(), "учебный сервер ещё ждёт 150 мс");
+    let rows = popup.rows(t.ed().vs().size);
+    let inside = origin + Point::new(rows[1].1 + 1, rows[1].0);
+    // Уже во время ожидания Hover мышь может перейти внутрь: начало рамки не смещается.
+    t.mouse(inside, 0);
+    assert!(t.wait(|t| t.ed().hover.as_ref().is_some_and(|p| p.markdown && !p.text.is_empty())));
+    assert_eq!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().origin, origin);
+    t.mouse(inside, 1);
+    assert_eq!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().offset, 3);
+    assert_eq!(t.ed().fe.editor.cursor(), cursor);
+    assert_eq!(t.ed().fe.editor.delta, scroll);
+    assert!(t.ed().vs().is_focused());
+    // Оставаться можно над всем диагностируемым участком, а не только исходной буквой.
+    t.mouse(origin + Point::new(6, 4), 0);
+    assert!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().leaving.is_none());
+    t.mouse(inside, 0);
+    t.ide.lsp.as_mut().unwrap().did_save(&t.file);
+    assert!(t.wait(|t| t.ed().hover.as_ref().is_some_and(|p| p.diagnostics.contains("revision 1"))));
+    assert_eq!(t.ide.lsp_state.pointer.borrow().active.as_ref().unwrap().offset, 0);
+    assert!(t.ed().hover.as_ref().unwrap().text.contains("Main"));
+    t.ide.lsp.as_mut().unwrap().did_save(&t.file);
+    assert!(t.wait(|t| t.ed().hover.as_ref().is_some_and(|p| p.diagnostics.is_empty())));
+    assert!(t.ed().hover.as_ref().unwrap().text.contains("Main"), "Hover остаётся после снятия диагностики");
+}
+
+/// На пробеле, в конце строки и на пустой строке сервер возвращает null Hover,
+/// однако буквальная диагностика остаётся видимой до удаления сообщения.
+#[test]
+fn diagnostic_hover_markers_without_hover_reply() {
+    let mut t = T::new("diagnostic_hover_markers");
+    assert!(t.wait(|t| t.ed().hover_diags.len() == 5));
+    let eid = t.ed().vs().id;
+    let origin = t.app.group.owner_origin_of(eid).unwrap() + t.ed().vs().origin;
+    for (local, expected) in [(Point::new(1, 5), "space warning"), (Point::new(20, 0), "end of line"), (Point::new(0, 3), "empty line")] {
+        t.input.borrow_mut().push_back(RawEvent::Key(KeyEvent::new(Key::Esc, Mods::NONE)));
+        t.pump();
+        t.ide.lsp.as_mut().unwrap().has_hover = expected != "space warning";
+        t.mouse(origin + local, 0);
+        t.ide.lsp_state.pointer.borrow_mut().since = Instant::now() - Duration::from_millis(450);
+        assert!(t.wait(|t| t.ed().hover.as_ref().is_some_and(|p| p.diagnostics.contains(expected))));
+        std::thread::sleep(Duration::from_millis(180));
+        t.pump();
+        assert!(t.ed().hover.as_ref().unwrap().diagnostics.contains(expected));
+        assert!(t.ed().hover.as_ref().unwrap().text.is_empty());
+    }
+    t.ide.lsp.as_mut().unwrap().did_save(&t.file);
+    assert!(t.wait(|t| t.ed().hover_diags.iter().any(|d| d.text.contains("revision 1"))));
+    t.ide.lsp.as_mut().unwrap().did_save(&t.file);
+    assert!(t.wait(|t| t.ed().hover.is_none()));
+    assert!(t.ide.lsp_state.pointer.borrow().active.is_none());
 }

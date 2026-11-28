@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use tvision::*;
 
 use super::{same_file, Ide};
-use crate::codeedit::{CodeWindow, Underline};
+use crate::codeedit::CodeWindow;
 use crate::lsp::{
     col_from_lsp, col_to_lsp, CodeAction, Diagnostic, Encoding, InlayHint, LPos, LRange, Location, LspClient, LspEvent, Severity, TextEdit,
 };
@@ -364,6 +364,9 @@ impl Ide {
         }
         let pointer = self.lsp_state.pointer.borrow().clone();
         if pointer.active.is_some() {
+            if let Some(key) = self.lsp_state.hover_key.clone() {
+                self.refresh_hover(app, &key, None);
+            }
             return;
         }
         let target = if app.modal_top().is_none() { pointer.pos.and_then(|p| crate::hover::hit(&app.group, p)) } else { None };
@@ -396,7 +399,11 @@ impl Ide {
             self.lsp_state.wait.retain(|_, w| !matches!(w, Wait::Hover { .. }));
         }
         let Some(key) = key else { return };
-        if self.lsp_state.hover_requested || pointer.since.elapsed() < Duration::from_millis(400) {
+        if pointer.since.elapsed() < Duration::from_millis(400) {
+            return;
+        }
+        self.refresh_hover(app, &key, None);
+        if self.lsp_state.hover_requested {
             return;
         }
         let Some(w) = app.find::<CodeWindow>(key.win) else { return };
@@ -415,6 +422,29 @@ impl Ide {
         let id = c.hover(&path, pos);
         self.lsp_state.wait.insert((srv, id), Wait::Hover { key });
         self.lsp_state.hover_requested = true;
+    }
+
+    /// Обновляет буквальные диагностики независимо от готовности Hover. Ответ
+    /// сервера дополняет тот же Popup, не меняя фокус и исходную точку наведения.
+    fn refresh_hover(&mut self, app: &mut Program, key: &HoverKey, response: Option<(String, bool)>) {
+        let pointer = self.lsp_state.pointer.clone();
+        let Some(w) = app.find_mut::<CodeWindow>(key.win) else { return };
+        let diagnostics = crate::hover::diagnostic_text(w.editor(), key.pos);
+        let old = &w.editor().hover;
+        let (text, markdown) = response.unwrap_or_else(|| old.as_ref().map(|p| (p.text.clone(), p.markdown)).unwrap_or_default());
+        if diagnostics.is_empty() && text.trim().is_empty() {
+            w.editor_mut().hover = None;
+            pointer.borrow_mut().active = None;
+            return;
+        }
+        let changed = old.as_ref().is_none_or(|p| p.diagnostics != diagnostics || p.text != text || p.markdown != markdown);
+        crate::hover::activate(&pointer, w.editor(), key.pos, key.local);
+        if changed {
+            if let Some(a) = &mut pointer.borrow_mut().active {
+                a.offset = 0;
+            }
+            w.editor_mut().hover = Some(crate::hover::Popup { pointer, generation: key.generation, at: key.local, text, markdown, diagnostics });
+        }
     }
 
     // ------------------------------------------------------------------
@@ -573,12 +603,8 @@ impl Ide {
             }
             LspEvent::Hover { id, text, markdown } => {
                 if let Some(Wait::Hover { key }) = self.lsp_state.wait.remove(&(srv, id)) {
-                    if self.lsp_state.hover_key.as_ref() == Some(&key) && !text.trim().is_empty() {
-                        let pointer = self.lsp_state.pointer.clone();
-                        if let Some(w) = app.find_mut::<CodeWindow>(key.win) {
-                            crate::hover::activate(&pointer, w.editor(), key.pos, key.local);
-                            w.editor_mut().hover = Some(crate::hover::Popup { pointer, generation: key.generation, at: key.local, text, markdown });
-                        }
+                    if self.lsp_state.hover_key.as_ref() == Some(&key) && self.lsp_state.pointer.borrow().generation == key.generation {
+                        self.refresh_hover(app, &key, Some((text, markdown)));
                     }
                 }
             }
@@ -748,6 +774,7 @@ impl Ide {
                 Some(list) => {
                     let mut marks: Vec<(usize, MsgKind)> = Vec::new();
                     let mut under = Vec::new();
+                    let mut hover_diags = Vec::new();
                     for d in list.iter().filter(|d| d.severity <= Severity::Warning) {
                         let error = d.severity == Severity::Error;
                         let kind = if error { MsgKind::Error } else { MsgKind::Warning };
@@ -756,24 +783,18 @@ impl Ide {
                             Some(_) => {}
                             None => marks.push((d.range.start.line, kind)),
                         }
-                        // Многострочный диапазон — подсвечиваем каждую строку.
-                        let ed = &w.editor().fe.editor;
-                        for line in d.range.start.line..=d.range.end.line.min(d.range.start.line + 50) {
-                            if line >= ed.line_count() {
-                                break;
-                            }
-                            let text = ed.line(line);
-                            let c0 = if line == d.range.start.line { col_from_lsp(&text, d.range.start.col, enc) } else { 0 };
-                            let c1 = if line == d.range.end.line { col_from_lsp(&text, d.range.end.col, enc) } else { text.chars().count() };
-                            under.push(Underline { line, c0, c1: c1.max(c0), error });
-                        }
+                        let diagnostic = crate::hover::Diagnostic::new(w.editor(), d, enc);
+                        under.extend(diagnostic.spans.iter().copied());
+                        hover_diags.push(diagnostic);
                     }
                     w.set_marks(marks);
                     w.editor_mut().diags = under;
+                    w.editor_mut().hover_diags = hover_diags;
                 }
                 None => {
                     w.set_marks(build);
                     w.editor_mut().diags.clear();
+                    w.editor_mut().hover_diags.clear();
                 }
             }
         }
